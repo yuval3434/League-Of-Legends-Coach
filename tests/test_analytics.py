@@ -1,15 +1,24 @@
 """Stat functions against a real Postgres, because the maths is the SQL."""
 
 from datetime import UTC, datetime, timedelta
+from itertools import count
 
 import pytest
 from sqlalchemy import insert
 
+from analytics.jungle import (
+    deaths_before_objective,
+    first_lane_kill,
+    kill_participation,
+    objective_control,
+    wards_per_minute,
+)
 from analytics.stats import (
     after_loss_streak,
     cs_per_minute,
     deaths_by_phase,
     lane_diff,
+    win_rate_by_gold_diff,
     win_rates,
 )
 from ingestion.models import Match, MatchParticipant, TimelineEvent, TimelineFrame
@@ -17,6 +26,19 @@ from ingestion.models import Match, MatchParticipant, TimelineEvent, TimelineFra
 ME = "me"
 START = datetime(2026, 1, 1, tzinfo=UTC)
 ROLES = ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY")
+ALL_STATS = [
+    win_rates,
+    deaths_by_phase,
+    lane_diff,
+    after_loss_streak,
+    cs_per_minute,
+    objective_control,
+    deaths_before_objective,
+    kill_participation,
+    wards_per_minute,
+    first_lane_kill,
+]
+_event_ids = count(1000)
 
 
 def _match(match_id, start, duration_s, is_remake, patch):
@@ -139,6 +161,34 @@ async def add_deaths(session, match_id, victim_id, *timestamps_ms):
     await session.commit()
 
 
+async def add_event(session, match_id, kind, ms, actor=None, victim=None, xy=None, **data):
+    x, y = xy or (None, None)
+    await session.execute(
+        insert(TimelineEvent),
+        [
+            {
+                "match_id": match_id,
+                "event_index": next(_event_ids),
+                "timestamp_ms": ms,
+                "type": kind,
+                "actor_id": actor,
+                "victim_id": victim,
+                "position_x": x,
+                "position_y": y,
+                "data": data,
+            }
+        ],
+    )
+    await session.commit()
+
+
+async def add_objective(session, match_id, ms, monster, team, actor=None, subtype=None):
+    data = {"monsterType": monster, "killerTeamId": team}
+    if subtype:
+        data["monsterSubType"] = subtype
+    await add_event(session, match_id, "ELITE_MONSTER_KILL", ms, actor=actor, **data)
+
+
 def find(rows, **fields):
     matches = [r for r in rows if all(r[k] == v for k, v in fields.items())]
     assert len(matches) == 1, f"{fields}: {matches}"
@@ -152,7 +202,7 @@ async def session(sessions):
 
 
 @pytest.mark.parametrize(
-    "stat", [win_rates, deaths_by_phase, lane_diff, after_loss_streak, cs_per_minute]
+    "stat", ALL_STATS
 )
 async def test_remakes_are_excluded(session, stat):
     await add_game(session, is_remake=True, deaths=1, jungle_cs=9)
@@ -161,7 +211,7 @@ async def test_remakes_are_excluded(session, stat):
 
 
 @pytest.mark.parametrize(
-    "stat", [win_rates, deaths_by_phase, lane_diff, after_loss_streak, cs_per_minute]
+    "stat", ALL_STATS
 )
 async def test_other_players_are_not_included(session, stat):
     await add_game(session, puuid="someone-else")
@@ -351,6 +401,72 @@ async def test_several_players_are_pooled(session):
     assert row["avg_gold_diff"] == 200
 
 
+# Win rate by gold difference at minute 10
+
+
+@pytest.mark.parametrize(
+    ("gold_diff", "bucket"),
+    [
+        (-501, "behind 500+"),
+        (-500, "behind 0-500"),
+        (-1, "behind 0-500"),
+        (0, "ahead 0-500"),
+        (499, "ahead 0-500"),
+        (500, "ahead 500+"),
+    ],
+)
+async def test_gold_diff_bucket_edges(session, gold_diff, bucket):
+    await add_game(session)
+    await add_frames(session, "EUW1_1", 10, {2: 1000 + gold_diff, 7: 1000})
+
+    rows = await win_rate_by_gold_diff(session, [ME])
+
+    assert find(rows, bucket=bucket)["games"] == 1
+    assert sum(r["games"] for r in rows) == 1
+
+
+async def test_buckets_report_win_rate_and_keep_empty_ones(session):
+    await add_game(session, "EUW1_1", win=True)
+    await add_game(session, "EUW1_2", win=False)
+    await add_game(session, "EUW1_3", win=False)
+    for match_id in ("EUW1_1", "EUW1_2", "EUW1_3"):
+        await add_frames(session, match_id, 10, {2: 900})
+
+    rows = await win_rate_by_gold_diff(session, [ME])
+
+    assert [r["bucket"] for r in rows] == [
+        "behind 500+",
+        "behind 0-500",
+        "ahead 0-500",
+        "ahead 500+",
+    ]
+    ahead = find(rows, bucket="ahead 500+")
+    assert (ahead["games"], ahead["wins"], ahead["win_rate_pct"]) == (3, 1, 33.3)
+    empty = find(rows, bucket="behind 500+")
+    assert (empty["games"], empty["win_rate_pct"]) == (0, None)
+    assert empty["low_sample"] is True
+
+
+async def test_gold_buckets_ignore_other_roles_and_remakes(session):
+    await add_game(session, "EUW1_1", role="TOP")
+    await add_game(session, "EUW1_2", is_remake=True)
+    await add_frames(session, "EUW1_1", 10, {1: 900})
+    await add_frames(session, "EUW1_2", 10, {2: 900})
+
+    rows = await win_rate_by_gold_diff(session, [ME])
+
+    assert sum(r["games"] for r in rows) == 0
+
+
+async def test_gold_buckets_skip_games_shorter_than_ten_minutes(session):
+    await add_game(session, duration_s=590)
+    await add_frames(session, "EUW1_1", 10, {2: 900}, timestamp_ms=590_000)
+
+    rows = await win_rate_by_gold_diff(session, [ME])
+
+    assert sum(r["games"] for r in rows) == 0
+
+
 # Loss streaks
 
 
@@ -456,3 +572,354 @@ async def test_roles_are_kept_apart(session):
     rows = await cs_per_minute(session, [ME])
 
     assert {r["role"] for r in rows} == {"JUNGLE", "UTILITY"}
+
+
+# Jungle stats. In add_game the player is participant 2 on team 100, with
+# teammates 1, 3, 4, 5. The enemies are 6 TOP, 7 JUNGLE, 8 MIDDLE, 9 BOTTOM and
+# 10 UTILITY.
+
+
+async def jungle_game(session, match_id="EUW1_1", **kwargs):
+    await add_game(session, match_id, **kwargs)
+    await add_frames(session, match_id, 1, {})
+
+
+@pytest.mark.parametrize(
+    "stat",
+    [
+        objective_control,
+        deaths_before_objective,
+        kill_participation,
+        wards_per_minute,
+        first_lane_kill,
+    ],
+)
+async def test_jungle_stats_ignore_other_roles(session, stat):
+    await jungle_game(session, role="TOP")
+    await add_objective(session, "EUW1_1", 60_000, "DRAGON", 100)
+    assert await stat(session, [ME]) == []
+
+
+async def test_objectives_split_by_team(session):
+    await jungle_game(session)
+    await add_objective(session, "EUW1_1", 1000, "DRAGON", 100, actor=2)
+    await add_objective(session, "EUW1_1", 2000, "DRAGON", 100, actor=3)
+    await add_objective(session, "EUW1_1", 3000, "DRAGON", 200, actor=7)
+
+    row = find(await objective_control(session, [ME]), objective="DRAGON")
+
+    assert (row["team_taken"], row["enemy_taken"]) == (2, 1)
+    assert row["team_share_pct"] == 66.7
+    assert row["my_last_hits"] == 1
+
+
+async def test_team_is_relative_to_the_player(session):
+    await jungle_game(session, "EUW1_1")
+    await session.execute(
+        MatchParticipant.__table__.update()
+        .where(MatchParticipant.puuid == ME)
+        .values(team_id=200)
+    )
+    await session.commit()
+    await add_objective(session, "EUW1_1", 1000, "DRAGON", 200)
+
+    row = find(await objective_control(session, [ME]), objective="DRAGON")
+
+    assert (row["team_taken"], row["enemy_taken"]) == (1, 0)
+
+
+async def test_neutral_objective_kills_count_for_neither_team(session):
+    await jungle_game(session)
+    await add_objective(session, "EUW1_1", 1000, "RIFTHERALD", 300)
+    await add_objective(session, "EUW1_1", 2000, "DRAGON", 100)
+
+    rows = await objective_control(session, [ME])
+
+    assert [r["objective"] for r in rows] == ["DRAGON"]
+
+
+async def test_elder_is_separate_from_dragons(session):
+    await jungle_game(session)
+    await add_objective(session, "EUW1_1", 1000, "DRAGON", 100, subtype="FIRE_DRAGON")
+    await add_objective(session, "EUW1_1", 2000, "DRAGON", 200, subtype="ELDER_DRAGON")
+
+    rows = await objective_control(session, [ME])
+
+    assert find(rows, objective="DRAGON")["team_taken"] == 1
+    assert find(rows, objective="ELDER_DRAGON")["enemy_taken"] == 1
+
+
+async def test_unknown_objectives_get_their_own_row(session):
+    await jungle_game(session)
+    await add_objective(session, "EUW1_1", 1000, "VOID_GATOR", 100)
+
+    rows = await objective_control(session, [ME])
+
+    assert find(rows, objective="VOID_GATOR")["team_taken"] == 1
+
+
+async def test_games_without_an_objective_count_as_zero(session):
+    await jungle_game(session, "EUW1_1")
+    await jungle_game(session, "EUW1_2")
+    await jungle_game(session, "EUW1_3")
+    await add_objective(session, "EUW1_1", 1000, "BARON_NASHOR", 100)
+
+    row = find(await objective_control(session, [ME]), objective="BARON_NASHOR")
+
+    assert row["games"] == 3
+    assert row["avg_team_taken"] == 0.33
+    assert row["median_team_taken"] == 0.0
+
+
+async def death(session, match_id, victim, ms):
+    await add_event(session, match_id, "CHAMPION_KILL", ms, actor=7, victim=victim)
+
+
+async def test_deaths_are_counted_in_the_60_seconds_before(session):
+    await jungle_game(session)
+    await add_objective(session, "EUW1_1", 600_000, "DRAGON", 200)
+    await death(session, "EUW1_1", 2, 540_000)  # exactly 60s before
+
+    row = find(
+        await deaths_before_objective(session, [ME]),
+        objective="DRAGON",
+        taken_by="enemy",
+    )
+
+    assert (row["objectives"], row["my_death_pct"], row["team_death_pct"]) == (
+        1,
+        100.0,
+        100.0,
+    )
+
+
+async def test_deaths_outside_the_window_do_not_count(session):
+    await jungle_game(session)
+    await add_objective(session, "EUW1_1", 600_000, "DRAGON", 200)
+    await death(session, "EUW1_1", 2, 539_999)
+    await death(session, "EUW1_1", 2, 600_001)
+
+    row = find(await deaths_before_objective(session, [ME]), objective="DRAGON")
+
+    assert row["my_death_pct"] == 0.0
+
+
+async def test_teammate_deaths_have_their_own_column(session):
+    await jungle_game(session)
+    await add_objective(session, "EUW1_1", 600_000, "DRAGON", 200)
+    await death(session, "EUW1_1", 3, 590_000)
+    await death(session, "EUW1_1", 4, 595_000)
+
+    row = find(await deaths_before_objective(session, [ME]), objective="DRAGON")
+
+    assert row["my_death_pct"] == 0.0
+    assert row["team_death_pct"] == 100.0
+    assert row["avg_team_deaths"] == 2.0
+
+
+async def test_enemy_deaths_are_not_team_deaths(session):
+    await jungle_game(session)
+    await add_objective(session, "EUW1_1", 600_000, "DRAGON", 100)
+    await death(session, "EUW1_1", 8, 590_000)
+
+    row = find(await deaths_before_objective(session, [ME]), objective="DRAGON")
+
+    assert row["team_death_pct"] == 0.0
+
+
+async def test_baseline_comes_back_on_every_row(session):
+    await add_game(session)
+    for minute in range(4, 8):  # minutes 5, 6 and 7 are windows; 4 is too early
+        await add_frames(session, "EUW1_1", minute, {})
+    await add_objective(session, "EUW1_1", 400_000, "DRAGON", 100)
+    await add_objective(session, "EUW1_1", 410_000, "BARON_NASHOR", 200)
+    await death(session, "EUW1_1", 2, 290_000)  # inside only the minute 5 window
+    await death(session, "EUW1_1", 3, 415_000)  # inside only the minute 7 window
+
+    rows = await deaths_before_objective(session, [ME])
+
+    assert len(rows) == 2
+    for row in rows:
+        assert row["baseline_windows"] == 3
+        assert row["baseline_my_death_pct"] == 33.3
+        assert row["baseline_team_death_pct"] == 66.7
+
+
+async def test_baseline_is_empty_without_frames_after_minute_5(session):
+    await jungle_game(session)  # its only frame is minute 1
+    await add_objective(session, "EUW1_1", 200_000, "HORDE", 100)
+
+    row = (await deaths_before_objective(session, [ME]))[0]
+
+    assert (row["baseline_windows"], row["baseline_my_death_pct"]) == (0, None)
+
+
+async def test_kill_participation_uses_the_whole_teams_kills(session):
+    await add_game(session, kills=2, assists=2)
+    await add_frames(session, "EUW1_1", 1, {})
+    await session.execute(
+        MatchParticipant.__table__.update()
+        .where(MatchParticipant.participant_id == 1)
+        .values(kills=6)
+    )
+    await session.execute(
+        MatchParticipant.__table__.update()
+        .where(MatchParticipant.participant_id == 7)
+        .values(kills=50)
+    )
+    await session.commit()
+
+    row = (await kill_participation(session, [ME]))[0]
+
+    assert row["avg_kill_participation_pct"] == 50.0
+
+
+async def test_kill_participation_skips_games_with_no_team_kills(session):
+    await jungle_game(session)
+    assert await kill_participation(session, [ME]) == []
+
+
+async def test_wards_per_minute_uses_game_length(session):
+    await jungle_game(session, duration_s=600)
+    for ms in (1000, 2000):
+        await add_event(
+            session, "EUW1_1", "WARD_PLACED", ms, actor=2, wardType="SIGHT_WARD"
+        )
+    await add_event(
+        session, "EUW1_1", "WARD_KILL", 3000, actor=2, wardType="CONTROL_WARD"
+    )
+
+    row = (await wards_per_minute(session, [ME]))[0]
+
+    assert (row["placed"], row["destroyed"]) == (2, 1)
+    assert row["avg_placed_per_min"] == 0.2
+    assert row["avg_destroyed_per_min"] == 0.1
+
+
+@pytest.mark.parametrize("ward", ["UNDEFINED", "TEEMO_MUSHROOM"])
+@pytest.mark.parametrize("kind", ["WARD_PLACED", "WARD_KILL"])
+async def test_wards_filter_out_non_wards(session, ward, kind):
+    await jungle_game(session)
+    await add_event(session, "EUW1_1", kind, 1000, actor=2, wardType=ward)
+
+    row = (await wards_per_minute(session, [ME]))[0]
+
+    assert (row["placed"], row["destroyed"]) == (0, 0)
+
+
+async def test_other_players_wards_do_not_count(session):
+    await jungle_game(session)
+    await add_event(
+        session, "EUW1_1", "WARD_PLACED", 1000, actor=3, wardType="SIGHT_WARD"
+    )
+
+    assert (await wards_per_minute(session, [ME]))[0]["placed"] == 0
+
+
+async def test_games_with_no_wards_count_as_zero(session):
+    await jungle_game(session, "EUW1_1", duration_s=600)
+    await jungle_game(session, "EUW1_2", duration_s=600)
+    await add_event(
+        session, "EUW1_1", "WARD_PLACED", 1000, actor=2, wardType="SIGHT_WARD"
+    )
+
+    row = (await wards_per_minute(session, [ME]))[0]
+
+    assert row["games"] == 2
+    assert row["avg_placed_per_min"] == 0.05
+
+
+# Real positions: turrets from Riot's events, which carry the lane.
+@pytest.mark.parametrize(
+    ("victim", "role", "xy", "lane"),
+    [
+        (6, "TOP", (981, 10441), "top"),
+        (6, "TOP", (4318, 13875), "top"),
+        (6, "TOP", (7943, 13411), "top"),
+        (8, "MIDDLE", (5846, 6396), "mid"),
+        (8, "MIDDLE", (8955, 8510), "mid"),
+        (9, "BOTTOM", (10504, 1029), "bot"),
+        (9, "BOTTOM", (13866, 4505), "bot"),
+        (10, "UTILITY", (6919, 1483), "bot"),
+    ],
+)
+async def test_first_lane_kill_reads_the_lane(session, victim, role, xy, lane):
+    await jungle_game(session)
+    await add_event(
+        session, "EUW1_1", "CHAMPION_KILL", 300_000, actor=2, victim=victim, xy=xy
+    )
+
+    rows = await first_lane_kill(session, [ME])
+
+    row = find(rows, lane=lane, victim_role=role)
+    assert (row["games"], row["avg_minute"], row["games_before_10"]) == (1, 5.0, 1)
+
+
+async def test_an_assist_counts_as_a_lane_kill(session):
+    await jungle_game(session)
+    await add_event(
+        session,
+        "EUW1_1",
+        "CHAMPION_KILL",
+        300_000,
+        actor=1,
+        victim=6,
+        xy=(981, 10441),
+        assistingParticipantIds=[2],
+    )
+
+    assert find(await first_lane_kill(session, [ME]), lane="top")["games"] == 1
+
+
+async def test_only_the_first_lane_kill_counts(session):
+    await jungle_game(session)
+    await add_event(
+        session, "EUW1_1", "CHAMPION_KILL", 500_000, actor=2, victim=8, xy=(5846, 6396)
+    )
+    await add_event(
+        session, "EUW1_1", "CHAMPION_KILL", 300_000, actor=2, victim=6, xy=(981, 10441)
+    )
+
+    rows = await first_lane_kill(session, [ME])
+
+    assert [r["lane"] for r in rows] == ["top"]
+
+
+@pytest.mark.parametrize(
+    ("actor", "victim", "xy", "ms"),
+    [
+        (2, 7, (981, 10441), 300_000),  # enemy jungler, not a laner
+        (2, 6, (5846, 6396), 300_000),  # enemy top laner, roaming mid
+        (2, 6, (3000, 7000), 300_000),  # enemy top laner, in the jungle
+        (2, 6, (1000, 1000), 300_000),  # enemy top laner, in their base
+        (3, 6, (981, 10441), 300_000),  # a teammate's kill, no assist
+        (7, 2, (981, 10441), 300_000),  # the player's own death
+        (2, 3, (981, 10441), 300_000),  # a teammate died
+        (2, 6, (981, 10441), 900_000),  # too late
+    ],
+)
+async def test_what_is_not_a_lane_kill(session, actor, victim, xy, ms):
+    await jungle_game(session)
+    await add_event(
+        session, "EUW1_1", "CHAMPION_KILL", ms, actor=actor, victim=victim, xy=xy
+    )
+
+    rows = await first_lane_kill(session, [ME])
+
+    assert [(r["lane"], r["games"], r["avg_minute"]) for r in rows] == [
+        ("none", 1, None)
+    ]
+
+
+async def test_first_lane_kill_shares_add_up(session):
+    await jungle_game(session, "EUW1_1")
+    await jungle_game(session, "EUW1_2")
+    await add_event(
+        session, "EUW1_1", "CHAMPION_KILL", 700_000, actor=2, victim=6, xy=(981, 10441)
+    )
+
+    rows = await first_lane_kill(session, [ME])
+
+    top, none = find(rows, lane="top"), find(rows, lane="none")
+    assert (top["share_pct"], top["total_games"], top["games_before_10"]) == (50.0, 2, 0)
+    assert (none["share_pct"], none["total_games"]) == (50.0, 2)

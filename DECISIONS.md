@@ -49,3 +49,63 @@ towards zero and hides the gap it's meant to measure. They would also count as
 
 **Not built yet:** `lane_diff` doesn't filter these out today, which is correct
 for a single player but not for a group.
+
+## No "first gank" stat; `first_lane_kill` instead
+
+**Decision:** there is no first gank stat. `first_lane_kill` reports the
+player's first kill or assist on an enemy laner standing in their own lane,
+before 15:00.
+
+**Why:** Riot has no gank event, and failed attempts are invisible. The timeline
+records kills exactly, but positions only once a minute. In 40 of 82 jungle
+games the jungler was near a lane at a minute mark before their first kill or
+death, and that could be a failed gank, a farm route or walking past. Asking
+whether a gank led to a kill is also circular when kills are how ganks are found.
+
+Estimating attempts would produce numbers that look exact but are guesses. The
+LLM can't tell the two apart and would present them to the user as facts, which
+breaks the rule that every number comes from a tool that actually measured it.
+
+**Limits:** a game in the `none` row doesn't mean the player never ganked, and
+this stat says nothing about ganks that failed.
+
+## Lane zones were checked against Riot's own positions
+
+**Decision:** `first_lane_kill` splits the map into base, top, mid, bot and
+jungle by coordinates, with top and bot as mirror images.
+
+**Why:** the first hand-drawn zones were wrong, which showed up when plotted:
+437 top-lane plates landed in the jungle, and the base corners counted as lanes.
+
+**Checked against:** building events carry Riot's `laneType`. All 12 outer and
+inner turrets land in the right lane, and of 5,410 plates none lands in a wrong
+lane (1,032 are on base turrets and land in `base`). Deaths before 10:00 land in
+the victim's lane 84% of the time for mid and 95% to 98% for top, bot and
+support. The rest are mostly roams and the edges of a zone.
+
+**Limits:** the zones were redrawn after looking at this same data, so this isn't
+a blind test. A kill just outside a zone is missed rather than mislabelled.
+
+## Ward stats leave out UNDEFINED and Teemo mushrooms
+
+**Decision:** `wards_per_minute` ignores `WARD_PLACED` and `WARD_KILL` events
+with `wardType` of `UNDEFINED` or `TEEMO_MUSHROOM`.
+
+**Why:** `UNDEFINED` events make up about half of all `WARD_PLACED` events and
+come mostly from champions like Warwick, Shen and Yorick, so they aren't ordinary
+wards. Unfiltered, the player's total was 2,504 placed against Riot's own 496.
+
+**Checked against:** Riot's end-of-game `wardsPlaced` and `wardsKilled`. With the
+filter, wards placed match for this player in all 96 games and in 958 of 960
+player rows. Wards destroyed match in all 960.
+
+## Objectives with killerTeamId 300 count for neither team
+
+**Decision:** objective stats keep only events with `killerTeamId` 100 or 200.
+
+**Why:** 300 means neither team took the objective: 7 heralds and 3 void grubs in
+this data. These events have no killer, and a "not my team, so the enemy's" rule
+would hand them to the enemy.
+
+**Checked against:** the remaining events match Riot's `teams[].objectives`
+exactly for dragons, barons, heralds and grubs, in every match.

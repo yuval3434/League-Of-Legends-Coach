@@ -21,7 +21,7 @@ MIN_GAMES = 10
 SESSION_BREAK_HOURS = 6
 
 
-async def _fetch(session: AsyncSession, query: str, **params: Any) -> list[Row]:
+async def fetch(session: AsyncSession, query: str, **params: Any) -> list[Row]:
     """Run a query and return JSON-friendly rows with the sample size flagged."""
     result = await session.execute(text(query), params)
     rows = [
@@ -60,7 +60,7 @@ ORDER BY dimension, games DESC, value
 
 async def win_rates(session: AsyncSession, puuids: list[str]) -> list[Row]:
     """Win rate per champion and per role, told apart by `dimension`."""
-    return await _fetch(session, WIN_RATES, puuids=puuids)
+    return await fetch(session, WIN_RATES, puuids=puuids)
 
 
 DEATHS_BY_PHASE = """
@@ -111,7 +111,7 @@ async def deaths_by_phase(session: AsyncSession, puuids: list[str]) -> list[Row]
     `games` counts only games that reached the phase. Use `deaths_per_10_min`
     to compare phases, because they last different lengths.
     """
-    return await _fetch(session, DEATHS_BY_PHASE, puuids=puuids)
+    return await fetch(session, DEATHS_BY_PHASE, puuids=puuids)
 
 
 LANE_DIFF = """
@@ -174,7 +174,58 @@ async def lane_diff(session: AsyncSession, puuids: list[str]) -> list[Row]:
     Games that ended before a minute drop out of its rows, so `games` can fall
     as the minute rises.
     """
-    return await _fetch(session, LANE_DIFF, puuids=puuids)
+    return await fetch(session, LANE_DIFF, puuids=puuids)
+
+
+WIN_RATE_BY_GOLD_DIFF = """
+WITH buckets(bucket, position, low, high) AS (
+    VALUES ('behind 500+', 1, NULL, -500),
+           ('behind 0-500', 2, -500, 0),
+           ('ahead 0-500', 3, 0, 500),
+           ('ahead 500+', 4, 500, NULL)
+),
+gold_at_10 AS (
+    SELECT me.win, mine.total_gold - theirs.total_gold AS gold_diff
+    FROM match_participants me
+    JOIN matches m ON m.match_id = me.match_id
+    JOIN match_participants opp
+      ON  opp.match_id = me.match_id
+      AND opp.team_position = me.team_position
+      AND opp.team_id <> me.team_id
+    JOIN timeline_frames mine
+      ON  mine.match_id = me.match_id
+      AND mine.participant_id = me.participant_id
+      AND mine.minute = 10
+    JOIN timeline_frames theirs
+      ON  theirs.match_id = me.match_id
+      AND theirs.participant_id = opp.participant_id
+      AND theirs.minute = 10
+    WHERE me.puuid = ANY(:puuids)
+      AND NOT m.is_remake
+      AND me.team_position = 'JUNGLE'
+      AND m.duration_s >= 600
+)
+SELECT b.bucket,
+       count(g.gold_diff) AS games,
+       count(*) FILTER (WHERE g.win) AS wins,
+       round(100.0 * count(*) FILTER (WHERE g.win) / nullif(count(g.gold_diff), 0), 1)
+           AS win_rate_pct
+FROM buckets b
+LEFT JOIN gold_at_10 g
+  ON  (b.low IS NULL OR g.gold_diff >= b.low)
+  AND (b.high IS NULL OR g.gold_diff < b.high)
+GROUP BY b.bucket, b.position
+ORDER BY b.position
+"""
+
+
+async def win_rate_by_gold_diff(session: AsyncSession, puuids: list[str]) -> list[Row]:
+    """Jungle win rate by gold difference vs. the enemy jungler at minute 10.
+
+    Every bucket is returned, with `win_rate_pct` null if it has no games.
+    Exactly -500 is 'behind 0-500', 0 is 'ahead 0-500' and 500 is 'ahead 500+'.
+    """
+    return await fetch(session, WIN_RATE_BY_GOLD_DIFF, puuids=puuids)
 
 
 AFTER_LOSS_STREAK = """
@@ -230,7 +281,7 @@ async def after_loss_streak(session: AsyncSession, puuids: list[str]) -> list[Ro
     `losses_before` is '0', '1', '2' or '3+'; '0' is the baseline to compare
     with. A win or a break of SESSION_BREAK_HOURS resets the streak.
     """
-    return await _fetch(
+    return await fetch(
         session, AFTER_LOSS_STREAK, puuids=puuids, break_hours=SESSION_BREAK_HOURS
     )
 
@@ -262,4 +313,4 @@ async def cs_per_minute(session: AsyncSession, puuids: list[str]) -> list[Row]:
     CS includes jungle camps. Roles are kept apart because their CS isn't
     comparable.
     """
-    return await _fetch(session, CS_PER_MINUTE, puuids=puuids)
+    return await fetch(session, CS_PER_MINUTE, puuids=puuids)
