@@ -894,7 +894,7 @@ async def test_only_the_first_lane_kill_counts(session):
         (2, 6, (1000, 1000), 300_000),  # enemy top laner, in their base
         (3, 6, (981, 10441), 300_000),  # a teammate's kill, no assist
         (7, 2, (981, 10441), 300_000),  # the player's own death
-        (2, 3, (981, 10441), 300_000),  # a teammate died
+        (2, 1, (981, 10441), 300_000),  # the allied top laner, in top lane
         (2, 6, (981, 10441), 900_000),  # too late
     ],
 )
