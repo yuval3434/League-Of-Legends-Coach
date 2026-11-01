@@ -84,11 +84,18 @@ players there is no benchmark, and the coach says so. Nothing is substituted. A
 single row below 30 games, such as `loss` at minute 20, is also reported as no
 benchmark. Each player counts for at most 10 games per champion.
 
-**Why:** using the player's own game-to-game spread, the 95% margin on gold at
-minute 10 is about ±188 at 30 games, ±103 at 100 and ±46 at 500. Past 100 per
-champion, the player's own small sample is the limit: with 17 Dr. Mundo games,
-going from 100 to 400 benchmark games only tightens the comparison from ±269 to
-±254. The per-player cap stops one specialist from becoming the benchmark.
+**Why:** benchmark gold at minute 10 varies by about 530 from game to game, so
+the 95% margin is about ±188 at 30 games, ±103 at 100 and ±46 at 500. Past 100
+per champion, the player's own small sample is the limit: with 17 Dr. Mundo
+games, going from 100 to 400 benchmark games only tightens a gold difference
+comparison from about ±290 to ±260. The per-player cap stops one specialist from
+becoming the benchmark.
+
+**Reading a gap:** `compare` reports each average's margin, the gap, and
+`clear_gap`, which is true when the gap is bigger than both margins combined.
+Medians, deaths, win rate and objective share have no margin, so `clear_gap` is
+empty for them. There are dozens of rows, so about 1 in 20 can show a clear gap
+by chance. Rows split by win or loss rest on 11 to 16 of the player's games.
 
 ## No mastery top-up for rare champions
 
@@ -96,8 +103,9 @@ going from 100 to 400 benchmark games only tightens the comparison from ±269 to
 use champion mastery to seek out players of rare champions, so Dr. Mundo, Zaahen
 and Shen are likely to stay at "no benchmark".
 
-**Why:** the 500-match pilots found 1 to 3 sampled games of Dr. Mundo, and 0 to 2
-of Zaahen and Shen, per cohort. Mastery could fill that gap, but only with
+**Why:** after 3,000 checked matches per cohort, Silver has 19 Dr. Mundo games,
+8 Zaahen and 5 Shen, and Emerald has 10, 7 and 4. All are below the 30-game
+floor. Mastery could fill that gap, but only with
 specialists who play a champion far more than a typical player at their rank.
 That would skew the benchmark upward while looking like a normal one, and it
 would sit next to random samples for other champions as if they were alike.
@@ -107,7 +115,8 @@ Mastery also can't show role, and these three are often played outside the jungl
 number from an unrepresentative group would be close to that.
 
 **Cost:** the player's two most-played jungle champions have no champion-level
-benchmark. The all-champion benchmark still covers those games.
+benchmark. The all-champion benchmark still covers those games. Viego and Nunu
+have one in both cohorts. Quinn has 20 and 28 games, so it doesn't.
 
 ## Benchmarks cover the last 28 days
 
@@ -133,6 +142,35 @@ skipped, and the player is never a seed.
 
 **Limit:** a player's tier is checked when they join the sample, so it's their
 current rank, not their rank when the match was played.
+
+## The benchmark win rate runs a little under 50%, and we keep the sample
+
+**Decision:** the sample stays as pulled, with no reweighting. The all-champion
+sets win 48.0% in Silver and 44.6% in Emerald. A benchmark's win rate is not
+read as a target: Silver's is read against 50%, and Emerald's isn't compared.
+
+**Why it isn't a bug:** every match should give 50%, because each has one winner.
+All 58,350 participants in the raw responses come to exactly 50.00%, and the
+code that picks a jungler never reads the result.
+
+**Why it's low:**
+- With errors clustered on the seed player, 50% is inside the 95% range for
+  Silver's set (43.5% to 52.5%). Emerald's set just misses it (40.1% to 49.1%).
+- Most of Emerald's gap comes from which matches were checked first. The hash
+  pick, before any rank filter, wins 46.8% on the 759 rank-checked matches behind
+  this set, and 50.4% on all 2,932.
+- About 1 point comes from the rank filter. Current rank partly reflects results:
+  junglers below the cohort's tier win 37% to 41%, and those above win 54% to 57%.
+- It isn't the second pick (48.3%), which is close to the first (48.2%). The
+  target-champion rows outside the overall set run high, not low, at 53% to 58%.
+- Not explained: seed players win 47.4% over 2,921 Silver games, but 49.6% in
+  Emerald. Their rank at the time of each match is unknown, so this stays open.
+
+**Why it's safe to use:** a tilt towards losses could only matter through stats
+that move with winning. Weighting wins and losses equally shifts Emerald's gold
+by 6, 18 and 39 at 10, 15 and 20 minutes, against margins of ±47, ±73 and ±113.
+CS per minute moves 0.05 of ±0.10, and deaths per game 0.16 of ±0.30. Silver
+moves less. Emerald's stats lean slightly towards losing games, within margin.
 
 ## No "first gank" stat; `first_lane_kill` instead
 
