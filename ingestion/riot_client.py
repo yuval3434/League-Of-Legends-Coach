@@ -47,10 +47,12 @@ class RiotClient:
         limiter: RateLimiter,
         account_region: str,
         match_region: str,
+        platform_region: str = "euw1",
     ) -> None:
         self._limiter = limiter
         self._account_region = account_region
         self._match_region = match_region
+        self._platform_region = platform_region
         self._http = httpx.AsyncClient(
             headers={"X-Riot-Token": api_key}, timeout=10.0
         )
@@ -125,16 +127,22 @@ class RiotClient:
             f"/riot/account/v1/accounts/by-riot-id/{name}/{tag}",
         )
 
-    async def get_match_ids(self, puuid: str, queue: int, count: int) -> list[str]:
-        """Return up to `count` of a player's newest match IDs in one queue."""
+    async def get_match_ids(
+        self, puuid: str, queue: int, count: int, start_time: int | None = None
+    ) -> list[str]:
+        """Return up to `count` of a player's newest match IDs in one queue.
+
+        `start_time` is a Unix time in seconds; older matches are left out.
+        """
         match_ids: list[str] = []
+        since = {} if start_time is None else {"startTime": start_time}
         while len(match_ids) < count:
             page_size = min(MAX_IDS_PER_PAGE, count - len(match_ids))
             page = await self._request(
                 self._match_region,
                 "match-ids-by-puuid",
                 f"/lol/match/v5/matches/by-puuid/{quote(puuid, safe='')}/ids",
-                {"queue": queue, "start": len(match_ids), "count": page_size},
+                {"queue": queue, "start": len(match_ids), "count": page_size, **since},
             )
             match_ids.extend(page)
             if len(page) < page_size:
@@ -154,3 +162,26 @@ class RiotClient:
             "timeline",
             f"/lol/match/v5/matches/{quote(match_id, safe='')}/timeline",
         )
+
+    async def get_ladder_page(
+        self, tier: str, division: str, page: int
+    ) -> list[dict[str, Any]]:
+        """Return one page of a ranked solo division, about 200 players."""
+        return await self._request(
+            self._platform_region,
+            "league-entries",
+            f"/lol/league/v4/entries/RANKED_SOLO_5x5/{tier}/{division}",
+            {"page": page},
+        )
+
+    async def get_rank(self, puuid: str) -> str | None:
+        """Return a player's ranked solo tier, or None if they're unranked."""
+        entries = await self._request(
+            self._platform_region,
+            "league-by-puuid",
+            f"/lol/league/v4/entries/by-puuid/{quote(puuid, safe='')}",
+        )
+        for entry in entries:
+            if entry["queueType"] == "RANKED_SOLO_5x5":
+                return entry["tier"]
+        return None

@@ -39,16 +39,100 @@ every phase, so compare them with `deaths_per_10_min`, not raw death counts.
 
 ## Phase 2.5: benchmark players must not be lane opponents in the same match
 
-**Decision:** when building a benchmark group for `lane_diff`, leave out any
-game where two players in the list are lane opponents.
+**Decision:** a benchmark uses one jungler per match per cohort. The primary key
+of `benchmark.sample` is (cohort, match_id), so the database enforces this.
 
-**Why:** stats pool the listed players' games. If two listed players face each
+**Why:** stats pool the benchmark's games. If two benchmark players face each
 other, one's +500 and the other's -500 cancel to 0, which pulls the benchmark
 towards zero and hides the gap it's meant to measure. They would also count as
 2 games, overstating the sample size.
 
-**Not built yet:** `lane_diff` doesn't filter these out today, which is correct
-for a single player but not for a group.
+**How the one jungler is chosen:** a target champion goes first, and otherwise a
+hash of the match decides. The result is never looked at, because choosing by
+who won would bias the win rate.
+
+**Cost:** preferring target champions slightly over-represents them in the
+all-champion benchmark.
+
+## Benchmark cohorts: Silver as peers, Emerald as a target
+
+**Decision:** two cohorts, stored separately and never pooled. Silver gets every
+comparison. Emerald gets absolute stats only: gold and CS at 10, 15 and 20
+minutes, CS per minute, deaths by phase, kill participation and wards per minute.
+Master+ can be added later as a ceiling.
+
+**Why these tiers:** the player is Silver IV. Master+ is too far away to act on,
+and their main champions barely appear there: in 220 Master+ matches, Dr. Mundo
+was in the jungle twice, Zaahen once and Shen never.
+
+**Why Emerald gets no relative stats:** gold difference, win rate and objective
+share are measured against the opponent. An Emerald jungler's +200 is against
+Emerald opponents, so it can't be set beside a Silver player's number.
+
+**Limit on Silver:** these stats are comparable, but across all champions the
+average is fixed by the game itself: the two junglers' differences mirror each
+other and every game has one winner, so it sits near 0 and 50%. The player's own
+number, read against 0 and 50%, says the same thing. Silver's real value here is
+per champion, where a champion's typical result can differ from 0 and 50%.
+`compare` adds a note saying so.
+
+## A benchmark needs 100 games to be a target, and 30 games and 10 players to exist
+
+**Decision:** the pull aims for 500 games across all champions and 100 per target
+champion (5+ jungle games from the player). Below 30 games or 10 distinct
+players there is no benchmark, and the coach says so. Nothing is substituted. A
+single row below 30 games, such as `loss` at minute 20, is also reported as no
+benchmark. Each player counts for at most 10 games per champion.
+
+**Why:** using the player's own game-to-game spread, the 95% margin on gold at
+minute 10 is about ±188 at 30 games, ±103 at 100 and ±46 at 500. Past 100 per
+champion, the player's own small sample is the limit: with 17 Dr. Mundo games,
+going from 100 to 400 benchmark games only tightens the comparison from ±269 to
+±254. The per-player cap stops one specialist from becoming the benchmark.
+
+## No mastery top-up for rare champions
+
+**Decision:** the pull finds players at random from the ladder only. It doesn't
+use champion mastery to seek out players of rare champions, so Dr. Mundo, Zaahen
+and Shen are likely to stay at "no benchmark".
+
+**Why:** the 500-match pilots found 1 to 3 sampled games of Dr. Mundo, and 0 to 2
+of Zaahen and Shen, per cohort. Mastery could fill that gap, but only with
+specialists who play a champion far more than a typical player at their rank.
+That would skew the benchmark upward while looking like a normal one, and it
+would sit next to random samples for other champions as if they were alike.
+Mastery also can't show role, and these three are often played outside the jungle.
+
+"No benchmark" is the honest answer. The coach must never invent a number, and a
+number from an unrepresentative group would be close to that.
+
+**Cost:** the player's two most-played jungle champions have no champion-level
+benchmark. The all-champion benchmark still covers those games.
+
+## Benchmarks cover the last 28 days
+
+**Decision:** the pull lists matches from the last 28 days, about two patches.
+All-champion comparisons use the player's games on the same patches. Champion
+comparisons use all the player's games on that champion, with a note.
+
+**Why:** only 30 of the player's 85 jungle games are from 16.19 on, with 4 on
+Dr. Mundo and 1 on Zaahen. Matching patches at champion level would leave under
+10 games on every champion.
+
+**Cost:** champion comparisons mix patches on the player's side.
+
+## Benchmark data lives in its own schema
+
+**Decision:** benchmark games are in a `benchmark` Postgres schema with the same
+tables as `public`, reached through an engine whose search_path is `benchmark`.
+
+**Why:** the parser and stats run unchanged on both sides, so a comparison can't
+differ because of different code. A separate engine also means a benchmark pull
+has no connection to the player's tables. Matches the player appeared in are
+skipped, and the player is never a seed.
+
+**Limit:** a player's tier is checked when they join the sample, so it's their
+current rank, not their rank when the match was played.
 
 ## No "first gank" stat; `first_lane_kill` instead
 

@@ -25,6 +25,26 @@ curl localhost:8000/sync/status
 is 100 calls per 2 minutes. A sync can be run again safely: it fetches only what's
 missing.
 
+## Benchmarks
+
+Compare your jungle stats with real Silver and Emerald games:
+
+```sh
+curl -X POST localhost:8000/benchmarks/pull -H "Content-Type: application/json" \
+  -d '{"cohort": "silver", "max_matches": 500}'
+curl localhost:8000/benchmarks/status
+curl "localhost:8000/benchmarks/compare?cohort=silver"
+curl "localhost:8000/benchmarks/compare?cohort=emerald&champion=Viego"
+```
+
+`max_matches` is the cohort's running total, so raise it to carry on. A pull saves
+its progress as it goes and can be started again after a key expires. It can't
+run alongside a sync, because they share one call budget. Benchmark data stays in
+the `benchmark` schema. [DECISIONS.md](DECISIONS.md) explains the rules.
+
+After updating `RIOT_API_KEY`, run `docker compose up -d api`. `restart` keeps
+the old key.
+
 ## Rate limiting
 
 The limiter uses a sliding window even though Riot counts in fixed windows,

@@ -65,7 +65,7 @@ async def _save_player(
     await session.commit()
 
 
-async def _fetch_raw(
+async def fetch_raw(
     session: AsyncSession, riot: RiotClient, match_id: str, kind: str
 ) -> None:
     """Fetch one response and save it. A 404 is saved too, so it isn't retried."""
@@ -155,7 +155,7 @@ async def sync_player(
             try:
                 for kind in KINDS:
                     if (match_id, kind) not in have_raw:
-                        await _fetch_raw(session, riot, match_id, kind)
+                        await fetch_raw(session, riot, match_id, kind)
                 if match_id in already_parsed:
                     continue
                 if await parse_stored_match(session, match_id):

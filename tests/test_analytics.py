@@ -17,7 +17,9 @@ from analytics.stats import (
     after_loss_streak,
     cs_per_minute,
     deaths_by_phase,
+    gold_cs_at_minute,
     lane_diff,
+    overall_cs_per_minute,
     win_rate_by_gold_diff,
     win_rates,
 )
@@ -37,6 +39,8 @@ ALL_STATS = [
     kill_participation,
     wards_per_minute,
     first_lane_kill,
+    gold_cs_at_minute,
+    overall_cs_per_minute,
 ]
 _event_ids = count(1000)
 
@@ -572,6 +576,36 @@ async def test_roles_are_kept_apart(session):
     rows = await cs_per_minute(session, [ME])
 
     assert {r["role"] for r in rows} == {"JUNGLE", "UTILITY"}
+
+
+# Absolute stats
+
+
+async def test_gold_and_cs_at_a_minute_ignore_the_opponent(session):
+    await add_game(session)
+    await add_frames(session, "EUW1_1", 10, {2: 3000, 7: 9000}, cs={2: 45, 7: 90})
+
+    row = find(await gold_cs_at_minute(session, [ME]), minute=10)
+
+    assert (row["role"], row["avg_gold"], row["avg_cs"]) == ("JUNGLE", 3000, 45)
+
+
+async def test_gold_and_cs_skip_the_final_frame_of_a_short_game(session):
+    await add_game(session, duration_s=890)
+    await add_frames(session, "EUW1_1", 15, {2: 900}, timestamp_ms=890_000)
+
+    assert await gold_cs_at_minute(session, [ME]) == []
+
+
+async def test_overall_cs_per_minute_pools_patches_but_not_roles(session):
+    await add_game(session, "EUW1_1", patch="16.6", lane_cs=30, duration_s=600)
+    await add_game(session, "EUW1_2", patch="16.7", lane_cs=90, duration_s=600)
+    await add_game(session, "EUW1_3", role="TOP", lane_cs=70, duration_s=600)
+
+    rows = await overall_cs_per_minute(session, [ME])
+
+    assert find(rows, role="JUNGLE")["avg_cs_per_min"] == 6.0
+    assert find(rows, role="TOP")["games"] == 1
 
 
 # Jungle stats. In add_game the player is participant 2 on team 100, with

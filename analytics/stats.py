@@ -3,10 +3,13 @@
 Rules every stat follows:
 - It takes a list of PUUIDs and pools their games, so with several players
   `games` counts player-games: two listed players in one match count twice.
+  It can take a Scope instead, to narrow the games or use a benchmark sample.
 - Every row has `games`, and `low_sample` is true below MIN_GAMES.
 - Remakes are excluded.
 """
 
+import re
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -20,9 +23,68 @@ MIN_GAMES = 10
 # A loss this long before the next game doesn't count towards a streak.
 SESSION_BREAK_HOURS = 6
 
+# Every stat picks its player's rows with this line of SQL.
+PLAYER_FILTER = re.compile(r"(\w+)\.puuid = ANY\(:puuids\)")
+
+
+@dataclass(frozen=True)
+class Scope:
+    """Which games a stat covers: `puuids`, or a benchmark `cohort`'s sample.
+
+    A cohort needs a session on the benchmark schema, whose `sample` table lists
+    the one player used from each match. With no `champion`, it uses the rows
+    counted towards the all-champion benchmark.
+    """
+
+    puuids: tuple[str, ...] = ()
+    cohort: str | None = None
+    role: str | None = None
+    champion: str | None = None
+    patches: tuple[str, ...] | None = None
+
+    def apply(self, query: str) -> tuple[str, dict[str, Any]]:
+        """Swap the query's player filter for this scope's conditions."""
+        params: dict[str, Any] = {}
+
+        def conditions(match: re.Match[str]) -> str:
+            alias = match[1]
+            if self.cohort:
+                rows = "cohort = :scope_cohort"
+                params["scope_cohort"] = self.cohort
+                rows += " AND champion_name = :scope_champion" if self.champion else (
+                    " AND in_overall"
+                )
+                parts = [
+                    f"({alias}.match_id, {alias}.participant_id) IN "
+                    f"(SELECT match_id, participant_id FROM sample WHERE {rows})"
+                ]
+            else:
+                parts = [f"{alias}.puuid = ANY(:scope_puuids)"]
+                params["scope_puuids"] = list(self.puuids)
+            if self.champion:
+                parts.append(f"{alias}.champion_name = :scope_champion")
+                params["scope_champion"] = self.champion
+            if self.role:
+                parts.append(f"{alias}.team_position = :scope_role")
+                params["scope_role"] = self.role
+            if self.patches is not None:
+                parts.append("m.patch = ANY(:scope_patches)")
+                params["scope_patches"] = list(self.patches)
+            return " AND ".join(parts)
+
+        return PLAYER_FILTER.sub(conditions, query), params
+
+
+Players = list[str] | Scope
+
 
 async def fetch(session: AsyncSession, query: str, **params: Any) -> list[Row]:
     """Run a query and return JSON-friendly rows with the sample size flagged."""
+    scope = params.get("puuids")
+    if isinstance(scope, Scope):
+        del params["puuids"]
+        query, scope_params = scope.apply(query)
+        params.update(scope_params)
     result = await session.execute(text(query), params)
     rows = [
         {k: float(v) if isinstance(v, Decimal) else v for k, v in row.items()}
@@ -58,7 +120,7 @@ ORDER BY dimension, games DESC, value
 """
 
 
-async def win_rates(session: AsyncSession, puuids: list[str]) -> list[Row]:
+async def win_rates(session: AsyncSession, puuids: Players) -> list[Row]:
     """Win rate per champion and per role, told apart by `dimension`."""
     return await fetch(session, WIN_RATES, puuids=puuids)
 
@@ -105,7 +167,7 @@ ORDER BY start_s
 """
 
 
-async def deaths_by_phase(session: AsyncSession, puuids: list[str]) -> list[Row]:
+async def deaths_by_phase(session: AsyncSession, puuids: Players) -> list[Row]:
     """Deaths in the early (<15:00), mid (15:00-25:00) and late (25:00+) game.
 
     `games` counts only games that reached the phase. Use `deaths_per_10_min`
@@ -166,7 +228,7 @@ ORDER BY role, minute, result
 """
 
 
-async def lane_diff(session: AsyncSession, puuids: list[str]) -> list[Row]:
+async def lane_diff(session: AsyncSession, puuids: Players) -> list[Row]:
     """Gold and CS difference vs. the lane opponent at minutes 10, 15 and 20.
 
     One row per role and minute with `result` 'all'; jungle also gets 'win' and
@@ -219,7 +281,7 @@ ORDER BY b.position
 """
 
 
-async def win_rate_by_gold_diff(session: AsyncSession, puuids: list[str]) -> list[Row]:
+async def win_rate_by_gold_diff(session: AsyncSession, puuids: Players) -> list[Row]:
     """Jungle win rate by gold difference vs. the enemy jungler at minute 10.
 
     Every bucket is returned, with `win_rate_pct` null if it has no games.
@@ -275,7 +337,7 @@ ORDER BY 1
 """
 
 
-async def after_loss_streak(session: AsyncSession, puuids: list[str]) -> list[Row]:
+async def after_loss_streak(session: AsyncSession, puuids: Players) -> list[Row]:
     """Performance by how many losses came straight before the game.
 
     `losses_before` is '0', '1', '2' or '3+'; '0' is the baseline to compare
@@ -307,10 +369,75 @@ ORDER BY role, string_to_array(patch, '.')::int[]
 """
 
 
-async def cs_per_minute(session: AsyncSession, puuids: list[str]) -> list[Row]:
+async def cs_per_minute(session: AsyncSession, puuids: Players) -> list[Row]:
     """CS per minute per role and patch, oldest patch first.
 
     CS includes jungle camps. Roles are kept apart because their CS isn't
     comparable.
     """
     return await fetch(session, CS_PER_MINUTE, puuids=puuids)
+
+
+OVERALL_CS_PER_MINUTE = """
+WITH games AS (
+    SELECT p.team_position,
+           (p.lane_cs + p.jungle_cs) / (m.duration_s / 60.0) AS cs_per_min
+    FROM match_participants p
+    JOIN matches m ON m.match_id = p.match_id
+    WHERE p.puuid = ANY(:puuids)
+      AND NOT m.is_remake
+      AND p.team_position <> ''
+)
+SELECT team_position AS role,
+       count(*) AS games,
+       round(avg(cs_per_min), 2) AS avg_cs_per_min,
+       round(percentile_cont(0.5) WITHIN GROUP (ORDER BY cs_per_min)::numeric, 2)
+           AS median_cs_per_min
+FROM games
+GROUP BY team_position
+ORDER BY role
+"""
+
+
+async def overall_cs_per_minute(session: AsyncSession, puuids: Players) -> list[Row]:
+    """CS per minute per role across all the games, for comparing with a benchmark."""
+    return await fetch(session, OVERALL_CS_PER_MINUTE, puuids=puuids)
+
+
+GOLD_CS_AT_MINUTE = """
+WITH checkpoints(minute) AS (VALUES (10), (15), (20)),
+values_at AS (
+    SELECT p.team_position, c.minute, f.total_gold AS gold,
+           f.lane_cs + f.jungle_cs AS cs
+    FROM match_participants p
+    JOIN matches m ON m.match_id = p.match_id
+    CROSS JOIN checkpoints c
+    JOIN timeline_frames f
+      ON  f.match_id = p.match_id
+      AND f.participant_id = p.participant_id
+      AND f.minute = c.minute
+    WHERE p.puuid = ANY(:puuids)
+      AND NOT m.is_remake
+      AND p.team_position <> ''
+      -- `minute` is a frame's position; see lane_diff.
+      AND m.duration_s >= c.minute * 60
+)
+SELECT team_position AS role, minute,
+       count(*) AS games,
+       round(avg(gold)) AS avg_gold,
+       round(percentile_cont(0.5) WITHIN GROUP (ORDER BY gold)::numeric) AS median_gold,
+       round(avg(cs), 1) AS avg_cs,
+       round(percentile_cont(0.5) WITHIN GROUP (ORDER BY cs)::numeric, 1) AS median_cs
+FROM values_at
+GROUP BY team_position, minute
+ORDER BY role, minute
+"""
+
+
+async def gold_cs_at_minute(session: AsyncSession, puuids: Players) -> list[Row]:
+    """Total gold and CS at minutes 10, 15 and 20, per role.
+
+    Unlike lane_diff, these don't depend on the opponent, so they can be compared
+    with players of other ranks. CS includes jungle camps.
+    """
+    return await fetch(session, GOLD_CS_AT_MINUTE, puuids=puuids)

@@ -7,7 +7,7 @@ no "first gank" stat.
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from analytics.stats import Row, fetch
+from analytics.stats import Players, Row, fetch
 
 # One row per player per game. No timeline means unknown events, not zero.
 JUNGLE_GAMES = """
@@ -64,6 +64,7 @@ SELECT objective,
        count(*) AS games,
        sum(team_taken)::int AS team_taken,
        sum(enemy_taken)::int AS enemy_taken,
+       sum(team_taken + enemy_taken)::int AS objectives,
        round(100.0 * sum(team_taken) / nullif(sum(team_taken + enemy_taken), 0), 1)
            AS team_share_pct,
        round(avg(team_taken), 2) AS avg_team_taken,
@@ -80,7 +81,7 @@ ORDER BY objective
 )
 
 
-async def objective_control(session: AsyncSession, puuids: list[str]) -> list[Row]:
+async def objective_control(session: AsyncSession, puuids: Players) -> list[Row]:
     """Objectives taken by the player's team vs. the enemy's, per objective.
 
     `objective` is Riot's monsterType, or ELDER_DRAGON. A new monster type gets
@@ -156,7 +157,7 @@ ORDER BY c.objective, c.taken_by
 
 
 async def deaths_before_objective(
-    session: AsyncSession, puuids: list[str]
+    session: AsyncSession, puuids: Players
 ) -> list[Row]:
     """How often deaths came in the 60 seconds before an objective was taken.
 
@@ -197,7 +198,7 @@ HAVING count(*) > 0
 )
 
 
-async def kill_participation(session: AsyncSession, puuids: list[str]) -> list[Row]:
+async def kill_participation(session: AsyncSession, puuids: Players) -> list[Row]:
     """Share of the team's kills the player took part in, per game.
 
     Games where the team got no kills are left out, because the share is undefined.
@@ -237,7 +238,7 @@ HAVING count(*) > 0
 )
 
 
-async def wards_per_minute(session: AsyncSession, puuids: list[str]) -> list[Row]:
+async def wards_per_minute(session: AsyncSession, puuids: Players) -> list[Row]:
     """Wards placed and destroyed per minute by the player.
 
     Leaves out Riot's UNDEFINED events and Teemo mushrooms, which don't count
@@ -304,7 +305,7 @@ ORDER BY f.zone IS NULL, games DESC
 )
 
 
-async def first_lane_kill(session: AsyncSession, puuids: list[str]) -> list[Row]:
+async def first_lane_kill(session: AsyncSession, puuids: Players) -> list[Row]:
     """The player's first kill or assist on a laner in their lane, before 15:00.
 
     One row per lane and victim role, plus lane 'none' for games with no such

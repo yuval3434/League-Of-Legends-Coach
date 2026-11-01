@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     riot_api_key: SecretStr = SecretStr("")
     riot_account_region: str = "europe"
     riot_match_region: str = "europe"
+    riot_platform_region: str = "euw1"
 
     sync_queues: list[int] = [420, 440]
     sync_match_count: int = 100
