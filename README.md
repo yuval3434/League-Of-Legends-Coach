@@ -45,6 +45,20 @@ the `benchmark` schema. [DECISIONS.md](DECISIONS.md) explains the rules.
 After updating `RIOT_API_KEY`, run `docker compose up -d api`. `restart` keeps
 the old key.
 
+## Backups
+
+```sh
+docker compose up -d db
+uv run python scripts/backup.py
+```
+
+This writes the whole database to a dated, compressed file in `backups/`, which
+git ignores. To restore one into an empty database:
+
+```sh
+docker compose exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d <database>' < backups/<file>.dump
+```
+
 ## Rate limiting
 
 The limiter uses a sliding window even though Riot counts in fixed windows,
