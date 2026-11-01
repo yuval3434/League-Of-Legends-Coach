@@ -1,10 +1,11 @@
 """Compare the tracked player's stats with a benchmark cohort.
 
-Both sides run the same stat functions on real games. Nothing here produces a
-number of its own, and a sample below the floors returns no benchmark rather
-than a substitute.
+Both sides run the same stat functions on real games. The only numbers added
+here are the gap between them and its margin, so the LLM never has to work them
+out. A sample below the floors returns no benchmark rather than a substitute.
 """
 
+import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -126,6 +127,36 @@ def _keyed(rows: list[Row], metric: Metric) -> dict[tuple[Any, ...], Row]:
     }
 
 
+def _gap(
+    value: str, my_row: Row | None, their_row: Row | None, enough: bool
+) -> dict[str, Any]:
+    """The gap between the two sides and its 95% margin, where a margin exists.
+
+    `clear_gap` is true when the gap is bigger than the noise on both sides
+    combined. It's None when there's no margin to judge by. Only averages have
+    margins: `margin_x` belongs to `avg_x`.
+    """
+    margin = value.replace("avg_", "margin_", 1) if value.startswith("avg_") else None
+    my_margin = my_row.get(margin) if my_row and margin else None
+    their_margin = their_row.get(margin) if their_row and enough and margin else None
+    gap = {
+        "my_margin": my_margin,
+        "benchmark_margin": their_margin,
+        "difference": None,
+        "difference_margin": None,
+        "clear_gap": None,
+    }
+    if my_margin is not None and their_margin is not None:
+        difference = my_row[value] - their_row[value]
+        combined = math.hypot(my_margin, their_margin)
+        gap |= {
+            "difference": round(difference, 3),
+            "difference_margin": round(combined, 3),
+            "clear_gap": abs(difference) > combined,
+        }
+    return gap
+
+
 def _compare_metric(metric: Metric, mine: list[Row], theirs: list[Row]) -> list[Row]:
     my_rows = _keyed(mine, metric)
     their_rows = _keyed(theirs, metric)
@@ -147,6 +178,7 @@ def _compare_metric(metric: Metric, mine: list[Row], theirs: list[Row]) -> list[
                     "my_low_sample": my_sample < MIN_GAMES,
                     "benchmark_value": their_row[value] if enough else None,
                     "benchmark_sample": benchmark_sample,
+                    **_gap(value, my_row, their_row, enough),
                     "status": "ok" if enough else "no_benchmark",
                 }
             )

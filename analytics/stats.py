@@ -5,6 +5,8 @@ Rules every stat follows:
   `games` counts player-games: two listed players in one match count twice.
   It can take a Scope instead, to narrow the games or use a benchmark sample.
 - Every row has `games`, and `low_sample` is true below MIN_GAMES.
+- A `margin_x` column is the 95% margin of error on `avg_x`. It's empty for
+  a single game.
 - Remakes are excluded.
 """
 
@@ -216,9 +218,11 @@ SELECT team_position AS role, minute,
            AS result,
        count(*) AS games,
        round(avg(gold_diff)) AS avg_gold_diff,
+       round((1.96 * stddev(gold_diff) / sqrt(count(*)))::numeric, 0) AS margin_gold_diff,
        round(percentile_cont(0.5) WITHIN GROUP (ORDER BY gold_diff)::numeric)
            AS median_gold_diff,
        round(avg(cs_diff), 1) AS avg_cs_diff,
+       round((1.96 * stddev(cs_diff) / sqrt(count(*)))::numeric, 1) AS margin_cs_diff,
        round(percentile_cont(0.5) WITHIN GROUP (ORDER BY cs_diff)::numeric, 1)
            AS median_cs_diff
 FROM diffs
@@ -391,6 +395,7 @@ WITH games AS (
 SELECT team_position AS role,
        count(*) AS games,
        round(avg(cs_per_min), 2) AS avg_cs_per_min,
+       round((1.96 * stddev(cs_per_min) / sqrt(count(*)))::numeric, 2) AS margin_cs_per_min,
        round(percentile_cont(0.5) WITHIN GROUP (ORDER BY cs_per_min)::numeric, 2)
            AS median_cs_per_min
 FROM games
@@ -425,8 +430,10 @@ values_at AS (
 SELECT team_position AS role, minute,
        count(*) AS games,
        round(avg(gold)) AS avg_gold,
+       round((1.96 * stddev(gold) / sqrt(count(*)))::numeric, 0) AS margin_gold,
        round(percentile_cont(0.5) WITHIN GROUP (ORDER BY gold)::numeric) AS median_gold,
        round(avg(cs), 1) AS avg_cs,
+       round((1.96 * stddev(cs) / sqrt(count(*)))::numeric, 1) AS margin_cs,
        round(percentile_cont(0.5) WITHIN GROUP (ORDER BY cs)::numeric, 1) AS median_cs
 FROM values_at
 GROUP BY team_position, minute

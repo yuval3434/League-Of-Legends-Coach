@@ -189,6 +189,7 @@ per_game AS (
 )
 SELECT count(*) AS games,
        round(avg(kill_participation), 1) AS avg_kill_participation_pct,
+       round((1.96 * stddev(kill_participation) / sqrt(count(*)))::numeric, 1) AS margin_kill_participation_pct,
        round(
            percentile_cont(0.5) WITHIN GROUP (ORDER BY kill_participation)::numeric, 1
        ) AS median_kill_participation_pct
@@ -226,9 +227,11 @@ SELECT count(*) AS games,
        sum(placed)::int AS placed,
        sum(destroyed)::int AS destroyed,
        round(avg(placed / minutes), 3) AS avg_placed_per_min,
+       round((1.96 * stddev(placed / minutes) / sqrt(count(*)))::numeric, 3) AS margin_placed_per_min,
        round(percentile_cont(0.5) WITHIN GROUP (ORDER BY placed / minutes)::numeric, 3)
            AS median_placed_per_min,
        round(avg(destroyed / minutes), 3) AS avg_destroyed_per_min,
+       round((1.96 * stddev(destroyed / minutes) / sqrt(count(*)))::numeric, 3) AS margin_destroyed_per_min,
        round(
            percentile_cont(0.5) WITHIN GROUP (ORDER BY destroyed / minutes)::numeric, 3
        ) AS median_destroyed_per_min

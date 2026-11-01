@@ -6,7 +6,7 @@ from pydantic import SecretStr
 from sqlalchemy import func, insert, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from test_analytics import add_frames, add_game, add_objective
+from test_analytics import add_event, add_frames, add_game, add_objective
 
 import benchmarks.pull as pull
 from analytics.stats import Scope, gold_cs_at_minute, overall_cs_per_minute
@@ -477,6 +477,99 @@ async def test_a_thin_row_is_no_benchmark_rather_than_a_small_average(
     assert thin["benchmark_sample"] == 5
     assert thin["status"] == "no_benchmark"
     assert thin["benchmark_value"] is None
+
+
+async def test_a_comparison_reports_the_gap_and_its_margin(
+    sessions, benchmark_sessions
+):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        for n in range(30):
+            await add_sampled_game(
+                bench, f"EUW1_{n}", f"player-{n % 10}", patch="16.21", gold=2000 + n % 2
+            )
+        for n in (1, 2):
+            await add_game(mine, f"EUW1_{n}", patch="16.21")
+            await add_frames(mine, f"EUW1_{n}", 10, {2: 1000 + n})
+
+        result = await compare(mine, bench, [ME], SILVER)
+
+    row = find(result["rows"], metric="gold_cs_at_minute", minute=10, value="avg_gold")
+    # Spread 0.707 over 2 games, and 0.509 over 30.
+    assert row["my_margin"] == 1
+    assert row["benchmark_margin"] == 0
+    assert row["difference"] == -999
+    assert row["difference_margin"] == 1
+    assert row["clear_gap"] is True
+
+
+async def test_a_gap_inside_the_margin_is_not_clear(sessions, benchmark_sessions):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        for n in range(30):
+            await add_sampled_game(
+                bench, f"EUW1_{n}", f"player-{n % 10}", patch="16.21", gold=1000 * (n % 2)
+            )
+        for n, gold in ((1, 0), (2, 1000)):
+            await add_game(mine, f"EUW1_{n}", patch="16.21")
+            await add_frames(mine, f"EUW1_{n}", 10, {2: gold})
+
+        result = await compare(mine, bench, [ME], SILVER)
+
+    row = find(result["rows"], metric="gold_cs_at_minute", minute=10, value="avg_gold")
+    assert row["difference"] == 0
+    assert row["clear_gap"] is False
+
+
+async def test_only_averages_get_a_margin(sessions, benchmark_sessions):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        for n in range(30):
+            await add_sampled_game(
+                bench, f"EUW1_{n}", f"player-{n % 10}", patch="16.21", gold=2000 + n % 2
+            )
+        for n in (1, 2):
+            await add_game(mine, f"EUW1_{n}", patch="16.21")
+            await add_frames(mine, f"EUW1_{n}", 10, {2: 1000 + n})
+
+        result = await compare(mine, bench, [ME], SILVER)
+
+    others = [r for r in result["rows"] if not r["value"].startswith("avg_")]
+    assert {"median_gold", "win_rate_pct"} <= {r["value"] for r in others}
+    for row in others:
+        assert row["my_margin"] is None, row["value"]
+        assert row["benchmark_margin"] is None, row["value"]
+        assert row["clear_gap"] is None, row["value"]
+
+
+async def test_a_single_game_has_no_margin_to_judge_by(sessions, benchmark_sessions):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        await fill_cohort(bench)
+        await add_game(mine, "EUW1_1", patch="16.21")
+        await add_frames(mine, "EUW1_1", 10, {2: 1500})
+
+        result = await compare(mine, bench, [ME], SILVER)
+
+    row = find(result["rows"], metric="gold_cs_at_minute", minute=10, value="avg_gold")
+    assert row["my_margin"] is None
+    assert row["difference"] is None
+    assert row["clear_gap"] is None
+
+
+async def test_wards_placed_have_a_margin(sessions, benchmark_sessions):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        await fill_cohort(bench)
+        for n in (1, 2):
+            await add_game(mine, f"EUW1_{n}", patch="16.21", duration_s=600)
+            await add_frames(mine, f"EUW1_{n}", 1, {})
+        await add_event(
+            mine, "EUW1_1", "WARD_PLACED", 1000, actor=2, wardType="SIGHT_WARD"
+        )
+
+        result = await compare(mine, bench, [ME], SILVER)
+
+    row = find(
+        result["rows"], metric="wards_per_minute", value="avg_placed_per_min"
+    )
+    # 0.1 and 0 wards a minute: spread 0.0707, so 1.96 * 0.0707 / sqrt(2).
+    assert row["my_margin"] == 0.098
 
 
 async def test_objective_shares_rest_on_objectives_not_games(
