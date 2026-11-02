@@ -93,8 +93,34 @@ Attempts that never produced an answer, such as timeouts, go to `errors.jsonl`,
 so they never count as the coach failing.
 
 The grader is checked before it's trusted: `calibrate` grades replies with known
-verdicts, made by planting one error into a real coach reply. The first run agreed
-on 44 of 46, and both misses were a mislabelled example, since corrected.
+verdicts, made by planting one error into a real coach reply, plus honest replies
+it once got wrong. The latest run agrees on 65 of 66. Its one miss is a grader
+that judged the same reply both ways across two passes, so calibration also
+reports verdicts that change between passes.
+
+### Results on Opus 5.5
+
+The first run found real coach failures, such as ranking CS against wards as "the
+biggest gap", and also grader mistakes. After fixing both, the same 8 questions:
+
+| Check | How | First run | After fixes |
+|---|---|---|---|
+| The number check passed | Code | 7 / 8 | 8 / 8 |
+| A tool was called | Code | 8 / 8 | 8 / 8 |
+| Says "no benchmark" or "not enough data" | Code | 1 / 2 | 2 / 2 |
+| Numbers in words | Code, then model | 6 / 8 | 8 / 8 |
+| Ranking gaps in different units | Model | 1 / 4 | 4 / 4 |
+| Win-only or loss-only rows as findings | Model | 1 / 3 | 3 / 3 |
+| A real number on the wrong stat | Model | 7 / 8 | 7 / 8 |
+| Claims the tools don't support | Model | 6 / 8 | 6 / 8 |
+| Presents both Silver findings | Model | 1 / 1 | 1 / 1 |
+| No relative stats compared against Emerald | Model | 1 / 1 | 1 / 1 |
+| **Total** | | **39 / 51** | **48 / 51** |
+
+Each run cost about $0.85. The grader's rubrics changed between the runs too, so
+not all of the gain is the coach's. Two of the three remaining failures led to
+small fixes, a prompt line and a grader input, that haven't been through a live
+run yet.
 
 **Limits:**
 - **The sample is small.** With 8 cases run once, a difference in pass rate under

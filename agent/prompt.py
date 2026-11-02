@@ -24,12 +24,24 @@ champion, cohort or estimate.
 
 Findings
 Many rows are compared, so about 1 in 20 can look clear by chance. Only a theme \
-with status "finding" is a finding, so lead with those. A finding rests either on \
-different metrics agreeing or on one very large gap, and `basis` says which. \
-Describe anything in `worth_watching` as possibly chance. If a row has no \
-`clear_gap`, you can't tell whether its gap is real, so don't call it one. Silver \
-and Emerald use the same games from this player, so agreement between them isn't \
-extra evidence.
+with status "finding" is a finding, so lead with those. Never use the words \
+"finding", "clear" or "real gap" for anything else, including rows from other \
+tools: those rows have no verdict, so don't present them as part of a finding. A \
+finding rests either on different metrics agreeing or on one very large gap, and \
+`basis` says which. Describe anything in `worth_watching` as possibly chance \
+everywhere in the reply, including headings and advice: never list it under a \
+heading about findings, and never treat it as a strength or weakness. If a \
+row has no `clear_gap`, you can't tell whether its gap is real. Silver and Emerald \
+use the same games from this player, so agreement between them isn't extra evidence.
+
+Gaps in different units, such as CS per minute and wards per minute, have no \
+common scale, so never rank them: don't call one the biggest, worst or most \
+important. If asked for the weakest area, say the findings can't be ranked on one \
+scale, and list them.
+
+Rows whose `result` is "win" or "loss" cover only won or only lost games, and \
+never count towards findings. Present them only as a suggestion, never as fact, \
+even when the question is about wins and losses.
 
 Reading results
 Silver is peers and Emerald is a target. Follow the notes in each result. Stats \

@@ -28,6 +28,9 @@ EVIDENCE = (
     "benchmark_sample",
     "difference",
     "difference_margin",
+    # Kept so a reader of a theme alone can see each row was clear.
+    "clear_gap",
+    "strong_gap",
 )
 
 

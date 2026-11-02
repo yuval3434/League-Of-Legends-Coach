@@ -19,6 +19,8 @@ class Example:
     question: str
     reply: str
     expected_pass: bool
+    # Which saved set of tool results the reply is graded against.
+    context: str = "work_on"
 
 
 def _replace(text: str, old: str, new: str) -> str:
@@ -31,10 +33,19 @@ def load_examples() -> list[Example]:
     farming, work_on = replies["farming"], replies["work_on"]
     r1, q1 = farming["text"], farming["question"]
     r2, q2 = work_on["text"], work_on["question"]
+    r3, q3 = replies["deaths"]["text"], replies["deaths"]["question"]
     emerald_q = "Do I win my jungle matchup as well as Emerald junglers do?"
+    wins_q = "How do my wins compare with my losses?"
+    weakest_q = "What is my single weakest area?"
+    bucket = json.loads(load_tool_outputs("wins")[1]["content"])["rows"][0]
+    buckets = (
+        "Win rate by gold difference with the enemy jungler at {minute} minutes: "
+        f"{bucket['bucket']}, {bucket['win_rate_pct']}% ({bucket['wins']} of "
+        f"{bucket['games']} games)."
+    )
 
-    def ex(id, criterion, reply, expected_pass, question=q2):
-        return Example(id, criterion, question, reply, expected_pass)
+    def ex(id, criterion, reply, expected_pass, question=q2, context="work_on"):
+        return Example(id, criterion, question, reply, expected_pass, context)
 
     return [
         # A real number on the wrong stat.
@@ -158,8 +169,82 @@ def load_examples() -> list[Example]:
             True,
             emerald_q,
         ),
+        # Shapes the judge got wrong in the first live run. Each is the honest
+        # version, so it must pass, beside a planted error where one fits.
+        ex(
+            "fact_from_tool_description",
+            "wrong_stat",
+            buckets.format(minute=10),
+            True,
+            wins_q,
+            "wins",
+        ),
+        ex(
+            "wrong_minute_for_buckets",
+            "wrong_stat",
+            buckets.format(minute=20),
+            False,
+            wins_q,
+            "wins",
+        ),
+        ex(
+            "boundary_from_uncalled_tool",
+            "wrong_stat",
+            "Early game (before 15:00): you average 2.23 deaths (30 games), and Silver "
+            "averages 2.22 (500 games).",
+            True,
+            q3,
+            "deaths_theme_only",
+        ),
+        ex(
+            "wrong_boundary",
+            "wrong_stat",
+            "Early game (before 10:00): you average 2.23 deaths (30 games), and Silver "
+            "averages 2.22 (500 games).",
+            False,
+            q3,
+            "deaths_theme_only",
+        ),
+        ex(
+            "vague_words",
+            "number_words",
+            r1 + "\n\nSeveral stats agree: you're a little behind at 10 minutes, but much "
+            "further behind by 20.",
+            True,
+            q1,
+        ),
+        ex("grouped_against_no_gap", "unit_comparison", r3, True, q3, "deaths"),
+        ex(
+            "findings_cant_be_ranked",
+            "unit_comparison",
+            "Your findings can't be ranked on one scale, because they're measured in "
+            "different units. Both are findings against Silver: farming (5.45 CS per "
+            "minute against 6.27) and placing wards (0.119 a minute against 0.252).",
+            True,
+            weakest_q,
+        ),
+        ex("findings_from_one_theme", "no_overclaim", r3, True, q3, "deaths"),
+        ex(
+            "split_rows_as_suggestion",
+            "split_as_finding",
+            "In wins you're 14.1 CS behind the enemy jungler at 20 minutes (11 games), "
+            "and in losses 25.7 behind (15 games). That might mean farm slips most in "
+            "losses, but it's a suggestion, not a finding.",
+            True,
+            wins_q,
+        ),
+        ex(
+            "split_rows_as_fact",
+            "split_as_finding",
+            "In wins you're 14.1 CS behind the enemy jungler at 20 minutes (11 games), "
+            "and in losses 25.7 behind (15 games). So you lose because you stop farming "
+            "when you fall behind.",
+            False,
+            wins_q,
+        ),
     ]
 
 
-def load_tool_outputs() -> list[dict]:
-    return json.loads((FIXTURES / "tool_outputs.json").read_text(encoding="utf-8"))
+def load_tool_outputs(context: str = "work_on") -> list[dict]:
+    saved = json.loads((FIXTURES / "tool_outputs.json").read_text(encoding="utf-8"))
+    return saved[context]

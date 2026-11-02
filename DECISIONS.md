@@ -281,3 +281,60 @@ numbers would be simpler, but it would let a made-up "3 deaths" through. A harml
 **Limits:** it proves a number exists in a result, not that it's attached to the
 right stat. It can't read numbers written as words, such as "twice". The eval has
 to cover both.
+
+**Tool descriptions count as a source.** The first eval run caught the coach
+quoting "25:00", the start of the late game, which is in the deaths tool's
+description but in no result. Descriptions hold fixed facts we wrote, so their
+numbers are allowed. The cost: an answer that skipped every tool can now use the
+few numbers in descriptions, such as 10, 15, 20, 25 and 60, without being caught.
+
+## The eval's grader passed calibration but was often wrong live
+
+**What happened:** the grader agreed with the calibration labels on 44 of 46
+replies (96%), above the 90% bar. In the first live run on Opus, it then gave 12
+failures, and 5 of those were the grader's or the eval's own mistakes: about 4 in
+10, against the 1 in 10 an eval can tolerate.
+
+**Why:** the calibration examples were too clear-cut. Each planted one obvious
+error into a reply graded against the full comparison. Live replies were harder
+in ways the examples never tested:
+- The coach asked for one theme only, so the economy finding's rows weren't in
+  the results, and the grader called a real finding unsupported.
+- A number's meaning came from a tool's description ("at minute 10"), which the
+  grader never saw.
+- Vague words such as "several" or "much further" were read as numbers in words.
+- Grouping two findings against an area with no gap was read as ranking them.
+- The Dr. Mundo phrase check was code, and missed "no Silver benchmark exists".
+
+**Decision:** the grader now sees each tool's description, finding summaries
+include `clear_gap`, and the rubrics cover these cases. The calibration set adds
+the honest version of each case the grader got wrong, graded against the same
+kind of tool results the live run had, so a regression shows up there first.
+
+**Result:** the second calibration agreed on 62 of 62. In the second live run, 1
+of the 3 failures was still the grader's: the coach quoted phase boundaries from
+a tool it hadn't called, and the grader only sees the descriptions of tools that
+were called. Three failures is too few to measure a rate.
+
+The grader now sees every tool's description, and the calibration has a reply
+quoting a boundary from an uncalled tool. The third calibration agreed on 65 of 66.
+The miss was a reply the grader judged both ways across two passes: "farm and
+vision are where you'll gain the most". On that wording the grader is unstable,
+so a failure there needs reading by hand.
+
+**Lesson:** a high calibration score on easy examples says little. Calibration has
+to include the hard, honest answers a grader is likely to fail, not just obvious
+planted errors. Reading every live failure by hand is what found this.
+
+## The coach never ranks findings in different units
+
+**Decision:** the prompt says gaps in different units can't be ranked, so asked for
+a weakest area, the coach says so and lists the findings. Win-only and loss-only
+rows are always a suggestion, never a fact, and only a theme the tool marks as a
+finding may be called one.
+
+**Why:** the first eval run caught all three. Three replies ranked CS against
+wards ("the biggest issue", "your weakest area is economy"), one stated a win-only
+pattern as fact, and one put a row from another tool under a finding's heading.
+CS per minute and wards per minute have no common scale, so any ranking is the
+model's opinion presented as data.

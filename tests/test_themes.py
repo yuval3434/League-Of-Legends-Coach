@@ -78,6 +78,11 @@ def test_a_strong_gap_leaves_a_weak_one_the_other_way_worth_watching():
     assert [r["value"] for r in result["worth_watching"]] == ["avg_destroyed_per_min"]
 
 
+def test_a_finding_shows_its_rows_were_clear():
+    result = theme([row("avg_gold"), row("avg_cs")])
+    assert all(r["clear_gap"] is True for r in result["findings"][0]["rows"])
+
+
 def test_win_and_loss_rows_dont_count():
     rows = [row("avg_gold_diff", result="win"), row("avg_cs_diff", result="loss")]
     assert theme(rows)["status"] == "no_margin"

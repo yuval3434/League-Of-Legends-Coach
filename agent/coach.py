@@ -18,7 +18,8 @@ WARNING = (
 RETRY = (
     "An automatic check found these numbers in your reply, but in no tool result: "
     "{numbers}. Every number must be copied exactly from a tool result. Call a tool "
-    "if you need the data, or rewrite the reply without those numbers."
+    "if you need the data, or rewrite the reply without those numbers. Write it for "
+    "the player: don't mention this check or what you changed."
 )
 STOPPED = {
     "refused": "The coach couldn't answer this question.",
@@ -104,7 +105,9 @@ async def ask_coach(
             messages.append(_results_message(reply.tool_calls, results))
             continue
 
+        # Tool descriptions count too: they hold fixed facts, such as phase boundaries.
         outputs = [log.content for log in answer.tool_log if not log.is_error]
+        outputs += [tool["description"] for tool in tools]
         unsupported = check_numbers(reply.text, outputs)
         if not unsupported:
             answer.text, answer.status = reply.text, "verified"

@@ -16,7 +16,7 @@ class Case:
     id: str
     question: str
     judged: tuple[str, ...] = ()
-    # The reply must contain one of these, compared in lower case.
+    # The reply must match one of these patterns, in lower case.
     says: tuple[str, ...] = ()
 
     @property
@@ -43,13 +43,13 @@ CASES = (
         "mundo",
         "How do I play Dr. Mundo compared with Silver junglers?",
         ("no_overclaim",),
-        says=("no benchmark", "isn't a benchmark", "not a benchmark", "doesn't have a benchmark"),
+        says=(r"\bno (\w+ ){0,2}benchmark", r"\bnot (\w+ )?a benchmark", r"doesn't have a benchmark"),
     ),
     Case(
         "viego",
         "How is my Viego compared with Silver?",
         ("no_overclaim",),
-        says=("not enough data",),
+        says=(r"not enough data",),
     ),
     Case(
         "deaths",

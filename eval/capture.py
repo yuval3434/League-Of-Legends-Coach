@@ -1,8 +1,8 @@
 """Save the tool results the calibration set is graded against. Free: no model calls.
 
-Run with `uv run python -m eval.capture` while the `db` container is up. These are
-the results behind the second real coach question, "What should I work on to win
-more games?", which called the same three tools.
+Run with `uv run python -m eval.capture` while the `db` container is up. Each set
+is what the coach called for one real question, so the judge sees the same kind
+of results it sees in a live run: whole comparisons, one theme, or player stats.
 """
 
 import asyncio
@@ -17,11 +17,30 @@ from benchmarks.pull import tracked_puuids
 from ingestion.config import Settings
 
 FIXTURES = Path(__file__).parent / "fixtures"
-CALLS = [
-    ("data_coverage", {}),
-    ("compare_to_benchmark", {"cohort": "silver", "champion": None, "theme": None}),
-    ("compare_to_benchmark", {"cohort": "emerald", "champion": None, "theme": None}),
-]
+CONTEXTS = {
+    # "What should I work on to win more games?"
+    "work_on": [
+        ("data_coverage", {}),
+        ("compare_to_benchmark", {"cohort": "silver", "champion": None, "theme": None}),
+        ("compare_to_benchmark", {"cohort": "emerald", "champion": None, "theme": None}),
+    ],
+    # "Do I die too much compared with Silver?": one theme, so other rows are absent.
+    "deaths": [
+        ("compare_to_benchmark", {"cohort": "silver", "champion": None, "theme": "deaths"}),
+        ("deaths_by_phase", {"champion": None}),
+    ],
+    # "How do my wins compare with my losses?"
+    # The same question when the coach called the comparison alone, as in the
+    # second live run: the phase boundaries are only in an uncalled tool.
+    "deaths_theme_only": [
+        ("compare_to_benchmark", {"cohort": "silver", "champion": None, "theme": "deaths"}),
+    ],
+    "wins": [
+        ("lane_diff", {"champion": None}),
+        ("win_rate_by_gold_diff", {"champion": None}),
+        ("win_rates", {"champion": None}),
+    ],
+}
 
 
 async def main() -> None:
@@ -31,13 +50,16 @@ async def main() -> None:
     async with sessions() as session:
         puuids = tuple(sorted(await tracked_puuids(session)))
     context = ToolContext(sessions, benchmark, puuids)
-    outputs = []
-    for name, arguments in CALLS:
-        result = await run_tool(context, name, arguments)
-        outputs.append({"name": name, "arguments": arguments, "content": result.content})
+    saved = {}
+    for name, calls in CONTEXTS.items():
+        saved[name] = []
+        for tool, arguments in calls:
+            result = await run_tool(context, tool, arguments)
+            saved[name].append({"name": tool, "arguments": arguments, "content": result.content})
     path = FIXTURES / "tool_outputs.json"
-    path.write_text(json.dumps(outputs, indent=1) + "\n", encoding="utf-8")
-    print(f"{path}: {sum(len(o['content']) for o in outputs):,} characters")
+    path.write_text(json.dumps(saved, indent=1) + "\n", encoding="utf-8")
+    for name, outputs in saved.items():
+        print(f"{name}: {sum(len(o['content']) for o in outputs):,} characters")
 
 
 if __name__ == "__main__":

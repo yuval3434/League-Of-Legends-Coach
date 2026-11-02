@@ -62,6 +62,18 @@ async def test_a_made_up_number_gets_one_retry_that_names_it():
     assert "9999" in retry["content"]
 
 
+async def test_the_retry_asks_for_a_reply_that_doesnt_mention_the_check():
+    model, _ = await ask(calls(ASK), says("You average 9999 gold."), says("Fine."))
+    assert "don't mention this check" in model.sent[-1][-1]["content"]
+
+
+async def test_a_number_from_a_tool_description_is_supported():
+    # The deaths tool's description gives the phase boundaries.
+    _, answer = await ask(calls(ASK), says("Mid game runs from 15:00 to 25:00."))
+    assert answer.status == "verified"
+    assert answer.caught_numbers == []
+
+
 async def test_the_retry_can_call_a_tool():
     _, answer = await ask(
         says("You average 3584 gold."),

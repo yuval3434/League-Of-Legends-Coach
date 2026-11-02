@@ -39,9 +39,9 @@ def used_tools(answer: CoachAnswer) -> Check:
 
 
 def says(answer: CoachAnswer, phrases: tuple[str, ...]) -> Check:
-    """The reply contains one of the phrases, ignoring case and curly quotes."""
+    """The reply matches one of the patterns, ignoring case and curly quotes."""
     text = _normal(answer.text)
-    found = [phrase for phrase in phrases if phrase in text]
+    found = [phrase for phrase in phrases if re.search(phrase, text)]
     return Check(bool(found), f"found {found}" if found else f"none of {list(phrases)}")
 
 

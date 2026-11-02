@@ -76,6 +76,32 @@ def test_a_phrase_matches_whatever_the_case_and_quotes():
     assert not says_check(answer("Nothing to say."), ("not enough data",)).passed
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "No Silver benchmark exists for him yet.",
+        "There's no benchmark for Dr. Mundo.",
+        "Dr. Mundo isn't a benchmark champion... there is not yet a benchmark.",
+        "Mundo doesn't have a benchmark.",
+    ],
+)
+def test_the_mundo_check_accepts_honest_wordings(text):
+    mundo = next(case for case in CASES if case.id == "mundo")
+    assert says_check(answer(text), mundo.says).passed
+
+
+def test_the_mundo_check_rejects_a_benchmark_number():
+    mundo = next(case for case in CASES if case.id == "mundo")
+    assert not says_check(answer("Silver Mundo players average 6.1 CS."), mundo.says).passed
+
+
+def test_the_judge_sees_each_tools_description():
+    from eval.judge import format_tool_outputs
+
+    text = format_tool_outputs([{"name": "win_rate_by_gold_diff", "arguments": {}, "content": "{}"}])
+    assert "at minute 10" in text
+
+
 def test_every_case_uses_known_checks():
     for case in CASES:
         assert set(case.judge_checks) <= set(CRITERIA), case.id
@@ -84,9 +110,9 @@ def test_every_case_uses_known_checks():
 def test_the_cases_cover_what_was_asked_for():
     judged = {check for case in CASES for check in case.judge_checks}
     assert {"wrong_stat", "number_words", "unit_comparison", "split_as_finding"} <= judged
-    says = {case.id: case.says for case in CASES}
-    assert "no benchmark" in says["mundo"]
-    assert "not enough data" in says["viego"]
+    for case_id, text in (("mundo", "no benchmark"), ("viego", "not enough data")):
+        case = next(c for c in CASES if c.id == case_id)
+        assert says_check(answer(text), case.says).passed
 
 
 # Calibration set
@@ -116,10 +142,19 @@ async def test_a_judge_verdict_is_read_from_structured_output():
     body = json.loads(requests[0].content)
     assert body["model"] == "claude-haiku-5-5"
     assert body["output_config"]["format"]["type"] == "json_schema"
-    # The tool results come before the reply, so calls on one answer share a cache.
-    first, second = body["messages"][0]["content"]
-    assert first["text"].startswith("<tool_results>")
-    assert "<reply>\nReply\n</reply>" in second["text"]
+    # Descriptions and results come before the reply, so calls share a cache.
+    descriptions, results, rest = body["messages"][0]["content"]
+    assert descriptions["text"].startswith("<tool_descriptions>")
+    assert results["text"].startswith("<tool_results>")
+    assert "<reply>\nReply\n</reply>" in rest["text"]
+
+
+def test_the_judge_sees_tools_that_werent_called():
+    from eval.judge import ALL_DESCRIPTIONS
+
+    # The deaths tool defines the phase boundaries.
+    assert "deaths_by_phase" in ALL_DESCRIPTIONS
+    assert "15:00 to 25:00" in ALL_DESCRIPTIONS
 
 
 @pytest.mark.parametrize(

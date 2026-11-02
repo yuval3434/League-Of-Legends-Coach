@@ -197,11 +197,19 @@ def _count(items: Any) -> dict[str, int]:
 
 
 async def calibrate(client: AsyncAnthropic, judge_model: str, reps: int, out: Path) -> dict[str, Any]:
-    outputs = format_tool_outputs(load_tool_outputs())
+    examples = load_examples()
+    outputs = {e.context: format_tool_outputs(load_tool_outputs(e.context)) for e in examples}
     rows = []
     for rep in range(reps):
-        for example in load_examples():
-            verdict = await grade(client, example.criterion, example.question, example.reply, outputs, judge_model)
+        for example in examples:
+            verdict = await grade(
+                client,
+                example.criterion,
+                example.question,
+                example.reply,
+                outputs[example.context],
+                judge_model,
+            )
             rows.append(
                 {
                     "id": example.id,
