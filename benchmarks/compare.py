@@ -22,11 +22,16 @@ from analytics.stats import (
     gold_cs_at_minute,
     lane_diff,
     overall_cs_per_minute,
+    player_coverage,
     win_rates,
 )
 from benchmarks.cohorts import COHORTS, MIN_BENCHMARK_GAMES, MIN_BENCHMARK_PLAYERS
+from benchmarks.themes import summarize_themes
 
 ROLE = "JUNGLE"
+
+# A lone gap this many times its margin is too big to put down to chance.
+STRONG_GAP_MULTIPLE = 2
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,8 @@ class Metric:
     # The count a value really rests on, when that isn't games. A share of Elder
     # dragons over 30 games may rest on 3 dragons.
     sample: str = "games"
+    theme: str | None = None
+    higher_is_better: bool = True
 
 
 ABSOLUTE_METRICS = (
@@ -47,24 +54,29 @@ ABSOLUTE_METRICS = (
         gold_cs_at_minute,
         ("minute",),
         ("avg_gold", "median_gold", "avg_cs", "median_cs"),
+        theme="economy",
     ),
     Metric(
         "cs_per_minute",
         overall_cs_per_minute,
         (),
         ("avg_cs_per_min", "median_cs_per_min"),
+        theme="economy",
     ),
     Metric(
         "deaths_by_phase",
         deaths_by_phase,
         ("phase",),
         ("avg_deaths", "median_deaths", "deaths_per_10_min"),
+        theme="deaths",
+        higher_is_better=False,
     ),
     Metric(
         "kill_participation",
         kill_participation,
         (),
         ("avg_kill_participation_pct", "median_kill_participation_pct"),
+        theme="fights",
     ),
     Metric(
         "wards_per_minute",
@@ -76,6 +88,7 @@ ABSOLUTE_METRICS = (
             "avg_destroyed_per_min",
             "median_destroyed_per_min",
         ),
+        theme="vision",
     ),
 )
 
@@ -86,6 +99,7 @@ RELATIVE_METRICS = (
         lane_diff,
         ("minute", "result"),
         ("avg_gold_diff", "median_gold_diff", "avg_cs_diff", "median_cs_diff"),
+        theme="economy",
     ),
     Metric("win_rate", win_rates, (), ("win_rate_pct",), {"dimension": "role"}),
     Metric(
@@ -94,6 +108,7 @@ RELATIVE_METRICS = (
         ("objective",),
         ("team_share_pct",),
         sample="objectives",
+        theme="objectives",
     ),
 )
 
@@ -115,6 +130,21 @@ WHERE s.cohort = :cohort
 """
 
 
+BENCHMARK_COVERAGE = """
+SELECT cohort, NULL AS champion,
+       count(*) FILTER (WHERE in_overall) AS games,
+       count(DISTINCT puuid) FILTER (WHERE in_overall) AS players
+FROM sample
+GROUP BY cohort
+UNION ALL
+SELECT cohort, champion_name, count(*), count(DISTINCT puuid)
+FROM sample
+WHERE champion_name = ANY(:champions)
+GROUP BY cohort, champion_name
+ORDER BY cohort, champion NULLS FIRST
+"""
+
+
 def _patch_order(patch: str) -> list[int]:
     return [int(part) for part in patch.split(".")]
 
@@ -132,27 +162,36 @@ def _gap(
 ) -> dict[str, Any]:
     """The gap between the two sides and its 95% margin, where a margin exists.
 
-    `clear_gap` is true when the gap is bigger than the noise on both sides
-    combined. It's None when there's no margin to judge by. Only averages have
-    margins: `margin_x` belongs to `avg_x`.
+    `difference` is there whenever both sides have a value, so the LLM never has
+    to subtract. `clear_gap` is true when the gap is bigger than the noise on both
+    sides combined, and `strong_gap` when it's STRONG_GAP_MULTIPLE times that.
+    Both are None when there's no margin to judge by. The margin for `avg_x` or
+    `x` is `margin_x`, so a stat with no such column has none.
     """
-    margin = value.replace("avg_", "margin_", 1) if value.startswith("avg_") else None
-    my_margin = my_row.get(margin) if my_row and margin else None
-    their_margin = their_row.get(margin) if their_row and enough and margin else None
+    margin = "margin_" + value.removeprefix("avg_")
+    mine = my_row.get(value) if my_row else None
+    theirs = their_row.get(value) if their_row and enough else None
+    my_margin = my_row.get(margin) if my_row else None
+    their_margin = their_row.get(margin) if their_row and enough else None
     gap = {
         "my_margin": my_margin,
         "benchmark_margin": their_margin,
         "difference": None,
         "difference_margin": None,
         "clear_gap": None,
+        "strong_gap": None,
     }
+    if mine is None or theirs is None:
+        return gap
+    difference = mine - theirs
+    gap["difference"] = round(difference, 3)
     if my_margin is not None and their_margin is not None:
-        difference = my_row[value] - their_row[value]
         combined = math.hypot(my_margin, their_margin)
+        clear = abs(difference) > combined
         gap |= {
-            "difference": round(difference, 3),
             "difference_margin": round(combined, 3),
-            "clear_gap": abs(difference) > combined,
+            "clear_gap": clear,
+            "strong_gap": clear and abs(difference) >= STRONG_GAP_MULTIPLE * combined,
         }
     return gap
 
@@ -170,6 +209,8 @@ def _compare_metric(metric: Metric, mine: list[Row], theirs: list[Row]) -> list[
             rows.append(
                 {
                     "metric": metric.name,
+                    "theme": metric.theme,
+                    "higher_is_better": metric.higher_is_better,
                     **dict(zip(metric.keys, key)),
                     "value": value,
                     "sample_unit": metric.sample,
@@ -183,6 +224,31 @@ def _compare_metric(metric: Metric, mine: list[Row], theirs: list[Row]) -> list[
                 }
             )
     return rows
+
+
+async def coverage(
+    my_session: AsyncSession, benchmark_session: AsyncSession, puuids: list[str]
+) -> dict[str, Any]:
+    """What the player has played, and which of it has a benchmark."""
+    player = await player_coverage(my_session, puuids)
+    player["patches"] = sorted(player["patches"] or [], key=_patch_order)
+    champions = [
+        {"champion": row["value"], "games": row["games"]}
+        for row in await win_rates(my_session, puuids)
+        if row["dimension"] == "champion"
+    ]
+    rows = await benchmark_session.execute(
+        text(BENCHMARK_COVERAGE), {"champions": [c["champion"] for c in champions]}
+    )
+    benchmarks = [
+        {
+            **row,
+            "has_benchmark": row["games"] >= MIN_BENCHMARK_GAMES
+            and row["players"] >= MIN_BENCHMARK_PLAYERS,
+        }
+        for row in rows.mappings()
+    ]
+    return {"player": player, "champions": champions, "benchmarks": benchmarks}
 
 
 async def compare(
@@ -214,6 +280,7 @@ async def compare(
         "benchmark_players": size.players,
         "benchmark_patches": patches,
         "rows": [],
+        "themes": [],
         "notes": [],
     }
     if size.games < MIN_BENCHMARK_GAMES or size.players < MIN_BENCHMARK_PLAYERS:
@@ -255,4 +322,5 @@ async def compare(
             await metric.stat(my_session, my_scope),
             await metric.stat(benchmark_session, benchmark_scope),
         )
+    result["themes"] = summarize_themes(result["rows"])
     return result

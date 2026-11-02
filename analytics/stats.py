@@ -5,8 +5,8 @@ Rules every stat follows:
   `games` counts player-games: two listed players in one match count twice.
   It can take a Scope instead, to narrow the games or use a benchmark sample.
 - Every row has `games`, and `low_sample` is true below MIN_GAMES.
-- A `margin_x` column is the 95% margin of error on `avg_x`. It's empty for
-  a single game.
+- A `margin_x` column is the 95% margin of error on `avg_x` or `x`. It's empty
+  for a single game.
 - Remakes are excluded.
 """
 
@@ -97,6 +97,24 @@ async def fetch(session: AsyncSession, query: str, **params: Any) -> list[Row]:
     return rows
 
 
+PLAYER_COVERAGE = """
+SELECT count(*) AS games,
+       count(*) FILTER (WHERE p.team_position = 'JUNGLE') AS jungle_games,
+       min(m.game_start_at)::date AS first_game,
+       max(m.game_start_at)::date AS last_game,
+       array_agg(DISTINCT m.patch) AS patches
+FROM match_participants p
+JOIN matches m ON m.match_id = p.match_id
+WHERE p.puuid = ANY(:puuids) AND NOT m.is_remake
+"""
+
+
+async def player_coverage(session: AsyncSession, puuids: Players) -> Row:
+    """How many games there are, over what dates and patches."""
+    rows = await fetch(session, PLAYER_COVERAGE, puuids=puuids)
+    return rows[0]
+
+
 WIN_RATES = """
 WITH games AS (
     SELECT p.champion_name, p.team_position, p.win
@@ -107,14 +125,17 @@ WITH games AS (
 SELECT 'champion' AS dimension, champion_name AS value,
        count(*) AS games,
        count(*) FILTER (WHERE win) AS wins,
-       round(100.0 * count(*) FILTER (WHERE win) / count(*), 1) AS win_rate_pct
+       round(100.0 * count(*) FILTER (WHERE win) / count(*), 1) AS win_rate_pct,
+       round((196 * stddev(win::int) / sqrt(count(*)))::numeric, 1)
+           AS margin_win_rate_pct
 FROM games
 GROUP BY champion_name
 UNION ALL
 SELECT 'role', team_position,
        count(*),
        count(*) FILTER (WHERE win),
-       round(100.0 * count(*) FILTER (WHERE win) / count(*), 1)
+       round(100.0 * count(*) FILTER (WHERE win) / count(*), 1),
+       round((196 * stddev(win::int) / sqrt(count(*)))::numeric, 1)
 FROM games
 WHERE team_position <> ''
 GROUP BY team_position
@@ -160,6 +181,7 @@ SELECT phase,
        count(*) AS games,
        sum(deaths)::int AS deaths,
        round(avg(deaths), 2) AS avg_deaths,
+       round((1.96 * stddev(deaths) / sqrt(count(*)))::numeric, 2) AS margin_deaths,
        round(percentile_cont(0.5) WITHIN GROUP (ORDER BY deaths)::numeric, 2)
            AS median_deaths,
        round(10 * sum(deaths) / nullif(sum(minutes), 0), 2) AS deaths_per_10_min

@@ -93,7 +93,7 @@ becoming the benchmark.
 
 **Reading a gap:** `compare` reports each average's margin, the gap, and
 `clear_gap`, which is true when the gap is bigger than both margins combined.
-Medians, deaths, win rate and objective share have no margin, so `clear_gap` is
+Medians, deaths per 10 minutes and objective share have no margin, so `clear_gap` is
 empty for them. There are dozens of rows, so about 1 in 20 can show a clear gap
 by chance. Rows split by win or loss rest on 11 to 16 of the player's games.
 
@@ -231,3 +231,53 @@ would hand them to the enemy.
 
 **Checked against:** the remaining events match Riot's `teams[].objectives`
 exactly for dragons, barons, heralds and grubs, in every match.
+
+## A clear gap isn't a finding on its own
+
+**Decision:** `compare` groups rows into five themes: economy, vision, deaths,
+fights and objectives. A theme gives a finding when two different metrics are
+clear in the same direction, or when one gap is at least 2 times its combined
+margin. The coach's prompt treats only these as findings. Any other clear row is
+`worth_watching`, and the coach has to say it may be chance. The rule is in
+`benchmarks/themes.py`, and the 2 is `STRONG_GAP_MULTIPLE` in `compare.py`.
+
+**Why:** Silver's all-champion comparison has 32 rows with a margin. At a 95%
+margin, about 1 in 20 can look clear by chance, so one row proves little. The
+rule is in code because a rule that's only in a prompt can't be tested.
+
+**Why 2 times:** a clear gap sits about 2 standard errors from zero, and twice the
+margin sits about 4. Chance gives that about 1 time in 10,000, so a lone gap that
+size stands by itself. Wards placed against Silver, -0.133 ±0.033, is the case
+that prompted it. It's a round number, not a fitted one.
+
+**What counts as a second metric:** the same metric at another minute doesn't,
+because gold at 20 includes gold at 10. Deaths in different phases do, because
+those windows don't overlap. Gold and CS share the economy theme because they move
+together, but they still count as different metrics, so economy reaches a finding
+more easily than the others. Silver and Emerald compare against the same games
+from the player, so agreement between them isn't counted at all.
+
+**Left out:** rows split by win or loss, and rows on fewer than 10 of the player's
+games.
+
+**Limits:** objective share has no margin, so that theme can't give a finding.
+Win rate's margin uses the normal approximation, which is rough near 0% and 100%
+and on small samples. Win rate is in no theme, because it's a result, not a cause.
+
+## The coach's numbers are checked in code
+
+**Decision:** after each reply, `agent/numbers.py` looks for every number in that
+conversation's tool results. A miss gets one retry that names the numbers. If the
+next reply also fails, it's shown with a warning and the status `unverified`.
+
+**Why:** "the LLM never computes a number" can't rest on a prompt. Opus 5.5 also
+rejects forced `tool_choice`, so the API can't require a tool call. A reply that
+skipped the tools has no results behind it, so this check catches that too.
+
+**Exemptions:** only list numbering and the phrase "1 in 20". Allowing small
+numbers would be simpler, but it would let a made-up "3 deaths" through. A harmless
+"top 3" costs one retry instead.
+
+**Limits:** it proves a number exists in a result, not that it's attached to the
+right stat. It can't read numbers written as words, such as "twice". The eval has
+to cover both.

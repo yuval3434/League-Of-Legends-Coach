@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     sync_queues: list[int] = [420, 440]
     sync_match_count: int = 100
 
+    anthropic_api_key: SecretStr = SecretStr("")
+    coach_model: str = "claude-opus-5-5"
+    coach_effort: str = "medium"
+
     postgres_user: str = "lolcoach"
     postgres_password: SecretStr = SecretStr("")
     postgres_db: str = "lolcoach"

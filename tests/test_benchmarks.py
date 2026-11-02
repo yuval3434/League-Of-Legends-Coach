@@ -21,6 +21,7 @@ from main import create_app
 
 ME = "me"
 SILVER = "silver"
+EMERALD = "emerald"
 TARGETS = {"Viego"}
 
 
@@ -331,7 +332,9 @@ async def test_target_champions_need_five_jungle_games(sessions):
 # Scopes
 
 
-async def add_sampled_game(session, match_id, puuid, champion="Viego", gold=1000, **kw):
+async def add_sampled_game(
+    session, match_id, puuid, champion="Viego", gold=1000, cohort=SILVER, **kw
+):
     """Add a game and put the jungler (participant 2) in the sample."""
     await add_game(session, match_id, puuid=puuid, champion=champion, **kw)
     await add_frames(session, match_id, 10, {2: gold, 7: 0})
@@ -339,7 +342,7 @@ async def add_sampled_game(session, match_id, puuid, champion="Viego", gold=1000
         insert(Sample),
         [
             {
-                "cohort": SILVER,
+                "cohort": cohort,
                 "match_id": match_id,
                 "participant_id": 2,
                 "puuid": puuid,
@@ -519,7 +522,9 @@ async def test_a_gap_inside_the_margin_is_not_clear(sessions, benchmark_sessions
     assert row["clear_gap"] is False
 
 
-async def test_only_averages_get_a_margin(sessions, benchmark_sessions):
+async def test_a_stat_with_no_margin_keeps_its_gap_but_gets_no_verdict(
+    sessions, benchmark_sessions
+):
     async with benchmark_sessions() as bench, sessions() as mine:
         for n in range(30):
             await add_sampled_game(
@@ -531,12 +536,15 @@ async def test_only_averages_get_a_margin(sessions, benchmark_sessions):
 
         result = await compare(mine, bench, [ME], SILVER)
 
-    others = [r for r in result["rows"] if not r["value"].startswith("avg_")]
-    assert {"median_gold", "win_rate_pct"} <= {r["value"] for r in others}
-    for row in others:
+    medians = [r for r in result["rows"] if r["value"].startswith("median_")]
+    assert medians
+    for row in medians:
         assert row["my_margin"] is None, row["value"]
         assert row["benchmark_margin"] is None, row["value"]
         assert row["clear_gap"] is None, row["value"]
+        assert row["strong_gap"] is None, row["value"]
+    row = find(result["rows"], metric="gold_cs_at_minute", minute=10, value="median_gold")
+    assert row["difference"] == -999
 
 
 async def test_a_single_game_has_no_margin_to_judge_by(sessions, benchmark_sessions):
@@ -549,8 +557,98 @@ async def test_a_single_game_has_no_margin_to_judge_by(sessions, benchmark_sessi
 
     row = find(result["rows"], metric="gold_cs_at_minute", minute=10, value="avg_gold")
     assert row["my_margin"] is None
-    assert row["difference"] is None
+    assert row["difference"] == 500
     assert row["clear_gap"] is None
+
+
+async def test_a_gap_twice_its_margin_is_strong(sessions, benchmark_sessions):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        for n in range(30):
+            await add_sampled_game(
+                bench, f"EUW1_{n}", f"player-{n % 10}", patch="16.21", gold=2000 + n % 2
+            )
+        for n in (1, 2):
+            await add_game(mine, f"EUW1_{n}", patch="16.21")
+            await add_frames(mine, f"EUW1_{n}", 10, {2: 1000 + n})
+
+        result = await compare(mine, bench, [ME], SILVER)
+
+    row = find(result["rows"], metric="gold_cs_at_minute", minute=10, value="avg_gold")
+    assert row["strong_gap"] is True
+
+
+async def test_a_clear_gap_under_twice_its_margin_is_not_strong(
+    sessions, benchmark_sessions
+):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        for n in range(30):
+            await add_sampled_game(
+                bench, f"EUW1_{n}", f"player-{n % 10}", patch="16.21", gold=1000
+            )
+        for n, gold in ((1, 850), (2, 900), (3, 950)):
+            await add_game(mine, f"EUW1_{n}", patch="16.21")
+            await add_frames(mine, f"EUW1_{n}", 10, {2: gold})
+
+        result = await compare(mine, bench, [ME], SILVER)
+
+    row = find(result["rows"], metric="gold_cs_at_minute", minute=10, value="avg_gold")
+    # 900 against 1000: spread 50, so a margin of 57. Clear, but under 114.
+    assert row["difference"] == -100
+    assert row["clear_gap"] is True
+    assert row["strong_gap"] is False
+
+
+async def test_deaths_and_win_rate_have_margins(sessions, benchmark_sessions):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        await fill_cohort(bench)
+        await add_game(mine, "EUW1_1", patch="16.21", win=True)
+        await add_game(mine, "EUW1_2", patch="16.21", win=False)
+        await add_frames(mine, "EUW1_1", 1, {})
+        await add_frames(mine, "EUW1_2", 1, {})
+        await add_event(mine, "EUW1_1", "CHAMPION_KILL", 60_000, victim=2)
+
+        result = await compare(mine, bench, [ME], SILVER)
+
+    deaths = find(result["rows"], phase="early", value="avg_deaths")
+    # 1 and 0 deaths: spread 0.707, so 1.96 * 0.707 / sqrt(2).
+    assert deaths["my_margin"] == 0.98
+    win_rate = find(result["rows"], metric="win_rate", value="win_rate_pct")
+    # One win in two: 1.96 * 70.7 / sqrt(2).
+    assert win_rate["my_margin"] == 98.0
+
+
+async def test_a_comparison_summarizes_its_themes(sessions, benchmark_sessions):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        await fill_cohort(bench)
+        await add_game(mine, "EUW1_1", patch="16.21")
+        await add_frames(mine, "EUW1_1", 10, {2: 1500})
+
+        result = await compare(mine, bench, [ME], SILVER)
+
+    assert [t["theme"] for t in result["themes"]] == [
+        "economy",
+        "vision",
+        "deaths",
+        "fights",
+        "objectives",
+    ]
+
+
+async def test_a_cohort_without_relative_stats_marks_objectives_not_comparable(
+    sessions, benchmark_sessions
+):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        await fill_cohort(bench)
+        for n in range(30):
+            await add_sampled_game(
+                bench, f"EUW1_E{n}", f"player-{n % 10}", cohort=EMERALD, patch="16.21"
+            )
+        await add_game(mine, "EUW1_1", patch="16.21")
+
+        result = await compare(mine, bench, [ME], EMERALD)
+
+    themes = {t["theme"]: t["status"] for t in result["themes"]}
+    assert themes["objectives"] == "not_comparable"
 
 
 async def test_wards_placed_have_a_margin(sessions, benchmark_sessions):

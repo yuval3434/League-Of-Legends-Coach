@@ -45,6 +45,21 @@ the `benchmark` schema. [DECISIONS.md](DECISIONS.md) explains the rules.
 After updating `RIOT_API_KEY`, run `docker compose up -d api`. `restart` keeps
 the old key.
 
+## Coach
+
+The coach is an LLM agent with one tool per stat. Every number it states must
+appear in a tool result, and code checks that after each reply: a reply with an
+unsupported number gets one retry, then is shown with a warning. To see the check
+catch a made-up number, with a scripted model and no paid calls:
+
+```sh
+docker compose up -d db
+uv run python scripts/demo_number_check.py
+```
+
+`COACH_MODEL` in `.env` picks the model. `DECISIONS.md` explains what counts as a
+finding and what the number check can't catch.
+
 ## Backups
 
 ```sh
