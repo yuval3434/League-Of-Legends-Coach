@@ -1,6 +1,6 @@
 import { Champions } from "./pages/Champions";
+import { Coach } from "./pages/Coach";
 import { Compare } from "./pages/Compare";
-import { CoachPreview } from "./pages/CoachPreview";
 import { Overview } from "./pages/Overview";
 import { useRoute } from "./router";
 
@@ -12,7 +12,7 @@ export default function App() {
     case "compare":
       return <Compare />;
     case "coach":
-      return <CoachPreview question={route.params.get("q") ?? ""} />;
+      return <Coach question={route.params.get("q") ?? ""} />;
     default:
       return <Overview />;
   }

@@ -34,7 +34,7 @@ from benchmarks.pull import tracked_puuids
 from eval.calibration import load_examples, load_tool_outputs
 from eval.cases import CASES, Case
 from eval.checks import number_words, run_code_check
-from eval.costs import PRICES, cost
+from agent.pricing import PRICES, cost
 from eval.judge import JUDGE_MODEL, format_tool_outputs, grade
 from ingestion.config import Settings
 

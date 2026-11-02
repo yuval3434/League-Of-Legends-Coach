@@ -84,10 +84,10 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string): Promise<T> {
+async function get<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`/api${path}`);
+    response = await fetch(`/api${path}`, init);
   } catch {
     throw new ApiError(0, "Can't reach the API. Start it with: docker compose up -d");
   }
@@ -120,7 +120,39 @@ export type ChampionRow = {
   low_sample?: boolean;
 };
 
+/** What one coach call rested on, worked out by the server from the tool results. */
+export type CoachTool = {
+  name: string;
+  arguments: Record<string, unknown>;
+  error?: boolean;
+  status?: string;
+  your_games?: { min: number; max: number } | null;
+  benchmark_games?: number;
+  benchmark_players?: number;
+  low_sample_rows?: number;
+};
+
+export type CoachStatus = "verified" | "unverified" | "refused" | "truncated" | "gave_up";
+
+export type CoachAnswer = {
+  text: string;
+  status: CoachStatus;
+  caught_numbers: string[];
+  models: string[];
+  tools: CoachTool[];
+  cost_usd: number | null;
+  cost_is_upper_bound: boolean;
+};
+
 export const api = {
+  coachStatus: () => get<{ available: boolean }>("/coach/status"),
+  /** A paid call: one question to the coach. */
+  ask: (question: string) =>
+    get<CoachAnswer>("/coach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    }),
   player: () => get<Player>("/player"),
   coverage: () => get<Coverage>("/stats/data_coverage"),
   champions: (role: Role | null) =>

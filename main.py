@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from agent.coach import ask_coach
 from agent.llm import ModelClient, create_model
+from agent.pricing import answer_cost
 from agent.samples import summarize
 from agent.tools import TOOLS, ToolContext, run_tool
 from benchmarks.cohorts import COHORTS
@@ -192,6 +193,11 @@ def create_app(
                     my_session, benchmark_session, puuids, cohort, champion
                 )
 
+    @app.get("/coach/status")
+    async def coach_status(request: Request) -> dict[str, Any]:
+        """Whether the coach can answer: it needs ANTHROPIC_API_KEY. Free."""
+        return {"available": request.app.state.coach_model is not None}
+
     @app.post("/coach")
     async def ask(body: CoachRequest, request: Request) -> dict[str, Any]:
         """Ask the coach a question. This makes paid model calls."""
@@ -217,7 +223,12 @@ def create_app(
         )
         # The full tool log is for the eval; the caller gets each call's sample sizes.
         body = {k: v for k, v in asdict(answer).items() if k != "tool_log"}
-        return body | {"tools": [summarize(log) for log in answer.tool_log]}
+        cost_usd, upper_bound = answer_cost(answer.usage, answer.models)
+        return body | {
+            "tools": [summarize(log) for log in answer.tool_log],
+            "cost_usd": cost_usd,
+            "cost_is_upper_bound": upper_bound,
+        }
 
     @app.get("/player")
     async def player(request: Request) -> dict[str, Any]:

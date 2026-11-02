@@ -95,6 +95,25 @@ async def test_a_made_up_number_reaches_the_user_with_a_warning(test_settings, s
     assert body["text"].startswith("Warning:")
 
 
+def test_coach_status_says_whether_a_key_is_set(test_settings, client):
+    assert client.get("/coach/status").json() == {"available": False}
+    with coach_client(test_settings, FakeModel()) as with_model:
+        assert with_model.get("/coach/status").json() == {"available": True}
+
+
+async def test_the_coach_reports_what_the_answer_cost(test_settings, sessions, monkeypatch):
+    from agent.pricing import PRICES
+
+    # $1 per million tokens of every kind: 100 in + 10 out = $0.00011.
+    monkeypatch.setitem(PRICES, "fake-model", dict.fromkeys(("input", "output", "read", "write"), 1.0))
+    await add_player(sessions)
+    with coach_client(test_settings, FakeModel(says("Play more games."))) as client:
+        body = client.post("/coach", json={"question": "How am I doing?"}).json()
+
+    assert body["cost_usd"] == pytest.approx(0.00011)
+    assert body["cost_is_upper_bound"] is False
+
+
 def test_an_empty_question_is_refused(client):
     assert client.post("/coach", json={"question": ""}).status_code == 422
 

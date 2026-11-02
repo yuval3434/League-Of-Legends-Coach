@@ -174,7 +174,7 @@ async def test_an_unusable_verdict_is_an_error_not_a_fail(text, stop_reason):
 @pytest.fixture(autouse=True)
 def prices_for_fakes(monkeypatch):
     """Cost lookups refuse unknown models, so the fakes get a price."""
-    from eval.costs import PRICES
+    from agent.pricing import PRICES
 
     price = {"input": 1.0, "output": 1.0, "read": 1.0, "write": 1.0}
     monkeypatch.setitem(PRICES, "fake-model", price)

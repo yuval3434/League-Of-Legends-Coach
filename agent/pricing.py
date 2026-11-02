@@ -15,6 +15,7 @@ PRICES = {
 
 
 def cost(usage: Usage, model: str) -> float:
+    """What these tokens cost on one model, in dollars."""
     price = PRICES[model]
     return (
         usage.input_tokens * price["input"]
@@ -22,3 +23,17 @@ def cost(usage: Usage, model: str) -> float:
         + usage.cache_read_tokens * price["read"]
         + usage.cache_write_tokens * price["write"]
     ) / 1_000_000
+
+
+def answer_cost(usage: Usage, models: list[str]) -> tuple[float | None, bool]:
+    """The cost of one coach answer, and whether it's only an upper bound.
+
+    Usage is summed over the answer's turns. If a fallback model answered some of
+    them, the split isn't known, so every token is priced at the dearest model
+    that answered: the real cost is at most that. Unknown models give None.
+    """
+    known = [m for m in set(models) if m in PRICES]
+    if not known or len(known) < len(set(models)):
+        return None, False
+    dearest = max(known, key=lambda m: PRICES[m]["output"])
+    return cost(usage, dearest), len(known) > 1
