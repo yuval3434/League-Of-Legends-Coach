@@ -100,9 +100,31 @@ async function get<T>(path: string): Promise<T> {
 
 export type Player = { game_name: string; tag_line: string };
 
+export type Role = "TOP" | "JUNGLE" | "MIDDLE" | "BOTTOM" | "UTILITY";
+
+/** One champion's totals from the champion_stats tool. */
+export type ChampionRow = {
+  champion: string;
+  games: number;
+  wins: number;
+  win_rate_pct: number;
+  // 95% margin and the range it gives, in whole percents; null on one game.
+  margin_win_rate_pct: number | null;
+  win_rate_low_pct: number | null;
+  win_rate_high_pct: number | null;
+  kills: number;
+  deaths: number;
+  assists: number;
+  kda: number;
+  cs_per_min: number;
+  low_sample?: boolean;
+};
+
 export const api = {
   player: () => get<Player>("/player"),
   coverage: () => get<Coverage>("/stats/data_coverage"),
+  champions: (role: Role | null) =>
+    get<{ rows: ChampionRow[] }>(`/stats/champion_stats${role ? `?role=${role}` : ""}`).then((r) => r.rows),
   compare: (cohort: "silver" | "emerald") =>
     get<Comparison>(`/benchmarks/compare?cohort=${cohort}`),
 };

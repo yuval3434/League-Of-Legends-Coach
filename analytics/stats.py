@@ -479,24 +479,40 @@ WITH games AS (
     FROM match_participants p
     JOIN matches m ON m.match_id = p.match_id
     WHERE p.puuid = ANY(:puuids) AND NOT m.is_remake
+),
+totals AS (
+    SELECT champion_name AS champion,
+           count(*) AS games,
+           count(*) FILTER (WHERE win) AS wins,
+           round(100.0 * count(*) FILTER (WHERE win) / count(*), 1) AS win_rate_pct,
+           round((196 * stddev(win::int) / sqrt(count(*)))::numeric, 1)
+               AS margin_win_rate_pct,
+           sum(kills)::int AS kills,
+           sum(deaths)::int AS deaths,
+           sum(assists)::int AS assists,
+           round((sum(kills) + sum(assists))::numeric / greatest(sum(deaths), 1), 2) AS kda,
+           round(avg(cs_per_min), 2) AS cs_per_min
+    FROM games
+    GROUP BY champion_name
 )
-SELECT champion_name AS champion,
-       count(*) AS games,
-       count(*) FILTER (WHERE win) AS wins,
-       round(100.0 * count(*) FILTER (WHERE win) / count(*), 1) AS win_rate_pct,
-       sum(kills)::int AS kills,
-       sum(deaths)::int AS deaths,
-       sum(assists)::int AS assists,
-       round((sum(kills) + sum(assists))::numeric / greatest(sum(deaths), 1), 2) AS kda,
-       round(avg(cs_per_min), 2) AS cs_per_min
-FROM games
-GROUP BY champion_name
-ORDER BY games DESC, champion_name
+-- greatest() and least() skip NULLs, so a game with no margin is checked first.
+SELECT *,
+       CASE WHEN margin_win_rate_pct IS NOT NULL
+            THEN round(greatest(win_rate_pct - margin_win_rate_pct, 0))::int
+       END AS win_rate_low_pct,
+       CASE WHEN margin_win_rate_pct IS NOT NULL
+            THEN round(least(win_rate_pct + margin_win_rate_pct, 100))::int
+       END AS win_rate_high_pct
+FROM totals
+ORDER BY games DESC, champion
 """
 
 
 async def champion_stats(session: AsyncSession, puuids: Players) -> list[Row]:
     """Games, wins, win rate, KDA and CS per minute per champion, most played first.
+
+    The win rate comes with the same 95% margin as win_rates, and the range it
+    gives as whole percents, kept within 0-100. A single game has no margin.
 
     KDA is the totals' (kills + assists) / deaths, as match history sites show it,
     with deaths counted as 1 when there were none. Pass a Scope with a role to

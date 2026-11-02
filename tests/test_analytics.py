@@ -984,6 +984,23 @@ async def test_champion_stats_totals_each_champion(sessions):
     assert viego["low_sample"] and quinn["low_sample"]
 
 
+async def test_champion_stats_give_the_win_rate_a_range(sessions):
+    async with sessions() as session:
+        for i, win in enumerate([True, True, True, False]):
+            await add_game(session, f"EUW1_{i}", champion="Viego", win=win)
+        await add_game(session, "EUW1_9", champion="Quinn")
+        rows = await champion_stats(session, [ME])
+
+    viego, quinn = rows
+    # Wins 1,1,1,0: sd 0.5, so 1.96 * 0.5 / sqrt(4) = 49.0 points around 75.0.
+    assert viego["margin_win_rate_pct"] == 49.0
+    # 75 - 49 = 26; 75 + 49 = 124, kept at 100.
+    assert (viego["win_rate_low_pct"], viego["win_rate_high_pct"]) == (26, 100)
+    # One game has no spread, so no margin and no range.
+    assert quinn["margin_win_rate_pct"] is None
+    assert quinn["win_rate_low_pct"] is None
+
+
 async def test_champion_stats_can_keep_one_role(sessions):
     async with sessions() as session:
         await add_game(session, "EUW1_1", champion="Viego", role="JUNGLE")

@@ -151,7 +151,8 @@ TOOLS = (
         "champion_stats",
         champion_stats,
         "Games, wins, win rate, KDA and CS per minute for each champion played, "
-        "most played first. KDA is the totals' (kills + assists) / deaths.",
+        "most played first. KDA is the totals' (kills + assists) / deaths. The win "
+        "rate has a margin and the range it gives (win_rate_low_pct to win_rate_high_pct).",
         {"role": ROLE},
     ),
     _stat_tool(
