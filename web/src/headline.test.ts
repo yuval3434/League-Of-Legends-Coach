@@ -86,9 +86,12 @@ describe("gap in words", () => {
     expect(gapWords(lane, "Silver")).toBe("4.9 CS behind Silver");
   });
 
-  it("counts more deaths as behind", () => {
-    const deaths = { ...base, value: "avg_deaths", higher_is_better: false, my_value: 2.5, benchmark_value: 2.0, difference: 0.5, difference_pct: 25 };
-    expect(gapWords(deaths, "Silver")).toBe("25% behind Silver");
+  it("says more or fewer deaths, not behind or ahead", () => {
+    const deaths = { ...base, theme: "deaths", value: "avg_deaths", higher_is_better: false };
+    const more = { ...deaths, my_value: 2.5, benchmark_value: 2.0, difference: 0.5, difference_pct: 25 };
+    const fewer = { ...deaths, my_value: 2.31, benchmark_value: 2.64, difference: -0.33, difference_pct: -13 };
+    expect(gapWords(more, "Silver")).toBe("25% more deaths than Silver");
+    expect(gapWords(fewer, "Silver")).toBe("13% fewer deaths than Silver");
   });
 
   it("says within 1% when the percentage rounds to zero", () => {

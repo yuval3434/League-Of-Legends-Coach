@@ -21,6 +21,13 @@ const OBJECTIVES: Record<string, string> = {
   HORDE: "Void Grubs",
 };
 
+// The phases deaths are counted in (analytics/stats.py: deaths_by_phase).
+const PHASES: Record<string, string> = {
+  early: "before 15 min",
+  mid: "15–25 min",
+  late: "after 25 min",
+};
+
 export function metricLabel(row: Key): string {
   const minute = row.minute ? `${row.minute} min` : "";
   const split = row.result && row.result !== "all" ? `, ${row.result}s only` : "";
@@ -40,7 +47,7 @@ export function metricLabel(row: Key): string {
     case "avg_destroyed_per_min":
       return "Wards destroyed per minute";
     case "avg_deaths":
-      return `Deaths, ${row.phase} game`;
+      return `Deaths per game, ${PHASES[row.phase ?? ""] ?? row.phase}`;
     case "avg_kill_participation_pct":
       return "Kill participation";
     case "win_rate_pct":
@@ -86,7 +93,7 @@ export function isBehind(row: CompareRow): boolean {
   return d !== 0 && d < 0 === row.higher_is_better;
 }
 
-/** The gap in plain words: "13% behind Silver", "4.9 CS behind", "1.3 points ahead". */
+/** The gap in plain words: "13% behind Silver", "4.9 CS behind", "1.3 points ahead", "13% fewer deaths". */
 export function gapWords(row: CompareRow, cohort: string): string {
   const d = row.difference;
   if (d === null) return "";
@@ -97,6 +104,8 @@ export function gapWords(row: CompareRow, cohort: string): string {
   if (row.value.endsWith("_pct")) return `${size} points ${side}`;
   if (row.difference_pct === null) return "";
   if (row.difference_pct === 0) return `within 1% of ${cohort}`;
+  // Deaths read better as counts than as a race: "13% fewer deaths than Silver".
+  if (row.theme === "deaths") return `${Math.abs(row.difference_pct)}% ${d > 0 ? "more" : "fewer"} deaths than ${cohort}`;
   return `${Math.abs(row.difference_pct)}% ${side}`;
 }
 

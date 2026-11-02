@@ -1,10 +1,12 @@
 // One measure: your bar and the benchmark's, both from zero, with a plain
-// verdict and the gap in words. The margin decides the verdict and shows as a
-// fade at each bar's end; its exact value waits behind a hover.
+// verdict and the gap in words. Each bar ends exactly at its value. The margin
+// decides the verdict but never touches the bars; its exact value waits
+// behind a hover.
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { CompareRow } from "../api";
+import { barLengths } from "../bars";
 import { fmt, gapWords, metricLabel, rowDecimals, signed, unit } from "../metrics";
 import { PLAIN, PLAIN_TONE } from "../verdict";
 import { Marker, type State } from "./Verdict";
@@ -29,54 +31,24 @@ function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] 
   return [ref, width];
 }
 
-/** A bar from zero. Solid as far as the value is certain, then it fades out. */
-function Bar({
-  value,
-  margin,
-  max,
-  color,
-  label,
-  hatched,
-}: {
-  value: number;
-  margin: number;
-  max: number;
-  color: string;
-  label: string;
-  hatched?: boolean;
-}) {
-  const [ref, width] = useWidth<HTMLDivElement>();
-  const id = useId().replace(/:/g, "");
-  const labelRoom = 64;
-  const plot = Math.max(width - labelRoom, 0);
-  const far = value + margin;
-  const sure = Math.max(value - margin, 0);
+/** A bar from zero that ends exactly at its value. */
+function Bar({ length, color, label, hatched }: { length: number; color: string; label: string; hatched?: boolean }) {
   return (
-    <div ref={ref} className="h-5 w-full">
-      {width > 0 && (
-        <svg width={width} height={20} aria-hidden>
-          <defs>
-            <linearGradient id={id} x1="0" x2="1" y1="0" y2="0">
-              <stop offset={far ? sure / far : 1} stopColor={color} stopOpacity={1} />
-              <stop offset={1} stopColor={color} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <rect
-            className="bar-grow"
-            x={0}
-            y={4}
-            width={(far / max) * plot}
-            height={12}
-            rx={2}
-            fill={hatched ? "url(#hatch)" : `url(#${id})`}
-            stroke={hatched ? "var(--color-faint)" : "none"}
-          />
-          <text x={(far / max) * plot + 6} y={14.5} className="fill-ink2 text-[12px]">
-            {label}
-          </text>
-        </svg>
-      )}
-    </div>
+    <svg width="100%" height={20} aria-hidden className="block overflow-visible">
+      <rect
+        className="bar-grow"
+        x={0}
+        y={4}
+        width={length}
+        height={12}
+        rx={2}
+        fill={hatched ? "url(#hatch)" : color}
+        stroke={hatched ? "var(--color-faint)" : "none"}
+      />
+      <text x={length + 6} y={14.5} className="fill-ink2 text-[12px]">
+        {label}
+      </text>
+    </svg>
   );
 }
 
@@ -112,33 +84,18 @@ export function MeasureCard({ row, state, cohort }: { row: CompareRow; state: St
   const suffix = unit(row.value);
   const mine = row.my_value;
   const theirs = row.benchmark_value;
-  // Gaps against an opponent can be negative: bars from zero can't show them.
-  const asBars = mine !== null && theirs !== null && mine >= 0 && theirs >= 0;
-  const max = asBars
-    ? Math.max(mine + (row.my_margin ?? 0), theirs + (row.benchmark_margin ?? 0)) || 1
-    : 1;
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const labelRoom = 64;
+  const bars = barLengths(row, Math.max(width - 52 - labelRoom, 0));
   return (
     <div tabIndex={0} className="group relative border-t border-rule pt-4 pb-3 outline-none">
       <div className="text-[15px] text-ink">{metricLabel(row)}</div>
-      {asBars ? (
-        <div className="mt-3 grid grid-cols-[52px_1fr] items-center gap-y-1.5 text-[12px]">
+      {bars ? (
+        <div ref={ref} className="mt-3 grid grid-cols-[52px_1fr] items-center gap-y-1.5 text-[12px]">
           <span className="text-ink">You</span>
-          <Bar
-            value={mine}
-            margin={row.my_margin ?? 0}
-            max={max}
-            color={BAR_COLOR[state]}
-            label={`${fmt(mine, d)}${suffix}`}
-            hatched={state === "low"}
-          />
+          <Bar length={bars.mine} color={BAR_COLOR[state]} label={`${fmt(mine, d)}${suffix}`} hatched={state === "low"} />
           <span className="text-ink3">{cohort}</span>
-          <Bar
-            value={theirs}
-            margin={row.benchmark_margin ?? 0}
-            max={max}
-            color="var(--color-ink3)"
-            label={`${fmt(theirs, d)}${suffix}`}
-          />
+          <Bar length={bars.theirs} color="var(--color-ink3)" label={`${fmt(theirs, d)}${suffix}`} />
         </div>
       ) : (
         <div className="mt-3 text-[14px] text-ink2">
