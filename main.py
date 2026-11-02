@@ -213,7 +213,8 @@ def create_app(
             answer.caught_numbers,
             answer.usage,
         )
-        return asdict(answer)
+        # The tool log is for the eval; the caller gets the answer and its cost.
+        return {k: v for k, v in asdict(answer).items() if k != "tool_log"}
 
     return app
 

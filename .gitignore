@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+
+# Eval runs: full transcripts, kept locally
+eval/results/

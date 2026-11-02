@@ -151,6 +151,19 @@ async def test_a_model_that_never_stops_calling_tools_is_stopped():
     assert len(model.sent) == MAX_STEPS
 
 
+async def test_the_tool_log_keeps_each_call_with_its_result():
+    _, answer = await ask(calls(ASK), says("Nothing to report."))
+    [log] = answer.tool_log
+    assert (log.name, log.arguments, log.content, log.is_error) == (
+        "gold_cs_at_minute", {"champion": None}, GOLD, False
+    )
+
+
+async def test_each_answering_model_is_recorded():
+    _, answer = await ask(calls(ASK), says("Nothing to report."))
+    assert answer.models == ["fake-model", "fake-model"]
+
+
 async def test_usage_adds_up_across_turns():
     _, answer = await ask(calls(ASK), says("Nothing to report."))
     assert answer.usage == Usage(input_tokens=200, output_tokens=20)

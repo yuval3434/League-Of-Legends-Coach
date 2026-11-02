@@ -51,6 +51,8 @@ class ModelReply:
     # Sent back unchanged on the next turn, because the API needs its own blocks.
     assistant_content: Any
     usage: Usage = Usage()
+    # The model that answered, which a refusal fallback can change.
+    model: str = ""
 
 
 class ModelClient(Protocol):
@@ -94,6 +96,7 @@ def _to_reply(response: BetaMessage) -> ModelReply:
             if b.type == "tool_use"
         ],
         stop_reason=response.stop_reason or "",
+        model=response.model,
         assistant_content=response.content,
         usage=Usage(
             usage.input_tokens,

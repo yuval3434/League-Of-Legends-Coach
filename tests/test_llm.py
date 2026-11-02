@@ -87,6 +87,7 @@ async def test_a_response_becomes_a_reply():
         ("toolu_1", "win_rates", {"champion": None})
     ]
     assert reply.usage == Usage(11, 22, 33, 44)
+    assert reply.model == "claude-opus-5-5"
 
 
 def test_a_missing_key_is_a_clear_error():

@@ -12,6 +12,7 @@ def says(text: str, stop_reason: str = "end_turn") -> ModelReply:
         stop_reason,
         [{"type": "text", "text": text}],
         Usage(input_tokens=100, output_tokens=10),
+        "fake-model",
     )
 
 
@@ -25,7 +26,12 @@ def calls(*tools: tuple[str, dict[str, Any]]) -> ModelReply:
         for c in tool_calls
     ]
     return ModelReply(
-        "", tool_calls, "tool_use", content, Usage(input_tokens=100, output_tokens=10)
+        "",
+        tool_calls,
+        "tool_use",
+        content,
+        Usage(input_tokens=100, output_tokens=10),
+        "fake-model",
     )
 
 

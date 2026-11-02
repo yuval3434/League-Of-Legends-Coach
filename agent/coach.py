@@ -27,6 +27,14 @@ STOPPED = {
 }
 
 
+@dataclass(frozen=True)
+class ToolLog:
+    name: str
+    arguments: dict[str, Any]
+    content: str
+    is_error: bool
+
+
 @dataclass
 class CoachAnswer:
     """`status` is verified, unverified, refused, truncated or gave_up."""
@@ -37,6 +45,9 @@ class CoachAnswer:
     # What the check caught, including any fixed by the retry.
     caught_numbers: list[str] = field(default_factory=list)
     usage: Usage = Usage()
+    # Each model that answered a turn, and every tool call with its result.
+    models: list[str] = field(default_factory=list)
+    tool_log: list[ToolLog] = field(default_factory=list)
 
 
 async def _run_calls(
@@ -69,12 +80,12 @@ async def ask_coach(
     """Answer one question. A reply with unsupported numbers gets one retry."""
     messages: list[dict[str, Any]] = [{"role": "user", "content": question}]
     tools = tool_definitions()
-    outputs: list[str] = []
     answer = CoachAnswer("", "gave_up")
 
     for _ in range(MAX_STEPS):
         reply: ModelReply = await model.send(SYSTEM_PROMPT, tools, messages)
         answer.usage += reply.usage
+        answer.models.append(reply.model)
 
         if reply.stop_reason == "refusal":
             return _stopped(answer, "refused")
@@ -86,10 +97,14 @@ async def ask_coach(
         if reply.tool_calls:
             results = await _run_calls(context, reply.tool_calls)
             answer.tools_called += [call.name for call in reply.tool_calls]
-            outputs += [r.content for r in results if not r.is_error]
+            answer.tool_log += [
+                ToolLog(c.name, c.arguments, r.content, r.is_error)
+                for c, r in zip(reply.tool_calls, results)
+            ]
             messages.append(_results_message(reply.tool_calls, results))
             continue
 
+        outputs = [log.content for log in answer.tool_log if not log.is_error]
         unsupported = check_numbers(reply.text, outputs)
         if not unsupported:
             answer.text, answer.status = reply.text, "verified"

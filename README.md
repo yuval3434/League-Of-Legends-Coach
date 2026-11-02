@@ -70,6 +70,41 @@ the check), the tools called and the token usage. `COACH_MODEL` in `.env` picks
 the model. `DECISIONS.md` explains what counts as a
 finding and what the number check can't catch.
 
+## Eval
+
+The eval asks the real coach 8 questions and grades each answer. Checks that code
+can do exactly are code: the number check passed, a tool was called, and the reply
+says "no benchmark" for Dr. Mundo and "not enough data" for Viego. The rest are
+graded by a model, Haiku 5.5, one call per property: a real number attached to the
+wrong stat, gaps in different units ranked against each other, win-only or
+loss-only rows presented as findings, claims the tools don't support, and numbers
+written in words. For that last one, code first finds words like "twice" or
+"thirty", and only replies with one go to the grader.
+
+```sh
+uv run python -m eval.run estimate                       # free
+uv run python -m eval.run calibrate --reps 2 --confirm   # paid: grades the grader
+uv run python -m eval.run live --confirm                 # paid: asks the coach
+```
+
+Paid modes print their cost estimate and refuse to run without `--confirm`.
+Results, with every tool call and the grader's evidence, go to `eval/results/`.
+Attempts that never produced an answer, such as timeouts, go to `errors.jsonl`,
+so they never count as the coach failing.
+
+The grader is checked before it's trusted: `calibrate` grades replies with known
+verdicts, made by planting one error into a real coach reply. The first run agreed
+on 44 of 46, and both misses were a mislabelled example, since corrected.
+
+**Limits:**
+- **The sample is small.** With 8 cases run once, a difference in pass rate under
+  about 35 points is noise, so one run can't tell two models apart. Comparing
+  models needs more cases and repeated runs (`--reps`).
+- **Haiku grades a model from its own family.** Graders can favour answers that
+  resemble their own family's. The checks are narrow rules rather than taste,
+  which limits this, but doesn't remove it. A grader from another family, or a
+  person reading the graded failures, would be the cross-check.
+
 ## Backups
 
 ```sh

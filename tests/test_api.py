@@ -81,6 +81,7 @@ async def test_the_coach_answers_with_its_status_and_usage(test_settings, sessio
     assert body["text"] == "Play more games."
     assert body["status"] == "verified"
     assert body["usage"]["input_tokens"] == 100
+    assert "tool_log" not in body
 
 
 async def test_a_made_up_number_reaches_the_user_with_a_warning(test_settings, sessions):
