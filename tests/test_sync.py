@@ -15,7 +15,7 @@ from ingestion.models import (
 from ingestion.riot_client import RiotAuthError, RiotNotFound, RiotRequestFailed
 from ingestion.sync import parse_stored_match, sync_player
 
-ACCOUNT = {"puuid": "puuid-1", "gameName": "yuval34", "tagLine": "34343"}
+ACCOUNT = {"puuid": "puuid-1", "gameName": "SomePlayer", "tagLine": "EUW"}
 
 
 class FakeRiot:
@@ -48,7 +48,7 @@ class FakeRiot:
 
 async def run(sessions, riot, count=100, queues=(420, 440)):
     return await sync_player(
-        sessions, riot, "yuval34", "34343", "europe", list(queues), count
+        sessions, riot, "SomePlayer", "EUW", "europe", list(queues), count
     )
 
 
@@ -70,7 +70,7 @@ async def test_sync_stores_raw_and_parsed_rows(sessions):
     assert await count(sessions, TimelineEvent) == 10
     async with sessions() as session:
         player = await session.get(Player, "puuid-1")
-    assert player.game_name == "yuval34"
+    assert player.game_name == "SomePlayer"
     assert player.last_synced_at is not None
 
 

@@ -2,7 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
-from fakes import FakeModel, says
+from fakes import FakeModel, calls, says
+from test_analytics import add_game
 from ingestion.models import Player
 from main import create_app
 
@@ -96,3 +97,54 @@ async def test_a_made_up_number_reaches_the_user_with_a_warning(test_settings, s
 
 def test_an_empty_question_is_refused(client):
     assert client.post("/coach", json={"question": ""}).status_code == 422
+
+
+async def test_the_coach_lists_each_tools_sample_sizes(test_settings, sessions):
+    await add_player(sessions)
+    async with sessions() as session:
+        await add_game(session, "EUW1_1")
+        await session.commit()
+    model = FakeModel(calls(("win_rates", {"champion": None})), says("Play more games."))
+    with coach_client(test_settings, model) as client:
+        body = client.post("/coach", json={"question": "Win rate?"}).json()
+
+    [tool] = body["tools"]
+    assert tool["name"] == "win_rates"
+    assert tool["your_games"] == {"min": 1, "max": 1}
+    assert tool["low_sample_rows"] == 2
+
+
+async def test_a_stat_runs_without_a_model_key(test_settings, sessions):
+    await add_player(sessions)
+    async with sessions() as session:
+        await add_game(session, "EUW1_1")
+        await session.commit()
+    with TestClient(create_app(test_settings)) as client:
+        response = client.get("/stats/win_rates")
+
+    assert response.status_code == 200
+    assert {row["dimension"] for row in response.json()["rows"]} == {"champion", "role"}
+
+
+async def test_a_stat_can_be_narrowed_to_a_champion(test_settings, sessions):
+    await add_player(sessions)
+    async with sessions() as session:
+        await add_game(session, "EUW1_1", champion="Viego")
+        await add_game(session, "EUW1_2", champion="Quinn")
+        await session.commit()
+    with TestClient(create_app(test_settings)) as client:
+        rows = client.get("/stats/win_rates", params={"champion": "Viego"}).json()["rows"]
+
+    assert {row["value"] for row in rows if row["dimension"] == "champion"} == {"Viego"}
+
+
+def test_an_unknown_stat_is_404(client):
+    assert client.get("/stats/no_such_stat").status_code == 404
+
+
+async def test_a_bad_argument_is_422(test_settings, sessions):
+    await add_player(sessions)
+    with TestClient(create_app(test_settings)) as client:
+        response = client.get("/stats/compare_to_benchmark", params={"cohort": "gold"})
+
+    assert response.status_code == 422

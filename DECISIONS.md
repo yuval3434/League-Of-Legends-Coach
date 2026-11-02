@@ -338,3 +338,29 @@ wards ("the biggest issue", "your weakest area is economy"), one stated a win-on
 pattern as fact, and one put a row from another tool under a finding's heading.
 CS per minute and wards per minute have no common scale, so any ranking is the
 model's opinion presented as data.
+
+## The demo replaces every player's identity, including mine
+
+**Decision:** the demo ships 12 of my jungle games, the most recent ones rather
+than hand-picked. Every PUUID, Riot ID, summoner name and ID, match ID and game ID
+is replaced, I become DemoJungler#DEMO, profile icons and levels are made the
+same for everyone, and real dates are shifted by one fixed amount. There's no
+benchmark in the demo.
+
+**Why me as well:** with my real Riot ID left in, anyone could open my public
+match history, find these games, and read the other players' real names, which
+undoes the rest.
+
+**Why fields are rewritten by name everywhere:** Riot repeats identities in
+unexpected places, such as the game ID inside the timeline's GAME_END event. The
+export then searches the output for every original value and writes nothing if
+one is left. On the first export it stopped on 269 hits: a player's name that is
+also a champion name. Champion names are exempt, because the word appears as the
+champion, not the player.
+
+**Why 12 games:** every stat needs 10 games before it says anything. With 5,
+every number in the demo would be flagged.
+
+**Limit:** stats and champions are kept, so someone who already knows my Riot ID
+could match these games by their stats. The benchmark stays out because it is
+1,271 other players' games.

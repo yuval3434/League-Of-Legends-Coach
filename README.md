@@ -1,10 +1,55 @@
-# League-Of-Legends-Coach
+# LoL Coach
 
-Personal League of Legends coach. See [CLAUDE.md](CLAUDE.md) for the project rules.
+A personal League of Legends jungle coach. It pulls my matches from the Riot API,
+computes every stat in SQL, compares them with real Silver and Emerald junglers,
+and uses an LLM agent to explain them in plain language. The model never
+produces a number: it calls one tool per stat, and code checks that every number
+in its answer appears in a tool result.
 
-Phase 1 is data ingestion: Riot ID → PUUID → match IDs → match details and timelines.
+![The UI on demo data: the stats tab showing win rates, each flagged as too few games](docs/screenshot.png)
 
-## Setup
+- [DECISIONS.md](DECISIONS.md): why each stat works the way it does, with the data
+  behind each choice.
+- [Eval](#eval): how the coach is tested, with results and limits.
+- [CLAUDE.md](CLAUDE.md): the project's rules.
+
+**This is a personal tool, not a public service.** It runs on Riot's development
+key, which is for personal use: a public app needs a production key approved by
+Riot. Every coach question is also a paid model call, and the benchmark is built
+from other players' matches, which belong in a local database rather than on a
+server. LoL Coach isn't endorsed by Riot Games.
+
+## Try it in demo mode
+
+The demo has 12 of my jungle games with every player's identity replaced, so you
+can try it without a Riot key. Requires Python 3.12, [uv](https://docs.astral.sh/uv/)
+and Docker.
+
+1. Copy `.env.example` to `.env`. Set `POSTGRES_PASSWORD`, and set
+   `POSTGRES_DB=lolcoach_demo`.
+2. Start the database and load the demo:
+   ```sh
+   docker compose up -d db
+   uv run python -m demo.load
+   ```
+3. Start the API and the UI, then open http://127.0.0.1:7860:
+   ```sh
+   docker compose up --build -d api
+   uv run python -m ui.app
+   ```
+
+The **Stats** tab works as it is. **Asking the coach needs an Anthropic API key**
+in `ANTHROPIC_API_KEY`, and each question is a paid call, usually a few cents to
+about $0.30. With 12 games, most stats are under the 10-game floor, so expect
+"not enough data" often: that's the coach being honest, not broken. The demo has
+no benchmark, so comparisons say there isn't one.
+
+**About the anonymization:** names, PUUIDs, summoner IDs, match IDs and real dates
+are replaced, and the export refuses to write the file if any original value is
+left. Stats and champions are kept, though. So someone who already knows my Riot
+ID could find these games in a public match history and see who played in them.
+
+## Setup with your own data
 
 Requires Python 3.12, [uv](https://docs.astral.sh/uv/) and Docker.
 
@@ -17,7 +62,7 @@ Requires Python 3.12, [uv](https://docs.astral.sh/uv/) and Docker.
 
 ```sh
 curl -X POST localhost:8000/sync -H "Content-Type: application/json" \
-  -d '{"game_name": "yuval34", "tag_line": "34343"}'
+  -d '{"game_name": "YourName", "tag_line": "TAG"}'
 curl localhost:8000/sync/status
 ```
 

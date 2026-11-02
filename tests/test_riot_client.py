@@ -16,7 +16,7 @@ from ingestion.riot_client import (
 
 BASE = "https://europe.api.riotgames.com"
 MATCH_URL = f"{BASE}/lol/match/v5/matches/EUW1_1"
-ACCOUNT_URL = f"{BASE}/riot/account/v1/accounts/by-riot-id/yuval34/34343"
+ACCOUNT_URL = f"{BASE}/riot/account/v1/accounts/by-riot-id/SomePlayer/EUW"
 
 
 class RecordingLimiter(RateLimiter):
@@ -55,7 +55,7 @@ async def client(limiter):
 async def test_get_account_sends_key_and_returns_json(client):
     route = respx.get(ACCOUNT_URL).respond(json={"puuid": "abc"})
 
-    assert await client.get_account("yuval34", "34343") == {"puuid": "abc"}
+    assert await client.get_account("SomePlayer", "EUW") == {"puuid": "abc"}
     assert route.calls.last.request.headers["X-Riot-Token"] == "test-key"
 
 

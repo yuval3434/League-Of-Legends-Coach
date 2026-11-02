@@ -1,6 +1,7 @@
 """FastAPI app. Run with one worker: the rate limiter lives in this process."""
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -15,7 +16,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from agent.coach import ask_coach
 from agent.llm import ModelClient, create_model
-from agent.tools import ToolContext
+from agent.samples import summarize
+from agent.tools import TOOLS, ToolContext, run_tool
 from benchmarks.cohorts import COHORTS
 from benchmarks.compare import compare
 from benchmarks.models import create_benchmark_engine
@@ -213,8 +215,34 @@ def create_app(
             answer.caught_numbers,
             answer.usage,
         )
-        # The tool log is for the eval; the caller gets the answer and its cost.
-        return {k: v for k, v in asdict(answer).items() if k != "tool_log"}
+        # The full tool log is for the eval; the caller gets each call's sample sizes.
+        body = {k: v for k, v in asdict(answer).items() if k != "tool_log"}
+        return body | {"tools": [summarize(log) for log in answer.tool_log]}
+
+    @app.get("/stats/{name}")
+    async def stat(
+        name: str,
+        request: Request,
+        champion: str | None = Query(default=None),
+        cohort: str | None = Query(default=None),
+        theme: str | None = Query(default=None),
+    ) -> Any:
+        """Run one of the coach's tools directly. Free: no model call."""
+        tool = next((t for t in TOOLS if t.name == name), None)
+        if tool is None:
+            raise HTTPException(404, f"No stat called {name}")
+        given = {"champion": champion, "cohort": cohort, "theme": theme}
+        arguments = {key: given[key] for key in tool.properties}
+        state = request.app.state
+        async with state.sessions() as session:
+            puuids = sorted(await tracked_puuids(session))
+        if not puuids:
+            raise HTTPException(409, "No player is synced yet: run POST /sync first")
+        context = ToolContext(state.sessions, state.benchmark_sessions, tuple(puuids))
+        result = await run_tool(context, name, arguments)
+        if result.is_error:
+            raise HTTPException(422, result.content)
+        return json.loads(result.content)
 
     return app
 
