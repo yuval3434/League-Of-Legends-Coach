@@ -7,11 +7,15 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Any
 
+import anthropic
 from fastapi import FastAPI, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from agent.coach import ask_coach
+from agent.llm import ModelClient, create_model
+from agent.tools import ToolContext
 from benchmarks.cohorts import COHORTS
 from benchmarks.compare import compare
 from benchmarks.models import create_benchmark_engine
@@ -37,7 +41,14 @@ class PullRequest(BaseModel):
     max_matches: int
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+class CoachRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+def create_app(
+    settings: Settings | None = None, coach_model: ModelClient | None = None
+) -> FastAPI:
+    """`coach_model` replaces the model named in settings, so tests can pass a fake."""
     settings = settings or Settings()
 
     @asynccontextmanager
@@ -59,6 +70,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.sync_task = None
         app.state.pull_status = {"state": "idle"}
         app.state.pull_task = None
+        app.state.coach_model = coach_model
+        if coach_model is None and settings.anthropic_api_key.get_secret_value():
+            app.state.coach_model = create_model(settings)
         yield
         for task in (app.state.sync_task, app.state.pull_task):
             if task:
@@ -175,6 +189,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return await compare(
                     my_session, benchmark_session, puuids, cohort, champion
                 )
+
+    @app.post("/coach")
+    async def ask(body: CoachRequest, request: Request) -> dict[str, Any]:
+        """Ask the coach a question. This makes paid model calls."""
+        state = request.app.state
+        if state.coach_model is None:
+            raise HTTPException(503, "ANTHROPIC_API_KEY is not set in .env")
+        async with state.sessions() as session:
+            puuids = sorted(await tracked_puuids(session))
+        if not puuids:
+            raise HTTPException(409, "No player is synced yet: run POST /sync first")
+        context = ToolContext(state.sessions, state.benchmark_sessions, tuple(puuids))
+        try:
+            answer = await ask_coach(state.coach_model, context, body.question)
+        except anthropic.APIError:
+            logger.exception("The model API call failed")
+            raise HTTPException(502, "The model API call failed; see the server log.")
+        logger.info(
+            "Coach: %s, tools %s, caught %s, %s",
+            answer.status,
+            answer.tools_called,
+            answer.caught_numbers,
+            answer.usage,
+        )
+        return asdict(answer)
 
     return app
 

@@ -49,6 +49,21 @@ def test_every_tool_is_strict_and_requires_all_its_properties():
         assert set(schema["required"]) == set(schema["properties"])
 
 
+def test_no_enum_sits_next_to_a_list_of_types():
+    """The API rejects this in strict mode: use anyOf with a null branch instead."""
+    for tool in tool_definitions():
+        for spec in tool["input_schema"]["properties"].values():
+            assert not ("enum" in spec and isinstance(spec.get("type"), list)), tool["name"]
+
+
+@pytest.mark.parametrize("theme", ["economy", None])
+async def test_a_theme_can_be_named_or_left_out(context, theme):
+    arguments = {"cohort": "silver", "champion": None, "theme": theme}
+    from agent.tools import _BY_NAME, _problem
+
+    assert _problem(_BY_NAME["compare_to_benchmark"], arguments) is None
+
+
 def test_no_tool_lets_the_model_choose_the_player():
     assert "puuid" not in json.dumps(tool_definitions()).lower()
 

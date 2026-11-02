@@ -5,6 +5,7 @@ import asyncio
 import os
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -38,7 +39,10 @@ def test_settings() -> Settings:
         _ensure_test_database(settings)
     except OSError:
         pytest.skip("Postgres isn't running: docker compose up -d db")
-    return settings.model_copy(update={"postgres_db": TEST_DB})
+    # No test may reach a paid model, even with a key in .env.
+    return settings.model_copy(
+        update={"postgres_db": TEST_DB, "anthropic_api_key": SecretStr("")}
+    )
 
 
 @pytest.fixture

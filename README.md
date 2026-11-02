@@ -57,7 +57,17 @@ docker compose up -d db
 uv run python scripts/demo_number_check.py
 ```
 
-`COACH_MODEL` in `.env` picks the model. `DECISIONS.md` explains what counts as a
+To ask a question, which makes paid model calls (the first two cost $0.08 and
+$0.14 on Opus 5.5):
+
+```sh
+curl -X POST localhost:8000/coach -H "Content-Type: application/json" \
+  -d '{"question": "How is my farming compared with Silver?"}'
+```
+
+The response has the answer, its `status` (`verified` when every number passed
+the check), the tools called and the token usage. `COACH_MODEL` in `.env` picks
+the model. `DECISIONS.md` explains what counts as a
 finding and what the number check can't catch.
 
 ## Backups

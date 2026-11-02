@@ -128,9 +128,10 @@ TOOLS = (
         {
             "cohort": {"type": "string", "enum": sorted(COHORTS)},
             "champion": CHAMPION,
+            # Strict mode rejects an enum next to a list of types, so null is
+            # its own branch.
             "theme": {
-                "type": ["string", "null"],
-                "enum": [*THEMES, None],
+                "anyOf": [{"type": "string", "enum": list(THEMES)}, {"type": "null"}],
                 "description": "Keep only this theme's rows. Null for all rows.",
             },
         },
@@ -241,6 +242,15 @@ def _compact(value: Any) -> Any:
     return value
 
 
+def _allowed_values(spec: dict[str, Any]) -> list[Any] | None:
+    """The values an enum allows, with None if a branch allows null."""
+    branches = spec.get("anyOf", [spec])
+    values = [value for branch in branches for value in branch.get("enum", [])]
+    if not values:
+        return None
+    return values + [None] * any(b.get("type") == "null" for b in branches)
+
+
 def _problem(tool: Tool, arguments: dict[str, Any]) -> str | None:
     """Check arguments here too, because not every model enforces a schema."""
     unknown = set(arguments) - set(tool.properties)
@@ -248,7 +258,7 @@ def _problem(tool: Tool, arguments: dict[str, Any]) -> str | None:
         return f"Unknown arguments: {', '.join(sorted(unknown))}."
     for key, spec in tool.properties.items():
         value = arguments.get(key)
-        allowed = spec.get("enum")
+        allowed = _allowed_values(spec)
         if allowed and value not in allowed:
             return f"{key} must be one of: {', '.join(str(v) for v in allowed)}."
         if value is not None and not isinstance(value, str):
