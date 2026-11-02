@@ -15,3 +15,11 @@ export function stateOf(row: CompareRow, themes: Theme[]): State {
   }
   return "unclear";
 }
+
+/** A whole theme's state, from the API's verdict on it. */
+export function themeState(theme: Theme): State {
+  if (theme.status === "finding") return theme.findings?.some((f) => f.direction === "behind") ? "behind" : "ahead";
+  if (theme.status === "worth_watching") return "watching";
+  if (theme.status === "not_enough_data") return "low";
+  return "unclear";
+}

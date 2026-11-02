@@ -112,11 +112,13 @@ RELATIVE_METRICS = (
     ),
 )
 
-ZERO_SUM_NOTE = (
-    "Across all champions, a same-rank benchmark's gold difference and win rate "
-    "sit near 0 and 50% by construction: every game has one winner and the two "
-    "junglers' differences mirror each other."
-)
+def zero_sum_note(cohort: str) -> str:
+    """Why same-rank win rate and gold difference say little across all champions."""
+    return (
+        f"Win rate and gold difference against {cohort.capitalize()} junglers always "
+        "come out near 50% and 0 overall, because every game has one winner — so "
+        "they only tell you something per champion."
+    )
 
 SAMPLE_SIZE = """
 SELECT count(*) AS games,
@@ -309,7 +311,7 @@ async def compare(
     if COHORTS[cohort].relative_stats:
         metrics += RELATIVE_METRICS
         if champion is None:
-            result["notes"].append(ZERO_SUM_NOTE)
+            result["notes"].append(zero_sum_note(cohort))
     else:
         result["not_comparable"] = [m.name for m in RELATIVE_METRICS]
         result["notes"].append(

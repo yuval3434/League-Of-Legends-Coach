@@ -705,7 +705,7 @@ async def test_silver_includes_stats_measured_against_the_opponent(
 
     names = {r["metric"] for r in result["rows"]}
     assert {"lane_diff", "win_rate", "gold_cs_at_minute"} <= names
-    assert any("by construction" in note for note in result["notes"])
+    assert any("every game has one winner" in note for note in result["notes"])
 
 
 async def test_emerald_leaves_out_stats_measured_against_the_opponent(

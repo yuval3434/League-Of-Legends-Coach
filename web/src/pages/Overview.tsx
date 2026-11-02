@@ -7,7 +7,7 @@ import { ProfileHeader } from "../components/ProfileHeader";
 import { Marker, type State } from "../components/Verdict";
 import { headline } from "../headline";
 import { fmt, metricLabel } from "../metrics";
-import { stateOf } from "../state";
+import { stateOf, themeState } from "../state";
 import { PLAIN, PLAIN_TONE } from "../verdict";
 
 const COHORT = "Silver";
@@ -57,13 +57,6 @@ function matches(row: CompareRow, key: Key): boolean {
 
 function capital(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-function sectionState(theme: Theme): State {
-  if (theme.status === "finding") return theme.findings?.some((f) => f.direction === "behind") ? "behind" : "ahead";
-  if (theme.status === "worth_watching") return "watching";
-  if (theme.status === "not_enough_data") return "low";
-  return "unclear";
 }
 
 function title(theme: Theme): string {
@@ -162,7 +155,7 @@ function ThemeSection({ theme, rows, themes }: { theme: Theme; rows: CompareRow[
         label={capital(topic)}
         heading={title(theme)}
         note={explanation(theme)}
-        state={sectionState(theme)}
+        state={themeState(theme)}
         verdict={theme.status === "no_margin" ? "No verdict yet" : undefined}
       />
       {shown.length > 0 && (
