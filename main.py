@@ -219,6 +219,17 @@ def create_app(
         body = {k: v for k, v in asdict(answer).items() if k != "tool_log"}
         return body | {"tools": [summarize(log) for log in answer.tool_log]}
 
+    @app.get("/player")
+    async def player(request: Request) -> dict[str, Any]:
+        """The tracked player's Riot ID, for the profile header."""
+        async with request.app.state.sessions() as session:
+            row = (
+                await session.execute(text("SELECT game_name, tag_line FROM players LIMIT 1"))
+            ).first()
+        if row is None:
+            raise HTTPException(409, "No player is synced yet: run POST /sync first")
+        return {"game_name": row.game_name, "tag_line": row.tag_line}
+
     @app.get("/stats/{name}")
     async def stat(
         name: str,
@@ -226,12 +237,13 @@ def create_app(
         champion: str | None = Query(default=None),
         cohort: str | None = Query(default=None),
         theme: str | None = Query(default=None),
+        role: str | None = Query(default=None),
     ) -> Any:
         """Run one of the coach's tools directly. Free: no model call."""
         tool = next((t for t in TOOLS if t.name == name), None)
         if tool is None:
             raise HTTPException(404, f"No stat called {name}")
-        given = {"champion": champion, "cohort": cohort, "theme": theme}
+        given = {"champion": champion, "cohort": cohort, "theme": theme, "role": role}
         arguments = {key: given[key] for key in tool.properties}
         state = request.app.state
         async with state.sessions() as session:

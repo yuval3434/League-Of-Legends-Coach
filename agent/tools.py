@@ -24,6 +24,7 @@ from analytics.stats import (
     Row,
     Scope,
     after_loss_streak,
+    champion_stats,
     cs_per_minute,
     deaths_by_phase,
     gold_cs_at_minute,
@@ -47,6 +48,11 @@ CHAMPION = {
     ),
 }
 BY_CHAMPION = {"champion": CHAMPION}
+ROLES = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+ROLE = {
+    "anyOf": [{"type": "string", "enum": ROLES}, {"type": "null"}],
+    "description": "Keep only games in this role. Null for every role.",
+}
 NO_ROWS_NOTE = "No games match. data_coverage lists the champions and their exact names."
 
 # Absent means false for these, so a result only mentions them when they matter.
@@ -82,7 +88,11 @@ def _stat_tool(
     properties: dict[str, Any] = BY_CHAMPION,
 ) -> Tool:
     async def run(context: ToolContext, arguments: dict[str, Any]) -> Row:
-        scope = Scope(puuids=context.puuids, champion=arguments.get("champion"))
+        scope = Scope(
+            puuids=context.puuids,
+            champion=arguments.get("champion"),
+            role=arguments.get("role"),
+        )
         async with context.sessions() as session:
             rows = await stat(session, scope)
         return {"rows": rows} if rows else {"rows": [], "note": NO_ROWS_NOTE}
@@ -136,6 +146,13 @@ TOOLS = (
             },
         },
         _compare,
+    ),
+    _stat_tool(
+        "champion_stats",
+        champion_stats,
+        "Games, wins, win rate, KDA and CS per minute for each champion played, "
+        "most played first. KDA is the totals' (kills + assists) / deaths.",
+        {"role": ROLE},
     ),
     _stat_tool(
         "win_rates",

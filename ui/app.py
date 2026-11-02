@@ -10,12 +10,30 @@ from typing import Any
 import gradio as gr
 import httpx
 import pandas as pd
+from pandas.io.formats.style import Styler
 
 from agent.tools import TOOLS
+from analytics.stats import MIN_GAMES
 
 API = os.environ.get("COACH_API_URL", "http://localhost:8000")
 COACH_TIMEOUT_S = 300
-STATS = [t.name for t in TOOLS if t.name not in ("data_coverage", "compare_to_benchmark")]
+STATS = [
+    t.name
+    for t in TOOLS
+    if t.name not in ("data_coverage", "compare_to_benchmark", "champion_stats")
+]
+ALL_CHAMPIONS = "All champions"
+ROLES = {
+    "All": None,
+    "Jungle": "JUNGLE",
+    "Top": "TOP",
+    "Mid": "MIDDLE",
+    "Bot": "BOTTOM",
+    "Support": "UTILITY",
+}
+CHAMPION_COLUMNS = ["Champion", "Games", "Wins", "Win rate %", "KDA", "CS/min", "Note"]
+NOT_ENOUGH = "not enough data"
+GREY = "color: #9ca3af"
 
 NO_KEY = (
     "**Asking the coach needs an Anthropic API key**, and each question is a paid "
@@ -34,6 +52,10 @@ TOOL_COLUMNS = ["Tool", "Asked for", "Your games", "Benchmark games"]
 
 def _unreachable() -> str:
     return f"Can't reach the API at {API}. Start it with `docker compose up -d`."
+
+
+def _detail(response: httpx.Response) -> str:
+    return f"The API returned {response.status_code}: {response.json().get('detail')}"
 
 
 def _range(games: dict[str, int] | None) -> str:
@@ -76,41 +98,87 @@ def ask(question: str, client: httpx.Client) -> tuple[str, str, pd.DataFrame]:
     if response.status_code == 503:
         return NO_KEY, "", empty
     if response.status_code != 200:
-        return f"The API returned {response.status_code}: {response.json().get('detail')}", "", empty
+        return _detail(response), "", empty
     answer = response.json()
     return answer["text"], status_text(answer), tools_table(answer.get("tools", []))
 
 
-def coverage(client: httpx.Client) -> str:
+def coverage(client: httpx.Client) -> tuple[str, list[str]]:
+    """The data summary, and the champions played, most played first."""
     try:
         response = client.get("/stats/data_coverage")
     except httpx.TransportError:
-        return _unreachable()
+        return _unreachable(), []
     if response.status_code != 200:
-        return f"No data yet: {response.json().get('detail')}"
-    player = response.json()["player"]
+        return f"No data yet: {response.json().get('detail')}", []
+    result = response.json()
+    player = result["player"]
     patches = player["patches"]
     patch_range = f"{patches[0]} to {patches[-1]}" if patches else "none"
-    return (
+    summary = (
         f"**Your data:** {player['games']} games, {player['jungle_games']} in the jungle, "
         f"from {player['first_game']} to {player['last_game']}, patches {patch_range}."
     )
+    return summary, [c["champion"] for c in result["champions"]]
 
 
-def stat(name: str, champion: str, client: httpx.Client) -> tuple[pd.DataFrame, str]:
-    params = {"champion": champion.strip()} if champion.strip() else {}
+def stat(name: str, champion: str | None, client: httpx.Client) -> tuple[pd.DataFrame, str]:
+    params = {"champion": champion} if champion and champion != ALL_CHAMPIONS else {}
     try:
         response = client.get(f"/stats/{name}", params=params)
     except httpx.TransportError:
         return pd.DataFrame(), _unreachable()
     if response.status_code != 200:
-        return pd.DataFrame(), f"The API returned {response.status_code}: {response.json().get('detail')}"
+        return pd.DataFrame(), _detail(response)
     result = response.json()
     rows = result.get("rows", [])
     note = result.get("note", "")
     if any(row.get("low_sample") for row in rows):
-        note = (note + " " if note else "") + "Rows marked low_sample have under 10 games: not enough data."
+        note = (note + " " if note else "") + f"Rows marked low_sample have under {MIN_GAMES} games: {NOT_ENOUGH}."
     return pd.DataFrame(rows), note
+
+
+def champion_table(rows: list[dict[str, Any]]) -> Styler:
+    """Most played first, with rows under MIN_GAMES greyed and noted, not hidden.
+
+    The note column keeps the warning attached to its row when the table is sorted.
+    """
+    frame = pd.DataFrame(
+        [
+            [
+                r["champion"],
+                r["games"],
+                r["wins"],
+                r["win_rate_pct"],
+                r["kda"],
+                r["cs_per_min"],
+                NOT_ENOUGH if r["games"] < MIN_GAMES else "",
+            ]
+            for r in rows
+        ],
+        columns=CHAMPION_COLUMNS,
+    )
+    return frame.style.apply(
+        lambda row: [GREY if row["Games"] < MIN_GAMES else ""] * len(row), axis=1
+    ).format({"Win rate %": "{:.1f}", "KDA": "{:.2f}", "CS/min": "{:.2f}"})
+
+
+def my_champions(role: str, client: httpx.Client) -> tuple[Styler | pd.DataFrame, str]:
+    params = {"role": ROLES[role]} if ROLES[role] else {}
+    try:
+        response = client.get("/stats/champion_stats", params=params)
+    except httpx.TransportError:
+        return pd.DataFrame(columns=CHAMPION_COLUMNS), _unreachable()
+    if response.status_code != 200:
+        return pd.DataFrame(columns=CHAMPION_COLUMNS), _detail(response)
+    rows = response.json()["rows"]
+    if not rows:
+        return pd.DataFrame(columns=CHAMPION_COLUMNS), f"No games in this role ({role})."
+    games = sum(r["games"] for r in rows)
+    return champion_table(rows), (
+        f"{len(rows)} champions, {games} games. Grey rows have under {MIN_GAMES} games: "
+        f"{NOT_ENOUGH}. To sort, click a column header, then its ⋮ menu."
+    )
 
 
 def build(client: httpx.Client) -> gr.Blocks:
@@ -131,14 +199,32 @@ def build(client: httpx.Client) -> gr.Blocks:
             send.click(lambda q: ask(q, client), question, [reply, check, tools])
             question.submit(lambda q: ask(q, client), question, [reply, check, tools])
         with gr.Tab("Stats (free)"):
+            gr.Markdown("### My champions")
+            role = gr.Radio(list(ROLES), value="All", label="Role")
+            champions_note = gr.Markdown()
+            champions = gr.Dataframe(
+                headers=CHAMPION_COLUMNS, label="Champions", interactive=False
+            )
+            role.change(lambda r: my_champions(r, client), role, [champions, champions_note])
+
+            gr.Markdown("### Any stat")
             with gr.Row():
                 name = gr.Dropdown(STATS, value="win_rates", label="Stat")
-                champion = gr.Textbox(label="Champion (optional)", placeholder="e.g. Viego")
+                champion = gr.Dropdown([ALL_CHAMPIONS], value=ALL_CHAMPIONS, label="Champion")
             run = gr.Button("Show")
             note = gr.Markdown()
-            rows = gr.Dataframe(label="Rows", interactive=False, wrap=True)
+            rows = gr.Dataframe(
+                headers=["Pick a stat and press Show"], label="Rows", interactive=False, wrap=True
+            )
             run.click(lambda n, c: stat(n, c, client), [name, champion], [rows, note])
-        app.load(lambda: coverage(client), None, data)
+
+        def load() -> tuple[str, gr.Dropdown, Styler | pd.DataFrame, str]:
+            summary, played = coverage(client)
+            table, table_note = my_champions("All", client)
+            choices = gr.Dropdown(choices=[ALL_CHAMPIONS, *played], value=ALL_CHAMPIONS)
+            return summary, choices, table, table_note
+
+        app.load(load, None, [data, champion, champions, champions_note])
     return app
 
 

@@ -470,3 +470,36 @@ async def gold_cs_at_minute(session: AsyncSession, puuids: Players) -> list[Row]
     with players of other ranks. CS includes jungle camps.
     """
     return await fetch(session, GOLD_CS_AT_MINUTE, puuids=puuids)
+
+
+CHAMPION_STATS = """
+WITH games AS (
+    SELECT p.champion_name, p.win, p.kills, p.deaths, p.assists,
+           (p.lane_cs + p.jungle_cs) / (m.duration_s / 60.0) AS cs_per_min
+    FROM match_participants p
+    JOIN matches m ON m.match_id = p.match_id
+    WHERE p.puuid = ANY(:puuids) AND NOT m.is_remake
+)
+SELECT champion_name AS champion,
+       count(*) AS games,
+       count(*) FILTER (WHERE win) AS wins,
+       round(100.0 * count(*) FILTER (WHERE win) / count(*), 1) AS win_rate_pct,
+       sum(kills)::int AS kills,
+       sum(deaths)::int AS deaths,
+       sum(assists)::int AS assists,
+       round((sum(kills) + sum(assists))::numeric / greatest(sum(deaths), 1), 2) AS kda,
+       round(avg(cs_per_min), 2) AS cs_per_min
+FROM games
+GROUP BY champion_name
+ORDER BY games DESC, champion_name
+"""
+
+
+async def champion_stats(session: AsyncSession, puuids: Players) -> list[Row]:
+    """Games, wins, win rate, KDA and CS per minute per champion, most played first.
+
+    KDA is the totals' (kills + assists) / deaths, as match history sites show it,
+    with deaths counted as 1 when there were none. Pass a Scope with a role to
+    keep only games in that role.
+    """
+    return await fetch(session, CHAMPION_STATS, puuids=puuids)

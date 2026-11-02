@@ -148,3 +148,28 @@ async def test_a_bad_argument_is_422(test_settings, sessions):
         response = client.get("/stats/compare_to_benchmark", params={"cohort": "gold"})
 
     assert response.status_code == 422
+
+
+async def test_champion_stats_can_be_narrowed_to_a_role(test_settings, sessions):
+    await add_player(sessions)
+    async with sessions() as session:
+        await add_game(session, "EUW1_1", champion="Viego", role="JUNGLE")
+        await add_game(session, "EUW1_2", champion="Ornn", role="TOP")
+        await session.commit()
+    with TestClient(create_app(test_settings)) as client:
+        top = client.get("/stats/champion_stats", params={"role": "TOP"}).json()["rows"]
+        every = client.get("/stats/champion_stats").json()["rows"]
+
+    assert [r["champion"] for r in top] == ["Ornn"]
+    assert {r["champion"] for r in every} == {"Viego", "Ornn"}
+
+
+async def test_the_player_endpoint_returns_the_riot_id(test_settings, sessions):
+    await add_player(sessions)
+    with TestClient(create_app(test_settings)) as client:
+        assert client.get("/player").json() == {"game_name": "a", "tag_line": "b"}
+
+
+async def test_the_player_endpoint_needs_a_synced_player(test_settings, sessions):
+    with TestClient(create_app(test_settings)) as client:
+        assert client.get("/player").status_code == 409

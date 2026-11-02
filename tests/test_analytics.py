@@ -14,7 +14,9 @@ from analytics.jungle import (
     wards_per_minute,
 )
 from analytics.stats import (
+    Scope,
     after_loss_streak,
+    champion_stats,
     cs_per_minute,
     deaths_by_phase,
     gold_cs_at_minute,
@@ -30,6 +32,7 @@ START = datetime(2026, 1, 1, tzinfo=UTC)
 ROLES = ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY")
 ALL_STATS = [
     win_rates,
+    champion_stats,
     deaths_by_phase,
     lane_diff,
     after_loss_streak,
@@ -957,3 +960,53 @@ async def test_first_lane_kill_shares_add_up(session):
     top, none = find(rows, lane="top"), find(rows, lane="none")
     assert (top["share_pct"], top["total_games"], top["games_before_10"]) == (50.0, 2, 0)
     assert (none["share_pct"], none["total_games"]) == (50.0, 2)
+
+
+async def test_champion_stats_totals_each_champion(sessions):
+    async with sessions() as session:
+        await add_game(session, "EUW1_1", champion="Viego", win=True,
+                       kills=4, deaths=2, assists=6, jungle_cs=150)
+        await add_game(session, "EUW1_2", champion="Viego", win=False,
+                       kills=2, deaths=4, assists=0, jungle_cs=210)
+        await add_game(session, "EUW1_3", champion="Quinn", kills=5, deaths=0, assists=1)
+        rows = await champion_stats(session, [ME])
+
+    viego, quinn = rows
+    assert (viego["champion"], viego["games"], viego["wins"], viego["win_rate_pct"]) == (
+        "Viego", 2, 1, 50.0
+    )
+    # (4 + 6 + 2 + 0) / (2 + 4) = 2.0, over totals, not an average of ratios.
+    assert viego["kda"] == 2.0
+    # 150 and 210 CS over 30 minutes: 5 and 7 a minute.
+    assert viego["cs_per_min"] == 6.0
+    # No deaths counts as 1, so the ratio stays finite.
+    assert quinn["kda"] == 6.0
+    assert viego["low_sample"] and quinn["low_sample"]
+
+
+async def test_champion_stats_can_keep_one_role(sessions):
+    async with sessions() as session:
+        await add_game(session, "EUW1_1", champion="Viego", role="JUNGLE")
+        await add_game(session, "EUW1_2", champion="Ornn", role="TOP")
+        rows = await champion_stats(session, Scope(puuids=(ME,), role="TOP"))
+
+    assert [r["champion"] for r in rows] == ["Ornn"]
+
+
+async def test_champion_stats_leave_out_remakes(sessions):
+    async with sessions() as session:
+        await add_game(session, "EUW1_1", champion="Viego")
+        await add_game(session, "EUW1_2", champion="Viego", is_remake=True)
+        rows = await champion_stats(session, [ME])
+
+    assert rows[0]["games"] == 1
+
+
+async def test_champion_stats_put_the_most_played_first(sessions):
+    async with sessions() as session:
+        await add_game(session, "EUW1_1", champion="Amumu")
+        await add_game(session, "EUW1_2", champion="Viego")
+        await add_game(session, "EUW1_3", champion="Viego")
+        rows = await champion_stats(session, [ME])
+
+    assert [r["champion"] for r in rows] == ["Viego", "Amumu"]

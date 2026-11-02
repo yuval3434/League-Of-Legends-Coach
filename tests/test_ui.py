@@ -2,7 +2,19 @@
 
 import httpx
 
-from ui.app import NO_KEY, ask, build, coverage, stat, status_text, tools_table
+from ui.app import (
+    ALL_CHAMPIONS,
+    GREY,
+    NO_KEY,
+    ask,
+    build,
+    champion_table,
+    coverage,
+    my_champions,
+    stat,
+    status_text,
+    tools_table,
+)
 
 ANSWER = {
     "text": "You average 5.45 CS per minute.",
@@ -74,13 +86,16 @@ def test_no_benchmark_is_shown_in_the_tools_table():
     assert tools_table([tool]).values.tolist()[0][3] == "19 (16 players): no benchmark"
 
 
-def test_coverage_summarizes_the_data():
+def test_coverage_summarizes_the_data_and_lists_champions():
     body = {"player": {"games": 12, "jungle_games": 12, "first_game": "2026-01-05",
-                       "last_game": "2026-01-20", "patches": ["16.1", "16.2"]}}
-    assert coverage(client(body=body)) == (
+                       "last_game": "2026-01-20", "patches": ["16.1", "16.2"]},
+            "champions": [{"champion": "Quinn", "games": 5}, {"champion": "Viego", "games": 1}]}
+    summary, played = coverage(client(body=body))
+    assert summary == (
         "**Your data:** 12 games, 12 in the jungle, from 2026-01-05 to 2026-01-20, "
         "patches 16.1 to 16.2."
     )
+    assert played == ["Quinn", "Viego"]
 
 
 def test_a_stat_flags_low_samples():
@@ -92,3 +107,52 @@ def test_a_stat_flags_low_samples():
 
 def test_the_app_builds():
     assert build(client()) is not None
+
+
+def recording_client(body):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=body)
+
+    return httpx.Client(base_url="http://api", transport=httpx.MockTransport(handler)), requests
+
+
+def test_all_champions_sends_no_filter():
+    http, requests = recording_client({"rows": []})
+    stat("win_rates", ALL_CHAMPIONS, http)
+    stat("win_rates", "Viego", http)
+    assert [dict(r.url.params) for r in requests] == [{}, {"champion": "Viego"}]
+
+
+CHAMPIONS = [
+    {"champion": "DrMundo", "games": 17, "wins": 9, "win_rate_pct": 52.9, "kda": 2.4, "cs_per_min": 5.1},
+    {"champion": "Viego", "games": 8, "wins": 3, "win_rate_pct": 37.5, "kda": 2.06, "cs_per_min": 5.7},
+]
+
+
+def test_low_sample_rows_stay_visible_greyed_and_noted():
+    styled = champion_table(CHAMPIONS)
+    frame = styled.data
+    assert frame["Champion"].tolist() == ["DrMundo", "Viego"]
+    assert frame["Note"].tolist() == ["", "not enough data"]
+    # The style computed for each cell: (row, column) -> [(property, value)].
+    styles = styled._compute().ctx
+    grey = ("color", GREY.split(": ")[1])
+    columns = range(len(frame.columns))
+    assert all(grey in styles[(1, c)] for c in columns)
+    assert not any(grey in styles.get((0, c), []) for c in columns)
+
+
+def test_a_role_maps_to_the_api_value():
+    http, requests = recording_client({"rows": CHAMPIONS})
+    my_champions("Support", http)
+    my_champions("All", http)
+    assert [dict(r.url.params) for r in requests] == [{"role": "UTILITY"}, {}]
+
+
+def test_a_role_with_no_games_says_so():
+    http, _ = recording_client({"rows": []})
+    table, note = my_champions("Top", http)
+    assert "No games in this role" in note
