@@ -120,9 +120,9 @@ function ChampionTableRow({ row, name }: { row: ChampionRow; name: string }) {
           <WinRateBar value={row.win_rate_pct} low={low} />
           <div
             role="tooltip"
-            className="pointer-events-none absolute bottom-full right-0 z-10 mb-1.5 whitespace-nowrap rounded-[3px] border border-rule bg-panel px-3 py-1.5 text-[13px] text-ink2 opacity-0 shadow-lg shadow-black/40 transition-opacity duration-150 group-hover/rate:opacity-100 group-focus/rate:opacity-100"
+            className="pointer-events-none absolute bottom-full right-0 z-10 mb-1.5 w-[340px] rounded-[3px] border border-rule bg-panel px-3 py-2 text-left text-[13px] leading-relaxed text-ink2 opacity-0 shadow-lg shadow-black/40 transition-opacity duration-150 group-hover/rate:opacity-100 group-focus/rate:opacity-100"
           >
-            <span className="text-ink">{fmt(row.win_rate_pct, 1)}%</span> · {rangeWords(row)}
+            {rangeWords(row)}
           </div>
         </div>
       </td>
@@ -196,7 +196,7 @@ export function Champions() {
         <p className="mt-10 text-ink2">No ranked games{where} yet.</p>
       )}
       {rows !== null && rows.length > 0 && (
-        <div className="mt-6 overflow-x-auto">
+        <div className="mt-6">
           <table className="w-full min-w-[760px] border-collapse text-[14px]">
             <colgroup>
               <col className="w-[30%]" />

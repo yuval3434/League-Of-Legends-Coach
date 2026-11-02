@@ -35,18 +35,20 @@ describe("champion sorting", () => {
 
 describe("win rate range", () => {
   it("gives the server's range in plain words", () => {
-    const mundo = { ...row("DrMundo", 17, 52.9), margin_win_rate_pct: 24.5, win_rate_low_pct: 28, win_rate_high_pct: 77 };
-    expect(rangeWords(mundo)).toBe("could be anywhere from 28% to 77% on 17 games");
+    const mundo = { ...row("DrMundo", 18, 50), wins: 9, margin_win_rate_pct: 23.8, win_rate_low_pct: 26, win_rate_high_pct: 74 };
+    expect(rangeWords(mundo)).toBe(
+      "You won 9 of 18. That's too few games to tell how good you really are on this champion — your true win rate could be anywhere from about 26% to 74%.",
+    );
   });
 
   it("gives no range under 10 games", () => {
-    const viego = { ...row("Viego", 8, 25), low_sample: true, margin_win_rate_pct: 32.1, win_rate_low_pct: 0, win_rate_high_pct: 57 };
-    expect(rangeWords(viego)).toBe("too early to tell on 8 games");
+    const viego = { ...row("Viego", 8, 25), wins: 2, low_sample: true, margin_win_rate_pct: 32.1, win_rate_low_pct: 0, win_rate_high_pct: 57 };
+    expect(rangeWords(viego)).toBe("You won 2 of 8. That's too few games to tell how good you really are on this champion.");
   });
 
   it("doesn't call a perfect record certain", () => {
     const perfect = { ...row("Amumu", 10, 100), wins: 10, margin_win_rate_pct: 0, win_rate_low_pct: 100, win_rate_high_pct: 100 };
-    expect(rangeWords(perfect)).toBe("10 games, all won: too few to give a range");
+    expect(rangeWords(perfect)).toBe("You won 10 of 10. That's too few games to tell how good you really are on this champion.");
   });
 });
 
