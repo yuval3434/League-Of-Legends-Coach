@@ -157,6 +157,17 @@ def _keyed(rows: list[Row], metric: Metric) -> dict[tuple[Any, ...], Row]:
     }
 
 
+def _percent(value: str, difference: float, theirs: float) -> int | None:
+    """The gap as a whole percentage of the benchmark, where that means something.
+
+    Not for differences against an opponent, where the benchmark sits near zero,
+    or for values already in percent, where "points" is the clearer unit.
+    """
+    if value.endswith(("_diff", "_pct")) or theirs <= 0:
+        return None
+    return round(100 * difference / theirs)
+
+
 def _gap(
     value: str, my_row: Row | None, their_row: Row | None, enough: bool
 ) -> dict[str, Any]:
@@ -177,6 +188,7 @@ def _gap(
         "my_margin": my_margin,
         "benchmark_margin": their_margin,
         "difference": None,
+        "difference_pct": None,
         "difference_margin": None,
         "clear_gap": None,
         "strong_gap": None,
@@ -185,6 +197,7 @@ def _gap(
         return gap
     difference = mine - theirs
     gap["difference"] = round(difference, 3)
+    gap["difference_pct"] = _percent(value, difference, theirs)
     if my_margin is not None and their_margin is not None:
         combined = math.hypot(my_margin, their_margin)
         clear = abs(difference) > combined

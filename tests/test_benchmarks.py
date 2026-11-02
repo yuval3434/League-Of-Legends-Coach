@@ -789,3 +789,29 @@ def test_a_sync_is_refused_during_a_pull(client):
     response = client.post("/sync", json={"game_name": "a", "tag_line": "b"})
 
     assert response.status_code == 409
+
+
+async def test_a_gap_is_also_given_as_a_percentage(sessions, benchmark_sessions):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        await fill_cohort(bench, gold=2000)
+        await add_game(mine, "EUW1_1", patch="16.21")
+        await add_frames(mine, "EUW1_1", 10, {2: 1900})
+
+        result = await compare(mine, bench, [ME], SILVER)
+
+    row = find(result["rows"], metric="gold_cs_at_minute", minute=10, value="avg_gold")
+    # 100 behind 2000 is 5% behind.
+    assert row["difference_pct"] == -5
+
+
+async def test_no_percentage_where_it_would_mislead(sessions, benchmark_sessions):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        await fill_cohort(bench)
+        await add_game(mine, "EUW1_1", patch="16.21")
+        await add_frames(mine, "EUW1_1", 10, {2: 1500})
+
+        result = await compare(mine, bench, [ME], SILVER)
+
+    for row in result["rows"]:
+        if row["value"].endswith(("_diff", "_pct")):
+            assert row["difference_pct"] is None, row["value"]
