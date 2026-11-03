@@ -6,8 +6,9 @@ and uses an LLM agent to explain them in plain language. The model never
 produces a number: it calls one tool per stat, and code checks that every number
 in its answer appears in a tool result.
 
-![The UI on demo data: the stats tab showing win rates, each flagged as too few games](docs/screenshot.png)
+![The Overview page on my real games, Riot ID hidden: behind Silver junglers on farm, ahead on vision](docs/screens/overview.png)
 
+- [The web app](#the-web-app): the four pages.
 - [DECISIONS.md](DECISIONS.md): why each stat works the way it does, with the data
   behind each choice.
 - [Eval](#eval): how the coach is tested, with results and limits.
@@ -18,6 +19,42 @@ key, which is for personal use: a public app needs a production key approved by
 Riot. Every coach question is also a paid model call, and the benchmark is built
 from other players' matches, which belong in a local database rather than on a
 server. LoL Coach isn't endorsed by Riot Games.
+
+## The web app
+
+A React app in [web/](web/) reads the API and draws; it never computes a stat.
+Every verdict, gap, margin and percentage comes from the API. The screenshots are
+my real games, with the Riot ID swapped for a placeholder.
+
+```sh
+cd web
+npm install
+npm run dev     # http://localhost:5173, with the API on port 8000
+```
+
+**Overview:** a headline written by code from the findings, then each theme's
+telling measures as bars from zero, with a plain verdict and the gap in words.
+Margins wait behind a hover. Context the verdict doesn't use, such as trinket
+wards and vision score, sits under the theme marked "not judged" (above).
+
+**Champions:** a role filter, a table sorted by any column, and each win rate's
+range on hover. Champions on fewer than 10 games are hatched and greyed wherever
+the sort puts them, and only champions with enough games offer "Ask the coach".
+
+![The Champions page: a sortable table, with champions under 10 games hatched](docs/screens/champions.png)
+
+**Compare:** Silver and Emerald at once. Gold and CS at 10, 15 and 20 minutes,
+with your likely range shaded, then every theme's verdict against both ranks.
+
+![The Compare page: gold and CS by minute against Silver and Emerald](docs/screens/compare.png)
+
+**Coach:** each reply comes with a receipt worked out by the server, not the
+model: the number check, every tool called with the games it rested on, and the
+cost. Questions are only sent on the Ask button.
+
+![The Coach page: a reply on deaths, with its number check, tools and cost](docs/screens/coach.png)
+
+The older Gradio UI in `ui/` still works and is what the demo below uses.
 
 ## Try it in demo mode
 

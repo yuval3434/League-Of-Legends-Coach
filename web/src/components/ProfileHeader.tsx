@@ -1,4 +1,5 @@
 import type { Coverage, Player } from "../api";
+import { useChampionNames } from "../ddragon";
 import { ChampionIcon } from "./ChampionIcon";
 
 function shortDate(iso: string): string {
@@ -8,6 +9,7 @@ function shortDate(iso: string): string {
 /** Who this report is about: Riot ID, games covered, and the most played champions. */
 export function ProfileHeader({ player, coverage }: { player: Player; coverage: Coverage }) {
   const p = coverage.player;
+  const name = useChampionNames();
   return (
     <div className="flex flex-wrap items-center justify-between gap-6 border-b border-rule py-7">
       <div>
@@ -24,7 +26,7 @@ export function ProfileHeader({ player, coverage }: { player: Player; coverage: 
           <div key={c.champion} className="flex items-center gap-2.5">
             <ChampionIcon champion={c.champion} size={38} />
             <div className="leading-tight">
-              <div className="text-[13px] text-ink">{c.champion}</div>
+              <div className="text-[13px] text-ink">{name(c.champion)}</div>
               <div className="font-mono text-[11px] text-ink3">{c.games} games</div>
             </div>
           </div>
