@@ -19,13 +19,14 @@ from agent.llm import ModelClient, create_model
 from agent.pricing import answer_cost
 from agent.samples import summarize
 from agent.tools import TOOLS, ToolContext, run_tool
-from benchmarks.cohorts import COHORTS
+from benchmarks.cohorts import COHORTS, why_no_benchmark
 from benchmarks.compare import compare
 from benchmarks.models import create_benchmark_engine
 from benchmarks.pull import pull_cohort, target_champions, tracked_puuids
 from ingestion.config import Settings
 from ingestion.rate_limiter import RateLimiter
-from ingestion.riot_client import RiotClient, RiotError
+from ingestion.players import SelectedPlayer, list_players, load_player
+from ingestion.riot_client import RiotAuthError, RiotClient, RiotError, RiotNotFound
 from ingestion.sync import sync_player
 
 logging.basicConfig(level=logging.INFO)
@@ -46,6 +47,8 @@ class PullRequest(BaseModel):
 
 class CoachRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
+    # The PUUID of the player to ask about, from GET /players. None is the owner.
+    player: str | None = None
 
 
 def create_app(
@@ -87,6 +90,11 @@ def create_app(
     app = FastAPI(title="LoL Coach", lifespan=lifespan)
 
     async def run_sync(request: SyncRequest) -> None:
+        riot_id = f"{request.game_name}#{request.tag_line}"
+
+        def progress(event: dict[str, Any]) -> None:
+            app.state.sync_status = {"state": "running", "riot_id": riot_id, **event}
+
         try:
             result = await sync_player(
                 app.state.sessions,
@@ -96,8 +104,24 @@ def create_app(
                 settings.riot_match_region,
                 settings.sync_queues,
                 settings.sync_match_count,
+                progress,
             )
-            app.state.sync_status = {"state": "done", **asdict(result)}
+            app.state.sync_status = {"state": "done", "riot_id": riot_id, **asdict(result)}
+        except RiotNotFound:
+            app.state.sync_status = {
+                "state": "failed",
+                "riot_id": riot_id,
+                "error": f"No player called {riot_id} was found.",
+            }
+        except RiotAuthError:
+            app.state.sync_status = {
+                "state": "failed",
+                "riot_id": riot_id,
+                "error": (
+                    "Riot refused the API key. Development keys expire every 24 hours: "
+                    "put a new one in .env and restart the API."
+                ),
+            }
         except RiotError as error:
             logger.error("Sync failed: %s", error)
             app.state.sync_status = {"state": "failed", "error": str(error)}
@@ -141,6 +165,29 @@ def create_app(
         if "running" in (state.sync_status["state"], state.pull_status["state"]):
             raise HTTPException(409, "A sync or benchmark pull is already running")
 
+    async def selected(request: Request, player: str | None) -> SelectedPlayer:
+        """The player a request is about: the PUUID given, or the owner."""
+        async with request.app.state.sessions() as session:
+            found = await load_player(session, player)
+        if found is None and player:
+            raise HTTPException(404, "No synced player has that PUUID")
+        if found is None:
+            raise HTTPException(409, "No player is synced yet: run POST /sync first")
+        return found
+
+    def context_for(request: Request, player: SelectedPlayer) -> ToolContext:
+        state = request.app.state
+        return ToolContext(state.sessions, state.benchmark_sessions, (player.puuid,), player)
+
+    def benchmarks_for(
+        rank_tier: str | None, main_role: str | None, rank_checked: bool
+    ) -> dict[str, str | None]:
+        """Each cohort, with why it doesn't fit the player, or None if it does."""
+        return {
+            cohort: why_no_benchmark(cohort, rank_tier, main_role, rank_checked)
+            for cohort in COHORTS
+        }
+
     @app.get("/health")
     async def health(request: Request) -> dict[str, str]:
         async with request.app.state.sessions() as session:
@@ -153,7 +200,11 @@ def create_app(
         if not settings.riot_api_key.get_secret_value():
             raise HTTPException(503, "RIOT_API_KEY is not set in .env")
         refuse_if_busy(request.app.state)
-        request.app.state.sync_status = {"state": "running"}
+        request.app.state.sync_status = {
+            "state": "running",
+            "riot_id": f"{body.game_name}#{body.tag_line}",
+            "stage": "starting",
+        }
         request.app.state.sync_task = asyncio.create_task(run_sync(body))
         return request.app.state.sync_status
 
@@ -182,15 +233,19 @@ def create_app(
         request: Request,
         cohort: str = Query(),
         champion: str | None = Query(default=None),
+        player: str | None = Query(default=None),
     ) -> dict[str, Any]:
-        """Compare the tracked player with a cohort, optionally on one champion."""
+        """Compare a player with a cohort, if it fits them, optionally on one champion."""
         if cohort not in COHORTS:
             raise HTTPException(422, f"Unknown cohort: {cohort}")
+        chosen = await selected(request, player)
+        reason = why_no_benchmark(
+            cohort, chosen.rank_tier, chosen.main_role, chosen.rank_checked
+        )
         async with request.app.state.sessions() as my_session:
-            puuids = sorted(await tracked_puuids(my_session))
             async with request.app.state.benchmark_sessions() as benchmark_session:
                 return await compare(
-                    my_session, benchmark_session, puuids, cohort, champion
+                    my_session, benchmark_session, [chosen.puuid], cohort, champion, reason
                 )
 
     @app.get("/coach/status")
@@ -204,11 +259,7 @@ def create_app(
         state = request.app.state
         if state.coach_model is None:
             raise HTTPException(503, "ANTHROPIC_API_KEY is not set in .env")
-        async with state.sessions() as session:
-            puuids = sorted(await tracked_puuids(session))
-        if not puuids:
-            raise HTTPException(409, "No player is synced yet: run POST /sync first")
-        context = ToolContext(state.sessions, state.benchmark_sessions, tuple(puuids))
+        context = context_for(request, await selected(request, body.player))
         try:
             answer = await ask_coach(state.coach_model, context, body.question)
         except anthropic.APIError:
@@ -231,15 +282,31 @@ def create_app(
         }
 
     @app.get("/player")
-    async def player(request: Request) -> dict[str, Any]:
-        """The tracked player's Riot ID, for the profile header."""
+    async def player_info(
+        request: Request, player: str | None = Query(default=None)
+    ) -> dict[str, Any]:
+        """One player's Riot ID, rank, main role and benchmarks, for the profile header."""
+        chosen = await selected(request, player)
+        return asdict(chosen) | {
+            "benchmarks": benchmarks_for(
+                chosen.rank_tier, chosen.main_role, chosen.rank_checked
+            )
+        }
+
+    @app.get("/players")
+    async def players(request: Request) -> list[dict[str, Any]]:
+        """Every synced player, the owner first, for the player switcher."""
         async with request.app.state.sessions() as session:
-            row = (
-                await session.execute(text("SELECT game_name, tag_line FROM players LIMIT 1"))
-            ).first()
-        if row is None:
-            raise HTTPException(409, "No player is synced yet: run POST /sync first")
-        return {"game_name": row.game_name, "tag_line": row.tag_line}
+            rows = await list_players(session)
+        return [
+            row
+            | {
+                "benchmarks": benchmarks_for(
+                    row["rank_tier"], row["main_role"], row["rank_checked_at"] is not None
+                )
+            }
+            for row in rows
+        ]
 
     @app.get("/stats/{name}")
     async def stat(
@@ -249,19 +316,15 @@ def create_app(
         cohort: str | None = Query(default=None),
         theme: str | None = Query(default=None),
         role: str | None = Query(default=None),
+        player: str | None = Query(default=None),
     ) -> Any:
-        """Run one of the coach's tools directly. Free: no model call."""
+        """Run one of the coach's tools directly, for one player. Free: no model call."""
         tool = next((t for t in TOOLS if t.name == name), None)
         if tool is None:
             raise HTTPException(404, f"No stat called {name}")
         given = {"champion": champion, "cohort": cohort, "theme": theme, "role": role}
         arguments = {key: given[key] for key in tool.properties}
-        state = request.app.state
-        async with state.sessions() as session:
-            puuids = sorted(await tracked_puuids(session))
-        if not puuids:
-            raise HTTPException(409, "No player is synced yet: run POST /sync first")
-        context = ToolContext(state.sessions, state.benchmark_sessions, tuple(puuids))
+        context = context_for(request, await selected(request, player))
         result = await run_tool(context, name, arguments)
         if result.is_error:
             raise HTTPException(422, result.content)

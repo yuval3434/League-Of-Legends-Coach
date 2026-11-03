@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from agent.tools import ToolContext, run_tool
 from benchmarks.models import create_benchmark_engine
-from benchmarks.pull import tracked_puuids
+from ingestion.players import load_player
 from ingestion.config import Settings
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -47,9 +47,12 @@ async def main() -> None:
     settings = Settings()
     sessions = async_sessionmaker(create_async_engine(settings.database_url))
     benchmark = async_sessionmaker(create_benchmark_engine(settings))
+    # Always the owner: other synced players' games must never enter the fixtures.
     async with sessions() as session:
-        puuids = tuple(sorted(await tracked_puuids(session)))
-    context = ToolContext(sessions, benchmark, puuids)
+        owner = await load_player(session)
+    if owner is None:
+        raise SystemExit("No owner synced yet: run POST /sync first.")
+    context = ToolContext(sessions, benchmark, (owner.puuid,), owner)
     saved = {}
     for name, calls in CONTEXTS.items():
         saved[name] = []

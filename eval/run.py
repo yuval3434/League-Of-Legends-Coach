@@ -30,7 +30,7 @@ from agent.coach import CoachAnswer, ask_coach
 from agent.llm import AnthropicModel, ModelClient, Usage
 from agent.tools import ToolContext
 from benchmarks.models import create_benchmark_engine
-from benchmarks.pull import tracked_puuids
+from ingestion.players import load_player
 from eval.calibration import load_examples, load_tool_outputs
 from eval.cases import CASES, Case
 from eval.checks import number_words, run_code_check
@@ -322,9 +322,13 @@ async def main() -> int:
             return 1
         sessions = async_sessionmaker(create_async_engine(settings.database_url))
         benchmark = async_sessionmaker(create_benchmark_engine(settings))
+        # Always the owner: the cases are written about the owner's games.
         async with sessions() as session:
-            puuids = tuple(sorted(await tracked_puuids(session)))
-        context = ToolContext(sessions, benchmark, puuids)
+            owner = await load_player(session)
+        if owner is None:
+            print("No owner synced yet: run POST /sync first.")
+            return 1
+        context = ToolContext(sessions, benchmark, (owner.puuid,), owner)
         model = AnthropicModel(client, model_id, settings.coach_effort)
         out = RESULTS / f"{stamp}-live-{model_id}"
         out.mkdir(parents=True)

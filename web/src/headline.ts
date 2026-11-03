@@ -2,6 +2,7 @@
 // No model is involved, so the sentence can only say what the findings say.
 
 import type { Evidence, Theme } from "./api";
+import { YOU, type Subject, whoIs, whose } from "./subject";
 
 function phrase(theme: string, rows: Evidence[]): string {
   if (theme === "economy") return "farm";
@@ -23,7 +24,7 @@ function list(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-export function headline(themes: Theme[], who: string): string {
+export function headline(themes: Theme[], who: string, subject: Subject = YOU): string {
   const behind: string[] = [];
   const ahead: string[] = [];
   for (const theme of themes) {
@@ -33,9 +34,9 @@ export function headline(themes: Theme[], who: string): string {
     }
   }
   if (behind.length && ahead.length) {
-    return `You're behind ${who} on ${list(behind)}, and ahead on ${list(ahead)}.`;
+    return `${whoIs(subject)} behind ${who} on ${list(behind)}, and ahead on ${list(ahead)}.`;
   }
-  if (behind.length) return `You're behind ${who} on ${list(behind)}.`;
-  if (ahead.length) return `You're ahead of ${who} on ${list(ahead)}.`;
-  return `Nothing in your games stands out from ${who} yet.`;
+  if (behind.length) return `${whoIs(subject)} behind ${who} on ${list(behind)}.`;
+  if (ahead.length) return `${whoIs(subject)} ahead of ${who} on ${list(ahead)}.`;
+  return `Nothing in ${whose(subject)} games stands out from ${who} yet.`;
 }

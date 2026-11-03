@@ -85,12 +85,20 @@ def order_junglers(
 
 
 async def target_champions(session: AsyncSession) -> set[str]:
-    """The tracked players' jungle champions with enough games to compare."""
+    """The owner's jungle champions with enough games to compare.
+
+    Only the owner's: other synced players' games must not decide what the
+    benchmark covers, or add up with the owner's to reach the floor.
+    """
     rows = await session.execute(
         select(MatchParticipant.champion_name)
         .join(Match, Match.match_id == MatchParticipant.match_id)
         .join(Player, Player.puuid == MatchParticipant.puuid)
-        .where(MatchParticipant.team_position == "JUNGLE", Match.is_remake.is_(False))
+        .where(
+            Player.is_owner,
+            MatchParticipant.team_position == "JUNGLE",
+            Match.is_remake.is_(False),
+        )
         .group_by(MatchParticipant.champion_name)
         .having(func.count() >= MIN_TARGET_CHAMPION_GAMES)
     )

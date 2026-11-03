@@ -21,13 +21,24 @@ ACCOUNT = {"puuid": "puuid-1", "gameName": "SomePlayer", "tagLine": "EUW"}
 class FakeRiot:
     """Stands in for RiotClient, and counts the calls it receives."""
 
-    def __init__(self, ids_by_queue: dict[int, list[str]]) -> None:
+    def __init__(self, ids_by_queue: dict[int, list[str]], account=None, league=None) -> None:
         self.ids_by_queue = ids_by_queue
+        self.account = account or ACCOUNT
+        self.league = league if league is not None else [
+            {"queueType": "RANKED_FLEX_SR", "tier": "PLATINUM"},
+            {"queueType": "RANKED_SOLO_5x5", "tier": "GOLD"},
+        ]
         self.calls: Counter[str] = Counter()
+        # Kept apart from `calls`, which counts match calls only.
+        self.league_calls = 0
         self.failures: dict[tuple[str, str], Exception] = {}
 
     async def get_account(self, game_name, tag_line):
-        return ACCOUNT
+        return self.account
+
+    async def get_league_entries(self, puuid):
+        self.league_calls += 1
+        return self.league
 
     async def get_match_ids(self, puuid, queue, count):
         return self.ids_by_queue.get(queue, [])[:count]
@@ -46,9 +57,9 @@ class FakeRiot:
         return make_timeline(match_id)
 
 
-async def run(sessions, riot, count=100, queues=(420, 440)):
+async def run(sessions, riot, count=100, queues=(420, 440), progress=None):
     return await sync_player(
-        sessions, riot, "SomePlayer", "EUW", "europe", list(queues), count
+        sessions, riot, "SomePlayer", "EUW", "europe", list(queues), count, progress
     )
 
 
@@ -191,3 +202,54 @@ async def test_reparse_rebuilds_rows_from_raw_without_riot(sessions):
     async with sessions() as session:
         match = await session.get(Match, "EUW1_1")
     assert match.queue_id == 420
+
+
+async def test_sync_stores_the_solo_rank_with_the_raw_entries(sessions):
+    riot = FakeRiot({420: ["EUW1_1"]})
+    await run(sessions, riot)
+
+    async with sessions() as session:
+        player = await session.get(Player, "puuid-1")
+    # The flex entry comes first, but the solo/duo tier is the one kept.
+    assert player.rank_tier == "GOLD"
+    assert player.raw_league == riot.league
+    assert player.rank_checked_at is not None
+    assert riot.league_calls == 1
+
+
+async def test_an_unranked_player_has_no_tier(sessions):
+    await run(sessions, FakeRiot({420: ["EUW1_1"]}, league=[]))
+
+    async with sessions() as session:
+        assert (await session.get(Player, "puuid-1")).rank_tier is None
+
+
+async def test_the_first_player_synced_is_the_owner(sessions):
+    other = {"puuid": "puuid-2", "gameName": "Other", "tagLine": "EUW"}
+    await run(sessions, FakeRiot({420: ["EUW1_1"]}))
+    await run(sessions, FakeRiot({420: ["EUW1_2"]}, account=other))
+    # Syncing the owner again doesn't change who owns.
+    await run(sessions, FakeRiot({420: ["EUW1_1"]}))
+
+    async with sessions() as session:
+        owners = (await session.scalars(select(Player.puuid).where(Player.is_owner))).all()
+    assert owners == ["puuid-1"]
+
+
+async def test_sync_reports_each_stage_and_match(sessions):
+    events = []
+    await run(sessions, FakeRiot({420: ["EUW1_1", "EUW1_2"]}), progress=events.append)
+
+    assert [e["stage"] for e in events[:3]] == ["account", "match_list", "rank"]
+    matches = [e for e in events if e["stage"] == "matches"]
+    assert [e["done"] for e in matches] == [0, 1, 2]
+    assert all(e["total"] == 2 and e["to_fetch"] == 2 for e in matches)
+
+
+async def test_stored_matches_dont_count_towards_the_time_left(sessions):
+    await run(sessions, FakeRiot({420: ["EUW1_1"]}))
+    events = []
+    await run(sessions, FakeRiot({420: ["EUW1_1", "EUW1_2"]}), progress=events.append)
+
+    first = next(e for e in events if e["stage"] == "matches")
+    assert (first["total"], first["to_fetch"]) == (2, 1)

@@ -9,6 +9,8 @@ import { ChampionIcon } from "../components/ChampionIcon";
 import { Layout } from "../components/Layout";
 import { Marker } from "../components/Verdict";
 import { nextSort, rangeWords, sortChampions, type Sort, type SortKey } from "../champions";
+import { usePlayer } from "../player";
+import { type Subject, subjectOf, YOU, Whose } from "../subject";
 import { useChampionNames } from "../ddragon";
 import { fmt } from "../metrics";
 import { askCoach } from "../router";
@@ -94,7 +96,7 @@ function HeaderCell({ column, sort, onSort }: { column: (typeof COLUMNS)[number]
   );
 }
 
-function ChampionTableRow({ row, name }: { row: ChampionRow; name: string }) {
+function ChampionTableRow({ row, name, subject }: { row: ChampionRow; name: string; subject: Subject }) {
   const low = row.low_sample ?? false;
   const tone = low ? "text-ink3" : "text-ink";
   return (
@@ -122,7 +124,7 @@ function ChampionTableRow({ row, name }: { row: ChampionRow; name: string }) {
             role="tooltip"
             className="pointer-events-none absolute bottom-full right-0 z-10 mb-1.5 w-[340px] rounded-[3px] border border-rule bg-panel px-3 py-2 text-left text-[13px] leading-relaxed text-ink2 opacity-0 shadow-lg shadow-black/40 transition-opacity duration-150 group-hover/rate:opacity-100 group-focus/rate:opacity-100"
           >
-            {rangeWords(row)}
+            {rangeWords(row, subject)}
           </div>
         </div>
       </td>
@@ -132,7 +134,11 @@ function ChampionTableRow({ row, name }: { row: ChampionRow; name: string }) {
         {/* Under 10 games the coach could only say "not enough data", and asking costs money. */}
         {!low && (
           <a
-            href={askCoach(`How am I doing on ${name}, and what should I work on?`)}
+            href={askCoach(
+              subject.you
+                ? `How am I doing on ${name}, and what should I work on?`
+                : `How is ${subject.name} doing on ${name}, and what should they work on?`,
+            )}
             className="whitespace-nowrap text-[13px] text-faint underline decoration-transparent underline-offset-4 group-hover:text-ink2 group-hover:decoration-ink3 hover:!text-ink focus-visible:text-ink focus-visible:decoration-ink3"
           >
             Ask the coach
@@ -150,11 +156,14 @@ export function Champions() {
   const [sort, setSort] = useState<Sort>({ key: "games", descending: true });
   const [hideLow, setHideLow] = useState(false);
   const name = useChampionNames();
+  const { puuid, player } = usePlayer();
+  const s = player ? subjectOf(player) : YOU;
 
   useEffect(() => {
     setRows(null);
-    api.champions(role).then(setRows).catch((e: Error) => setError(e.message));
-  }, [role]);
+    setError(null);
+    api.champions(role, puuid).then(setRows).catch((e: Error) => setError(e.message));
+  }, [role, puuid]);
 
   const sorted = rows ? sortChampions(rows, sort, name) : [];
   const shown = hideLow ? sorted.filter((r) => !r.low_sample) : sorted;
@@ -167,7 +176,7 @@ export function Champions() {
         <div className="smallcaps text-ink3">Champions</div>
         <h1 className="display mt-1.5 max-w-[920px] text-[50px] leading-[1.02]">
           {rows === null
-            ? "Your champions"
+            ? `${Whose(s)} champions`
             : `${rows.length} champions played, ${judged} with enough games to judge`}
         </h1>
         <p className="mt-5 max-w-[700px] text-[16px] text-ink2">
@@ -191,7 +200,7 @@ export function Champions() {
       </div>
 
       {error && <p className="mt-10 text-ink2">{error}</p>}
-      {!error && rows === null && <p className="mt-10 font-mono text-[12px] text-ink3">Loading your champions…</p>}
+      {!error && rows === null && <p className="mt-10 font-mono text-[12px] text-ink3">Loading champions…</p>}
       {rows !== null && rows.length === 0 && (
         <p className="mt-10 text-ink2">No ranked games{where} yet.</p>
       )}
@@ -218,7 +227,7 @@ export function Champions() {
             </thead>
             <tbody>
               {shown.map((row) => (
-                <ChampionTableRow key={row.champion} row={row} name={name(row.champion)} />
+                <ChampionTableRow key={row.champion} row={row} name={name(row.champion)} subject={s} />
               ))}
             </tbody>
           </table>

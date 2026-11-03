@@ -100,7 +100,41 @@ async function get<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export type Player = { game_name: string; tag_line: string };
+/** The player a page is about, chosen by the server when no PUUID is given. */
+export type Player = {
+  puuid: string;
+  game_name: string;
+  tag_line: string;
+  is_owner: boolean;
+  rank_tier: string | null;
+  rank_checked: boolean;
+  main_role: string | null;
+  // Each cohort, with why it doesn't fit this player, or null if it does.
+  benchmarks: Record<string, string | null>;
+};
+
+/** A row of the player switcher. */
+export type PlayerRow = Omit<Player, "rank_checked"> & {
+  games: number;
+  jungle_games: number;
+  last_synced_at: string | null;
+  rank_checked_at: string | null;
+};
+
+export type SyncStatus = {
+  state: "idle" | "running" | "done" | "failed";
+  riot_id?: string;
+  stage?: "starting" | "account" | "match_list" | "rank" | "matches";
+  done?: number;
+  total?: number;
+  // Matches that still need Riot calls: the ones the time left depends on.
+  to_fetch?: number;
+  error?: string;
+  puuid?: string;
+  matches_found?: number;
+  matches_parsed?: number;
+  matches_failed?: number;
+};
 
 export type Role = "TOP" | "JUNGLE" | "MIDDLE" | "BOTTOM" | "UTILITY";
 
@@ -146,19 +180,29 @@ export type CoachAnswer = {
   cost_is_upper_bound: boolean;
 };
 
+/** A query string; parameters left null or undefined are left out. */
+function query(params: Record<string, string | null | undefined>): string {
+  const kept = Object.entries(params).filter((e): e is [string, string] => e[1] != null);
+  return kept.length ? `?${new URLSearchParams(kept)}` : "";
+}
+
+const JSON_POST = { method: "POST", headers: { "Content-Type": "application/json" } };
+
+// `player` is a PUUID from api.players(); null asks about the owner.
 export const api = {
   coachStatus: () => get<{ available: boolean }>("/coach/status"),
-  /** A paid call: one question to the coach. */
-  ask: (question: string) =>
-    get<CoachAnswer>("/coach", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
-    }),
-  player: () => get<Player>("/player"),
-  coverage: () => get<Coverage>("/stats/data_coverage"),
-  champions: (role: Role | null) =>
-    get<{ rows: ChampionRow[] }>(`/stats/champion_stats${role ? `?role=${role}` : ""}`).then((r) => r.rows),
-  compare: (cohort: "silver" | "emerald") =>
-    get<Comparison>(`/benchmarks/compare?cohort=${cohort}`),
+  /** A paid call: one question to the coach, about one player. */
+  ask: (question: string, player: string | null) =>
+    get<CoachAnswer>("/coach", { ...JSON_POST, body: JSON.stringify({ question, player }) }),
+  players: () => get<PlayerRow[]>("/players"),
+  player: (player: string | null) => get<Player>(`/player${query({ player })}`),
+  coverage: (player: string | null) => get<Coverage>(`/stats/data_coverage${query({ player })}`),
+  champions: (role: Role | null, player: string | null) =>
+    get<{ rows: ChampionRow[] }>(`/stats/champion_stats${query({ role, player })}`).then((r) => r.rows),
+  compare: (cohort: "silver" | "emerald", player: string | null) =>
+    get<Comparison>(`/benchmarks/compare${query({ cohort, player })}`),
+  /** Starts a sync: free, but it uses the Riot call budget for a few minutes. */
+  sync: (game_name: string, tag_line: string) =>
+    get<SyncStatus>("/sync", { ...JSON_POST, body: JSON.stringify({ game_name, tag_line }) }),
+  syncStatus: () => get<SyncStatus>("/sync/status"),
 };

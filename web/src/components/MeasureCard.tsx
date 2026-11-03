@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CompareRow } from "../api";
 import { barLengths } from "../bars";
 import { fmt, gapWords, metricLabel, rowDecimals, signed, unit } from "../metrics";
+import { type Subject, YOU, who, whoLower } from "../subject";
 import { PLAIN, PLAIN_TONE } from "../verdict";
 import { Marker, type State } from "./Verdict";
 
@@ -63,13 +64,13 @@ export function VerdictLine({ state, words }: { state: State; words: string }) {
 }
 
 /** The exact numbers, for anyone who wants them: shown on hover only. */
-function Margins({ row, cohort }: { row: CompareRow; cohort: string }) {
+function Margins({ row, cohort, subject }: { row: CompareRow; cohort: string; subject: Subject }) {
   const d = rowDecimals(row);
   const mine = row.my_margin !== null ? `±${fmt(row.my_margin, d)}` : "no margin";
   const theirs = row.benchmark_margin !== null ? `±${fmt(row.benchmark_margin, d)}` : "no margin";
   return (
     <div className="pointer-events-none absolute left-0 top-full z-10 mt-1 rounded-[3px] border border-rule bg-panel px-3 py-2 font-mono text-[11px] leading-relaxed text-ink2 opacity-0 shadow-lg shadow-black/40 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-      you {fmt(row.my_value, d)} {mine} · {row.my_sample} games
+      {whoLower(subject)} {fmt(row.my_value, d)} {mine} · {row.my_sample} games
       <br />
       {cohort} {fmt(row.benchmark_value, d)} {theirs} · {row.benchmark_sample} games
       <br />
@@ -79,7 +80,17 @@ function Margins({ row, cohort }: { row: CompareRow; cohort: string }) {
   );
 }
 
-export function MeasureCard({ row, state, cohort }: { row: CompareRow; state: State; cohort: string }) {
+export function MeasureCard({
+  row,
+  state,
+  cohort,
+  subject = YOU,
+}: {
+  row: CompareRow;
+  state: State;
+  cohort: string;
+  subject?: Subject;
+}) {
   const d = rowDecimals(row);
   const suffix = unit(row.value);
   const mine = row.my_value;
@@ -92,20 +103,22 @@ export function MeasureCard({ row, state, cohort }: { row: CompareRow; state: St
       <div className="text-[15px] text-ink">{metricLabel(row)}</div>
       {bars ? (
         <div ref={ref} className="mt-3 grid grid-cols-[52px_1fr] items-center gap-y-1.5 text-[12px]">
-          <span className="text-ink">You</span>
+          <span className="truncate text-ink" title={who(subject)}>
+            {who(subject)}
+          </span>
           <Bar length={bars.mine} color={BAR_COLOR[state]} label={`${fmt(mine, d)}${suffix}`} hatched={state === "low"} />
           <span className="text-ink3">{cohort}</span>
           <Bar length={bars.theirs} color="var(--color-ink3)" label={`${fmt(theirs, d)}${suffix}`} />
         </div>
       ) : (
         <div className="mt-3 text-[14px] text-ink2">
-          You <span className="text-ink">{signed(mine, d)}</span> · {cohort} {signed(theirs, d)}
+          {who(subject)} <span className="text-ink">{signed(mine, d)}</span> · {cohort} {signed(theirs, d)}
         </div>
       )}
       <div className="mt-3">
         <VerdictLine state={state} words={state === "low" ? "" : gapWords(row, cohort)} />
       </div>
-      <Margins row={row} cohort={cohort} />
+      <Margins row={row} cohort={cohort} subject={subject} />
     </div>
   );
 }

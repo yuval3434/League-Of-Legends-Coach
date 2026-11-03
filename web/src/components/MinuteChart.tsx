@@ -16,18 +16,26 @@ import {
 
 import { type MinutePoint, type Series } from "../compare";
 import { fmt, gapWords, rowDecimals } from "../metrics";
+import { type Subject, who, whoIs, whose } from "../subject";
 
-export const SERIES: { key: Series; label: string; color: string; dash?: string; width: number }[] = [
-  { key: "you", label: "You", color: "var(--color-ink)", width: 2.5 },
-  { key: "emerald", label: "Emerald", color: "var(--color-ink2)", dash: "6 4", width: 2 },
-  { key: "silver", label: "Silver", color: "var(--color-ink3)", width: 2 },
-];
+type ChartLine = { key: Series; label: string; color: string; dash?: string; width: number };
+
+/**
+ * The lines to draw: the player, then each cohort that has a benchmark for
+ * them. A cohort that doesn't fit gets no line at all, never a stand-in.
+ */
+export function seriesFor(subject: Subject, cohorts: { silver: boolean; emerald: boolean }): ChartLine[] {
+  const lines: ChartLine[] = [{ key: "you", label: who(subject), color: "var(--color-ink)", width: 2.5 }];
+  if (cohorts.emerald) lines.push({ key: "emerald", label: "Emerald", color: "var(--color-ink2)", dash: "6 4", width: 2 });
+  if (cohorts.silver) lines.push({ key: "silver", label: "Silver", color: "var(--color-ink3)", width: 2 });
+  return lines;
+}
 
 /** The key under the chart titles: each line's stroke beside its name. */
-export function SeriesKey() {
+export function SeriesKey({ series, subject }: { series: ChartLine[]; subject: Subject }) {
   return (
     <div className="flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-ink2">
-      {SERIES.map((s) => (
+      {series.map((s) => (
         <span key={s.key} className="inline-flex items-center gap-2">
           <svg width={26} height={8} aria-hidden>
             <line x1={0} x2={26} y1={4} y2={4} stroke={s.color} strokeWidth={s.width} strokeDasharray={s.dash} />
@@ -39,13 +47,13 @@ export function SeriesKey() {
         <svg width={26} height={10} aria-hidden>
           <rect width={26} height={10} fill="var(--color-ink)" opacity={0.14} />
         </svg>
-        Shading: your likely range
+        Shading: {whose(subject)} likely range
       </span>
     </div>
   );
 }
 
-function MinuteTooltip({ active, payload }: TooltipProps<number, string>) {
+function MinuteTooltip({ active, payload, subject }: TooltipProps<number, string> & { subject: Subject }) {
   const point = payload?.[0]?.payload as MinutePoint | undefined;
   if (!active || !point) return null;
   const mine = point.silverRow ?? point.emeraldRow;
@@ -55,17 +63,25 @@ function MinuteTooltip({ active, payload }: TooltipProps<number, string>) {
     <div className="rounded-[3px] border border-rule bg-panel px-3 py-2 text-[13px] leading-relaxed text-ink2 shadow-lg shadow-black/40">
       <div className="smallcaps text-ink3">{point.minute} min</div>
       <div>
-        <span className="text-ink">You {fmt(point.you, d)}</span>
+        <span className="text-ink">
+          {who(subject)} {fmt(point.you, d)}
+        </span>
         {mine && <span className="text-ink3"> · {mine.my_sample} games</span>}
       </div>
       {point.silverRow && (
         <div>
-          Silver {fmt(point.silver, d)} <span className="text-ink3">· you're {gapWords(point.silverRow, "Silver")}</span>
+          Silver {fmt(point.silver, d)}{" "}
+          <span className="text-ink3">
+            · {subject.you ? "you're" : whoIs(subject)} {gapWords(point.silverRow, "Silver")}
+          </span>
         </div>
       )}
       {point.emeraldRow && (
         <div>
-          Emerald {fmt(point.emerald, d)} <span className="text-ink3">· you're {gapWords(point.emeraldRow, "Emerald")}</span>
+          Emerald {fmt(point.emerald, d)}{" "}
+          <span className="text-ink3">
+            · {subject.you ? "you're" : whoIs(subject)} {gapWords(point.emeraldRow, "Emerald")}
+          </span>
         </div>
       )}
     </div>
@@ -73,7 +89,7 @@ function MinuteTooltip({ active, payload }: TooltipProps<number, string>) {
 }
 
 /** The series' name at the end of its line, so the chart reads without the key. */
-function endLabel(series: (typeof SERIES)[number], last: number) {
+function endLabel(series: ChartLine, last: number) {
   return function Label(props: { x?: number; y?: number; index?: number }) {
     // Recharts wants an element for every point; the others get an empty group.
     if (props.index !== last || props.x === undefined || props.y === undefined) return <g />;
@@ -85,10 +101,21 @@ function endLabel(series: (typeof SERIES)[number], last: number) {
   };
 }
 
-export function MinuteChart({ points, unitLabel }: { points: MinutePoint[]; unitLabel: string }) {
+export function MinuteChart({
+  points,
+  unitLabel,
+  series,
+  subject,
+}: {
+  points: MinutePoint[];
+  unitLabel: string;
+  series: ChartLine[];
+  subject: Subject;
+}) {
   const last = points.length - 1;
+  const names = series.map((s) => s.label).join(", ");
   return (
-    <div className="h-[300px] w-full" role="img" aria-label={`${unitLabel} at 10, 15 and 20 minutes for you, Silver and Emerald`}>
+    <div className="h-[300px] w-full" role="img" aria-label={`${unitLabel} at 10, 15 and 20 minutes for ${names}`}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={points} margin={{ top: 12, right: 72, bottom: 4, left: 4 }}>
           <CartesianGrid vertical={false} stroke="var(--color-rule)" />
@@ -110,7 +137,7 @@ export function MinuteChart({ points, unitLabel }: { points: MinutePoint[]; unit
             tickLine={false}
             tick={{ fill: "var(--color-ink3)", fontSize: 12 }}
           />
-          <Tooltip content={<MinuteTooltip />} cursor={{ stroke: "var(--color-ink3)", strokeDasharray: "2 3" }} />
+          <Tooltip content={<MinuteTooltip subject={subject} />} cursor={{ stroke: "var(--color-ink3)", strokeDasharray: "2 3" }} />
           {/* Only your band: the benchmarks rest on ~500 games, so theirs are a hairline. */}
           <Area
             dataKey="youBand"
@@ -121,7 +148,7 @@ export function MinuteChart({ points, unitLabel }: { points: MinutePoint[]; unit
             activeDot={false}
             connectNulls
           />
-          {SERIES.map((s) => (
+          {series.map((s) => (
             <Line
               key={s.key}
               dataKey={s.key}

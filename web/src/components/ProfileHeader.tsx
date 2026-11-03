@@ -6,7 +6,19 @@ function shortDate(iso: string): string {
   return new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** Who this report is about: Riot ID, games covered, and the most played champions. */
+const ROLES: Record<string, string> = { TOP: "top", JUNGLE: "jungle", MIDDLE: "mid", BOTTOM: "bot", UTILITY: "support" };
+
+/** "Silver · mostly jungle", from the rank stored at the last sync. */
+function rank(player: Player): string {
+  const tier = !player.rank_checked
+    ? "Rank not checked"
+    : player.rank_tier
+      ? player.rank_tier.charAt(0) + player.rank_tier.slice(1).toLowerCase()
+      : "Unranked";
+  return player.main_role ? `${tier} · mostly ${ROLES[player.main_role] ?? player.main_role}` : tier;
+}
+
+/** Who this report is about: Riot ID, rank, games covered, and the most played champions. */
 export function ProfileHeader({ player, coverage }: { player: Player; coverage: Coverage }) {
   const p = coverage.player;
   const name = useChampionNames();
@@ -18,7 +30,8 @@ export function ProfileHeader({ player, coverage }: { player: Player; coverage: 
           <span className="ml-1.5 font-sans text-[15px] font-normal tracking-normal text-ink3">#{player.tag_line}</span>
         </div>
         <div className="mt-2.5 text-[13px] text-ink2">
-          Jungle · {p.jungle_games} of {p.games} ranked games · {shortDate(p.first_game)} to {shortDate(p.last_game)}
+          {rank(player)} · {p.jungle_games} of {p.games} ranked games in the jungle · {shortDate(p.first_game)} to{" "}
+          {shortDate(p.last_game)}
         </div>
       </div>
       <div className="flex items-center gap-6">

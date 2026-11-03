@@ -2,6 +2,7 @@
 // headline. It picks and words the API's numbers; it computes no statistic.
 
 import type { CompareRow, Comparison } from "./api";
+import { YOU, type Subject, verb, who as name, whoLower } from "./subject";
 
 export const MINUTES = [10, 15, 20];
 
@@ -31,10 +32,17 @@ function band(value: number | null, margin: number | null): [number, number] | n
   return value === null || margin === null ? null : [value - margin, value + margin];
 }
 
-export function minutePoints(value: string, silver: Comparison, emerald: Comparison): MinutePoint[] {
+/** A cohort's comparison, or null when there's no benchmark for this player. */
+export type Maybe = Comparison | null;
+
+function usable(c: Maybe): Comparison | null {
+  return c && c.status === "ok" ? c : null;
+}
+
+export function minutePoints(value: string, silver: Maybe, emerald: Maybe): MinutePoint[] {
   return MINUTES.map((minute) => {
-    const s = minuteRow(silver, value, minute);
-    const e = minuteRow(emerald, value, minute);
+    const s = usable(silver) ? minuteRow(silver!, value, minute) : undefined;
+    const e = usable(emerald) ? minuteRow(emerald!, value, minute) : undefined;
     // Your value is the same in both comparisons; Silver's copy is used.
     const mine = s ?? e;
     return {
@@ -57,18 +65,32 @@ function amount(row: CompareRow): string | null {
   return `${Math.abs(row.difference_pct)}% ${row.difference < 0 ? "less" : "more"}`;
 }
 
-/** "At 20 minutes you have 13% less CS than Silver junglers and 21% less than Emerald." */
-export function compareHeadline(silver: Comparison, emerald: Comparison): string {
+/**
+ * "At 20 minutes you have 13% less CS than Silver junglers and 21% less than
+ * Emerald." Only cohorts with a benchmark for this player are named.
+ */
+export function compareHeadline(silver: Maybe, emerald: Maybe, subject: Subject = YOU): string {
+  const cohorts = [
+    { name: "Silver", c: usable(silver) },
+    { name: "Emerald", c: usable(emerald) },
+  ].filter((x): x is { name: string; c: Comparison } => x.c !== null);
+  if (!cohorts.length) return `No benchmark fits ${whoLower(subject)} yet`;
   for (const minute of [...MINUTES].reverse()) {
-    const s = minuteRow(silver, "avg_cs", minute);
-    const e = minuteRow(emerald, "avg_cs", minute);
-    if (!s || !e || s.my_low_sample) continue;
-    const a = amount(s);
-    const b = amount(e);
-    if (!a || !b) continue;
-    const vsSilver = a === "about the same" ? "about the same CS as Silver junglers" : `${a} CS than Silver junglers`;
-    const vsEmerald = b === "about the same" ? "about the same as Emerald" : `${b} than Emerald`;
-    return `At ${minute} minutes you have ${vsSilver} and ${vsEmerald}`;
+    const rows = cohorts.map(({ name: cohort, c }) => ({ cohort, row: minuteRow(c, "avg_cs", minute) }));
+    if (rows.some((r) => !r.row || r.row.my_low_sample)) continue;
+    const amounts = rows.map((r) => ({ cohort: r.cohort, words: amount(r.row!) }));
+    if (amounts.some((a) => !a.words)) continue;
+    const [first, second] = amounts;
+    const lead =
+      first.words === "about the same"
+        ? `about the same CS as ${first.cohort} junglers`
+        : `${first.words} CS than ${first.cohort} junglers`;
+    const rest = second
+      ? second.words === "about the same"
+        ? ` and about the same as ${second.cohort}`
+        : ` and ${second.words} than ${second.cohort}`
+      : "";
+    return `At ${minute} minutes ${whoLower(subject)} ${verb(subject, "have")} ${lead}${rest}`;
   }
-  return "You against Silver and Emerald junglers";
+  return `${name(subject)} against ${cohorts.map((c) => c.name).join(" and ")} junglers`;
 }

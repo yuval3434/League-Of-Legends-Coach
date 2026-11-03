@@ -7,11 +7,14 @@ import { ProfileHeader } from "../components/ProfileHeader";
 import { Marker, type State } from "../components/Verdict";
 import { headline } from "../headline";
 import { fmt, metricLabel } from "../metrics";
+import { mainCohort, usePlayer } from "../player";
+import { href } from "../router";
 import { stateOf, themeState } from "../state";
+import { subjectOf, type Subject, verb, who, whoLower, whose, Whose } from "../subject";
 import { PLAIN, PLAIN_TONE } from "../verdict";
 
-const COHORT = "Silver";
-const WHO = "Silver junglers";
+/** Who the page is about, and whom they're measured against. */
+type Words = { cohort: string; group: string; s: Subject };
 
 type Key = { value: string; minute?: number; phase?: string };
 
@@ -35,16 +38,19 @@ const TELLING: Record<string, Key[]> = {
   fights: [{ value: "avg_kill_participation_pct" }],
 };
 
-const BEHIND: Record<string, string> = {
-  economy: "You farm less than",
-  deaths: "You die more than",
-  fights: "You take part in fewer of your team's kills than",
-};
-const AHEAD: Record<string, string> = {
-  economy: "You farm more than",
-  deaths: "You die less than",
-  fights: "You take part in more of your team's kills than",
-};
+/** "You farm less than" / "Ana farms more than", for a theme's finding. */
+function lead(theme: string, behind: boolean, s: Subject): string | null {
+  switch (theme) {
+    case "economy":
+      return `${who(s)} ${verb(s, "farm")} ${behind ? "less" : "more"} than`;
+    case "deaths":
+      return `${who(s)} ${verb(s, "die")} ${behind ? "more" : "less"} than`;
+    case "fights":
+      return `${who(s)} ${verb(s, "take")} part in ${behind ? "fewer" : "more"} of ${s.you ? "your" : "their"} team's kills than`;
+    default:
+      return null;
+  }
+}
 
 function matches(row: CompareRow, key: Key): boolean {
   return (
@@ -59,7 +65,7 @@ function capital(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function title(theme: Theme): string {
+function title(theme: Theme, w: Words): string {
   const topic = TOPIC[theme.theme] ?? theme.theme;
   if (theme.status === "finding") {
     const finding = theme.findings?.find((f) => f.direction === "behind") ?? theme.findings![0];
@@ -67,11 +73,12 @@ function title(theme: Theme): string {
       const control = finding.rows.some((r) => r.value === "avg_control_placed_per_min");
       const destroyed = finding.rows.some((r) => r.value === "avg_destroyed_per_min");
       const more = finding.direction === "ahead" ? "more" : "fewer";
-      if (control && destroyed) return `You place ${more} control wards and destroy ${more} wards than ${WHO}`;
-      return control ? `You place ${more} control wards than ${WHO}` : `You destroy ${more} wards than ${WHO}`;
+      const place = `${who(w.s)} ${verb(w.s, "place")} ${more} control wards`;
+      if (control && destroyed) return `${place} and ${verb(w.s, "destroy")} ${more} wards than ${w.group}`;
+      return control ? `${place} than ${w.group}` : `${who(w.s)} ${verb(w.s, "destroy")} ${more} wards than ${w.group}`;
     }
-    const lead = (finding.direction === "behind" ? BEHIND : AHEAD)[theme.theme];
-    return lead ? `${lead} ${WHO}` : capital(topic);
+    const words = lead(theme.theme, finding.direction === "behind", w.s);
+    return words ? `${words} ${w.group}` : capital(topic);
   }
   switch (theme.status) {
     case "worth_watching":
@@ -89,7 +96,7 @@ function title(theme: Theme): string {
   }
 }
 
-function explanation(theme: Theme): string {
+function explanation(theme: Theme, w: Words): string {
   const topic = TOPIC[theme.theme] ?? theme.theme;
   if (theme.status === "finding") {
     const finding = theme.findings?.find((f) => f.direction === "behind") ?? theme.findings![0];
@@ -101,7 +108,7 @@ function explanation(theme: Theme): string {
     case "worth_watching":
       return "One measure shows a gap, but on its own it could be chance.";
     case "nothing_clear":
-      return `Your numbers and ${COHORT}'s overlap, so any gap here could be chance.`;
+      return `${Whose(w.s)} numbers and ${w.cohort}'s overlap, so any gap here could be chance.`;
     case "no_margin":
       return "These stats don't have a margin yet, so no verdict is given.";
     default:
@@ -140,7 +147,7 @@ function SectionHead({
 }
 
 /** Vision's background numbers: shown so the verdict can be read in context, never judged. */
-function VisionContext({ rows }: { rows: CompareRow[] }) {
+function VisionContext({ rows, w }: { rows: CompareRow[]; w: Words }) {
   const get = (value: string) => rows.find((r) => r.value === value && r.context_only);
   const trinket = get("avg_trinket_placed_per_min");
   const lens = get("oracle_lens_pct");
@@ -148,7 +155,8 @@ function VisionContext({ rows }: { rows: CompareRow[] }) {
   if (!trinket && !lens && !score) return null;
   const pair = (r: CompareRow, suffix = "") => (
     <>
-      you <span className="text-ink2">{fmt(r.my_value)}{suffix}</span> · {COHORT} {fmt(r.benchmark_value)}{suffix}
+      {whoLower(w.s)} <span className="text-ink2">{fmt(r.my_value)}{suffix}</span> · {w.cohort} {fmt(r.benchmark_value)}
+      {suffix}
     </>
   );
   return (
@@ -158,7 +166,7 @@ function VisionContext({ rows }: { rows: CompareRow[] }) {
         {trinket && (
           <li>
             Trinket wards placed per minute: {pair(trinket)}.
-            {lens && <> Games ending with Oracle Lens: {pair(lens, "%")}, on {lens.my_sample} of your games.</>} A
+            {lens && <> Games ending with Oracle Lens: {pair(lens, "%")}, on {lens.my_sample} of {whose(w.s)} games.</>} A
             jungler who swaps to Oracle Lens places few trinket wards, so this shows trinket choice, not vision.
           </li>
         )}
@@ -173,7 +181,7 @@ function VisionContext({ rows }: { rows: CompareRow[] }) {
   );
 }
 
-function ThemeSection({ theme, rows, themes }: { theme: Theme; rows: CompareRow[]; themes: Theme[] }) {
+function ThemeSection({ theme, rows, themes, w }: { theme: Theme; rows: CompareRow[]; themes: Theme[]; w: Words }) {
   const [open, setOpen] = useState(false);
   const telling = (TELLING[theme.theme] ?? [])
     .map((key) => rows.find((r) => matches(r, key)))
@@ -189,24 +197,25 @@ function ThemeSection({ theme, rows, themes }: { theme: Theme; rows: CompareRow[
     <section className="mt-16">
       <SectionHead
         label={capital(topic)}
-        heading={title(theme)}
-        note={explanation(theme)}
+        heading={title(theme, w)}
+        note={explanation(theme, w)}
         state={themeState(theme)}
         verdict={theme.status === "no_margin" ? "No verdict yet" : undefined}
       />
       {shown.length > 0 && (
         <div className="mt-6 grid gap-x-10 gap-y-2 md:grid-cols-2 xl:grid-cols-3">
           {shown.map((row) => (
-            <MeasureCard key={metricLabel(row)} row={row} state={stateOf(row, themes)} cohort={COHORT} />
+            <MeasureCard key={metricLabel(row)} row={row} state={stateOf(row, themes)} cohort={w.cohort} subject={w.s} />
           ))}
         </div>
       )}
-      {theme.theme === "vision" && <VisionContext rows={rows} />}
+      {theme.theme === "vision" && <VisionContext rows={rows} w={w} />}
       {objectives.length > 0 && (
         <div className="mt-5 flex flex-wrap gap-x-10 gap-y-2 text-[14px] text-ink3">
           {objectives.map((r) => (
             <span key={r.objective}>
-              {metricLabel(r)}: your team took {fmt(r.my_value)}% of {r.my_sample} · {COHORT} {fmt(r.benchmark_value)}%
+              {metricLabel(r)}: {whose(w.s)} team took {fmt(r.my_value)}% of {r.my_sample} · {w.cohort}{" "}
+              {fmt(r.benchmark_value)}%
             </span>
           ))}
         </div>
@@ -228,56 +237,97 @@ function range(values: string[]): string {
   return values.length === 1 ? values[0] : `${values[0]}–${values[values.length - 1]}`;
 }
 
+/** No cohort fits this player: say why, in the server's words, and never show another's. */
+function NoBenchmark({ player, s }: { player: Player; s: Subject }) {
+  const reasons = [...new Set(Object.values(player.benchmarks).filter((r): r is string => r !== null))];
+  return (
+    <div className="pt-12">
+      <h1 className="display max-w-[920px] text-[50px] leading-[1.02]">No benchmark fits {whoLower(s)} yet</h1>
+      <ul className="mt-5 max-w-[700px] space-y-1 text-[16px] text-ink2">
+        {reasons.map((reason) => (
+          <li key={reason}>{reason}</li>
+        ))}
+      </ul>
+      <p className="mt-5 max-w-[700px] text-[16px] text-ink2">
+        Nothing is compared with another rank or another player in its place.{" "}
+        <a href={href("champions")} className="text-ink underline decoration-rule underline-offset-4 hover:decoration-ink3">
+          {Whose(s)} champions
+        </a>{" "}
+        still show every game.
+      </p>
+    </div>
+  );
+}
+
 export function Overview() {
-  const [data, setData] = useState<{ player: Player; coverage: Coverage; comparison: Comparison } | null>(null);
+  const { puuid, player, error: playerError } = usePlayer();
+  const [data, setData] = useState<{ coverage: Coverage; comparison: Comparison | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const cohort = player ? mainCohort(player) : null;
 
   useEffect(() => {
-    Promise.all([api.player(), api.coverage(), api.compare("silver")])
-      .then(([player, coverage, comparison]) => setData({ player, coverage, comparison }))
+    if (!player) return;
+    setData(null);
+    setError(null);
+    Promise.all([api.coverage(puuid), cohort ? api.compare(cohort, puuid) : Promise.resolve(null)])
+      .then(([coverage, comparison]) => setData({ coverage, comparison }))
       .catch((e: Error) => setError(e.message));
-  }, []);
+  }, [player, puuid, cohort]);
 
-  if (error) {
+  const failed = playerError ?? error;
+  if (failed) {
     return (
       <Layout active="overview">
-        <p className="mt-16 text-ink2">{error}</p>
+        <p className="mt-16 text-ink2">{failed}</p>
       </Layout>
     );
   }
-  if (!data) {
+  if (!player || !data) {
     return (
       <Layout active="overview">
-        <p className="mt-16 font-mono text-[12px] text-ink3">Loading your games…</p>
+        <p className="mt-16 font-mono text-[12px] text-ink3">Loading games…</p>
       </Layout>
     );
   }
 
-  const { player, coverage, comparison } = data;
+  const s = subjectOf(player);
+  const { coverage, comparison } = data;
+  if (!comparison || comparison.status !== "ok") {
+    return (
+      <Layout active="overview">
+        <ProfileHeader player={player} coverage={coverage} />
+        <NoBenchmark player={player} s={s} />
+      </Layout>
+    );
+  }
+
+  const name = comparison.tier.charAt(0) + comparison.tier.slice(1).toLowerCase();
+  const w: Words = { cohort: name, group: `${name} junglers`, s };
   const { themes, rows } = comparison;
   // Findings first, then the rest in a fixed order.
   const order = (t: Theme) => (t.status === "finding" ? 0 : t.status === "worth_watching" ? 1 : 2);
   const sorted = [...themes].sort((a, b) => order(a) - order(b));
   const winRate = rows.find((r) => r.value === "win_rate_pct");
   // Objective rows count objectives, not games, so they don't count here.
-  const yourGames = Math.max(...rows.filter((r) => r.sample_unit === "games").map((r) => r.my_sample));
+  const theirGames = Math.max(...rows.filter((r) => r.sample_unit === "games").map((r) => r.my_sample));
+  const target = cohort === "emerald";
 
   return (
     <Layout active="overview">
       <ProfileHeader player={player} coverage={coverage} />
 
       <div className="pt-12">
-        <h1 className="display max-w-[920px] text-[50px] leading-[1.02]">{headline(themes, WHO)}</h1>
+        <h1 className="display max-w-[920px] text-[50px] leading-[1.02]">{headline(themes, w.group, s)}</h1>
         <p className="mt-5 max-w-[700px] text-[16px] text-ink2">
-          Up to {yourGames} of your jungle games on patches {range(comparison.benchmark_patches)}, against{" "}
-          {comparison.benchmark_games} games from {comparison.benchmark_players} {WHO} on the same patches. A
-          difference only counts as clear when it's bigger than chance would explain. Hover any measure for its exact
-          margin.
+          Up to {theirGames} of {whose(s)} jungle games on patches {range(comparison.benchmark_patches)}, against{" "}
+          {comparison.benchmark_games} games from {comparison.benchmark_players} {w.group} on the same patches.
+          {target && ` ${name} is a target, a rank above, not ${whose(s)} peers.`} A difference only counts as clear when
+          it's bigger than chance would explain. Hover any measure for its exact margin.
         </p>
       </div>
 
       {sorted.map((theme) => (
-        <ThemeSection key={theme.theme} theme={theme} rows={rows} themes={themes} />
+        <ThemeSection key={theme.theme} theme={theme} rows={rows} themes={themes} w={w} />
       ))}
 
       {winRate && (
@@ -289,7 +339,7 @@ export function Overview() {
             state={stateOf(winRate, themes)}
           />
           <div className="mt-6 grid gap-x-10 md:grid-cols-2 xl:grid-cols-3">
-            <MeasureCard row={winRate} state={stateOf(winRate, themes)} cohort={COHORT} />
+            <MeasureCard row={winRate} state={stateOf(winRate, themes)} cohort={w.cohort} subject={s} />
           </div>
         </section>
       )}
@@ -302,9 +352,15 @@ export function Overview() {
             {range(coverage.player.patches)}. Remakes are left out everywhere.
           </p>
           <p>
-            Comparisons use only your jungle games on the benchmark's patches, so a measure can rest on fewer games than
-            your total. Anything on fewer than 10 of your games says "Too early to tell".
+            Comparisons use only {whose(s)} jungle games on the benchmark's patches, so a measure can rest on fewer games
+            than {whose(s)} total. Anything on fewer than 10 of {whose(s)} games says "Too early to tell".
           </p>
+          {!s.you && (
+            <p>
+              The rank is {whose(s)} current solo/duo rank: Riot's match data doesn't say what rank each game was played
+              at.
+            </p>
+          )}
         </div>
       </section>
     </Layout>

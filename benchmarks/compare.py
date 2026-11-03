@@ -292,13 +292,15 @@ async def compare(
     puuids: list[str],
     cohort: str,
     champion: str | None = None,
+    not_for_player: str | None = None,
 ) -> dict[str, Any]:
     """Compare jungle stats with `cohort`, for one champion or all of them.
 
     Every row shows the sample size on both sides. All-champion comparisons use
     the player's games on the benchmark's patches. Champion comparisons use all
     the player's games on that champion, because few are on recent patches, and
-    a note says so.
+    a note says so. `not_for_player` is why this cohort doesn't fit the player
+    (see cohorts.why_no_benchmark): then there's no benchmark, never another one.
     """
     size = (
         await benchmark_session.execute(
@@ -318,6 +320,13 @@ async def compare(
         "themes": [],
         "notes": [],
     }
+    if not_for_player:
+        result["status"] = "no_benchmark"
+        result["notes"].append(
+            f"No benchmark for this player. {not_for_player} "
+            "Don't substitute another cohort or another player's comparison."
+        )
+        return result
     if size.games < MIN_BENCHMARK_GAMES or size.players < MIN_BENCHMARK_PLAYERS:
         result["status"] = "no_benchmark"
         result["notes"].append(

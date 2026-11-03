@@ -174,14 +174,22 @@ class RiotClient:
             {"page": page},
         )
 
-    async def get_rank(self, puuid: str) -> str | None:
-        """Return a player's ranked solo tier, or None if they're unranked."""
-        entries = await self._request(
+    async def get_league_entries(self, puuid: str) -> list[dict[str, Any]]:
+        """A player's ranked entries, one per queue, as Riot returns them."""
+        return await self._request(
             self._platform_region,
             "league-by-puuid",
             f"/lol/league/v4/entries/by-puuid/{quote(puuid, safe='')}",
         )
-        for entry in entries:
-            if entry["queueType"] == "RANKED_SOLO_5x5":
-                return entry["tier"]
-        return None
+
+    async def get_rank(self, puuid: str) -> str | None:
+        """Return a player's ranked solo tier, or None if they're unranked."""
+        return solo_tier(await self.get_league_entries(puuid))
+
+
+def solo_tier(entries: list[dict[str, Any]]) -> str | None:
+    """The ranked solo/duo tier in a list of league entries, or None if unranked."""
+    for entry in entries:
+        if entry.get("queueType") == "RANKED_SOLO_5x5":
+            return entry["tier"]
+    return None

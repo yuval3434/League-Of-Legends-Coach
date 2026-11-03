@@ -12,9 +12,13 @@ import { CHECK, costWords, restsOnFewGames, sampleWords, toolLabel } from "../co
 import { Layout } from "../components/Layout";
 import { Marker } from "../components/Verdict";
 import { useChampionNames } from "../ddragon";
+import { usePlayer } from "../player";
+import { type Subject, subjectOf, YOU, whose } from "../subject";
 
 type Exchange = {
   question: string;
+  // The Riot ID the question was about, when it wasn't the owner.
+  about?: string;
   answer?: CoachAnswer;
   error?: string;
   seconds?: number;
@@ -22,11 +26,21 @@ type Exchange = {
 
 const STORE = "lolcoach.coach.thread";
 
-const STARTERS = [
-  "What's the one thing I should work on first?",
-  "How does my farming compare with Silver junglers?",
-  "Do I die more than I should before objectives?",
-];
+/** Starter questions, about you or about the selected player. */
+function starters(s: Subject): string[] {
+  if (s.you) {
+    return [
+      "What's the one thing I should work on first?",
+      "How does my farming compare with Silver junglers?",
+      "Do I die more than I should before objectives?",
+    ];
+  }
+  return [
+    `What's the one thing ${s.name} should work on first?`,
+    `Which champions does ${s.name} play best?`,
+    `Does ${s.name} die more than they should before objectives?`,
+  ];
+}
 
 const MODELS: Record<string, string> = {
   "claude-opus-5-5": "Opus 5.5",
@@ -141,7 +155,7 @@ function Receipt({ answer, seconds }: { answer: CoachAnswer; seconds?: number })
 function ExchangeView({ exchange }: { exchange: Exchange }) {
   return (
     <article className="border-t border-ink/30 pt-6">
-      <div className="smallcaps text-ink3">You asked</div>
+      <div className="smallcaps text-ink3">You asked{exchange.about && `, about ${exchange.about}`}</div>
       <p className="mt-1.5 text-[17px] text-ink">{exchange.question}</p>
       {exchange.error && <p className="mt-5 text-[15px] text-ink2">{exchange.error}</p>}
       {exchange.answer && (
@@ -181,6 +195,9 @@ export function Coach({ question: carried }: { question: string }) {
   const [thread, setThread] = useState<Exchange[]>(loadThread);
   const [pending, setPending] = useState<string | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
+  const { puuid, player } = usePlayer();
+  const s = player ? subjectOf(player) : YOU;
+  const about = player && !player.is_owner ? `${player.game_name}#${player.tag_line}` : undefined;
 
   useEffect(() => {
     api.coachStatus().then((s) => setAvailable(s.available)).catch(() => setAvailable(false));
@@ -198,30 +215,31 @@ export function Coach({ question: carried }: { question: string }) {
 
   async function ask() {
     const question = draft.trim();
-    if (!question || pending || !available) return;
+    if (!question || pending || !available || !player) return;
     setPending(question);
     setDraft("");
     const started = performance.now();
     try {
-      const answer = await api.ask(question);
+      // The server picks the player from this PUUID; the model never sees one.
+      const answer = await api.ask(question, puuid);
       const seconds = Math.round((performance.now() - started) / 1000);
-      setThread((t) => [...t, { question, answer, seconds }]);
+      setThread((t) => [...t, { question, about, answer, seconds }]);
     } catch (e) {
-      setThread((t) => [...t, { question, error: (e as Error).message }]);
+      setThread((t) => [...t, { question, about, error: (e as Error).message }]);
     } finally {
       setPending(null);
     }
   }
 
-  const canAsk = available === true && pending === null && draft.trim().length > 0;
+  const canAsk = available === true && player !== null && pending === null && draft.trim().length > 0;
 
   return (
     <Layout active="coach">
       <div className="pt-12">
         <div className="smallcaps text-ink3">Coach</div>
-        <h1 className="display mt-1.5 max-w-[920px] text-[50px] leading-[1.02]">Ask about your games</h1>
+        <h1 className="display mt-1.5 max-w-[920px] text-[50px] leading-[1.02]">Ask about {whose(s)} games</h1>
         <p className="mt-5 max-w-[720px] text-[16px] text-ink2">
-          The coach looks up your stats with the same tools as these pages and explains them. It doesn't make up
+          The coach looks up {whose(s)} stats with the same tools as these pages and explains them. It doesn't make up
           numbers: every reply is checked against the data it looked at, and the receipt under it says what that was.
           Each question is answered on its own, without the earlier ones.
         </p>
@@ -247,7 +265,7 @@ export function Coach({ question: carried }: { question: string }) {
 
       <section className={`${thread.length || pending ? "mt-12" : "mt-10"} max-w-[760px] border-t border-rule pt-6`}>
         <label htmlFor="question" className="smallcaps text-ink3">
-          Your question
+          Your question{about && <span className="normal-case tracking-normal">: asking about {about}</span>}
         </label>
         <textarea
           id="question"
@@ -281,7 +299,7 @@ export function Coach({ question: carried }: { question: string }) {
           <div className="mt-8">
             <div className="smallcaps text-ink3">Or start from one of these</div>
             <ul className="mt-2 space-y-1.5">
-              {STARTERS.map((q) => (
+              {starters(s).map((q) => (
                 <li key={q}>
                   <button
                     onClick={() => {

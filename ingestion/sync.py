@@ -4,6 +4,7 @@ Safe to run again after an interruption: it fetches only what's missing.
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -21,11 +22,14 @@ from ingestion.models import (
     TimelineFrame,
 )
 from ingestion.parser import parse_match, parse_timeline
-from ingestion.riot_client import RiotClient, RiotNotFound, RiotRequestFailed
+from ingestion.riot_client import RiotClient, RiotNotFound, RiotRequestFailed, solo_tier
 
 logger = logging.getLogger(__name__)
 
 KINDS = ("match", "timeline")
+
+# Told how far a sync has got: {"stage": ..., "done": ..., "total": ..., "to_fetch": ...}.
+Progress = Callable[[dict[str, Any]], None]
 
 
 @dataclass
@@ -42,25 +46,42 @@ def _newest_first(match_ids: set[str]) -> list[str]:
 
 
 async def _save_player(
-    session: AsyncSession, account: dict[str, Any], region: str
+    session: AsyncSession,
+    account: dict[str, Any],
+    region: str,
+    league: list[dict[str, Any]],
 ) -> None:
+    """Store the player with their current rank. The first player synced is the owner."""
     values = {
         "puuid": account["puuid"],
         "game_name": account["gameName"],
         "tag_line": account["tagLine"],
         "region": region,
         "raw_account": account,
+        "raw_league": league,
+        "rank_tier": solo_tier(league),
+        "rank_checked_at": datetime.now(UTC),
     }
     statement = pg_insert(Player).values(values)
     await session.execute(
         statement.on_conflict_do_update(
             index_elements=[Player.puuid],
             set_={
-                "game_name": statement.excluded.game_name,
-                "tag_line": statement.excluded.tag_line,
-                "raw_account": statement.excluded.raw_account,
+                key: statement.excluded[key]
+                for key in (
+                    "game_name",
+                    "tag_line",
+                    "raw_account",
+                    "raw_league",
+                    "rank_tier",
+                    "rank_checked_at",
+                )
             },
         )
+    )
+    no_owner = ~select(Player.puuid).where(Player.is_owner).exists()
+    await session.execute(
+        update(Player).where(Player.puuid == account["puuid"], no_owner).values(is_owner=True)
     )
     await session.commit()
 
@@ -121,24 +142,32 @@ async def sync_player(
     region: str,
     queues: list[int],
     count: int,
+    progress: Progress | None = None,
 ) -> SyncResult:
-    """Sync a player's newest `count` matches across `queues`.
+    """Sync a player's newest `count` matches across `queues`, and their rank.
 
     Calls run one at a time, so only one is ever in flight while the limiter
     is still learning an endpoint's limits. RiotAuthError stops the whole sync;
-    other failures skip that match, and the next sync picks it up.
+    other failures skip that match, and the next sync picks it up. `progress`
+    hears each stage, and each match as it's done.
     """
+    report = progress or (lambda _: None)
+    report({"stage": "account"})
     account = await riot.get_account(game_name, tag_line)
     puuid = account["puuid"]
 
+    report({"stage": "match_list"})
     match_ids: set[str] = set()
     for queue in queues:
         match_ids.update(await riot.get_match_ids(puuid, queue, count))
     newest = _newest_first(match_ids)[:count]
     result = SyncResult(puuid=puuid, matches_found=len(newest))
 
+    report({"stage": "rank"})
+    league = await riot.get_league_entries(puuid)
+
     async with sessions() as session:
-        await _save_player(session, account, region)
+        await _save_player(session, account, region, league)
 
         stored = await session.execute(
             select(RawResponse.match_id, RawResponse.kind).where(
@@ -150,8 +179,14 @@ async def sync_player(
             select(Match.match_id).where(Match.match_id.in_(newest))
         )
         already_parsed = set(parsed.all())
+        # Matches already stored, such as games played with another synced
+        # player, cost no calls, so only these count towards the time left.
+        to_fetch = sum(
+            1 for m in newest if any((m, kind) not in have_raw for kind in KINDS)
+        )
+        report({"stage": "matches", "done": 0, "total": len(newest), "to_fetch": to_fetch})
 
-        for match_id in newest:
+        for done, match_id in enumerate(newest, start=1):
             try:
                 for kind in KINDS:
                     if (match_id, kind) not in have_raw:
@@ -171,6 +206,10 @@ async def sync_player(
                 logger.exception("%s: parse failed", match_id)
                 await session.rollback()
                 result.matches_failed += 1
+            finally:
+                report(
+                    {"stage": "matches", "done": done, "total": len(newest), "to_fetch": to_fetch}
+                )
 
         await session.execute(
             update(Player)

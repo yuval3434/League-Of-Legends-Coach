@@ -49,7 +49,14 @@ def coach_client(test_settings, model):
 async def add_player(sessions):
     async with sessions() as session:
         session.add(
-            Player(puuid="me", game_name="a", tag_line="b", region="euw1", raw_account={})
+            Player(
+                puuid="me",
+                game_name="a",
+                tag_line="b",
+                region="euw1",
+                raw_account={},
+                is_owner=True,
+            )
         )
         await session.commit()
 
@@ -186,7 +193,10 @@ async def test_champion_stats_can_be_narrowed_to_a_role(test_settings, sessions)
 async def test_the_player_endpoint_returns_the_riot_id(test_settings, sessions):
     await add_player(sessions)
     with TestClient(create_app(test_settings)) as client:
-        assert client.get("/player").json() == {"game_name": "a", "tag_line": "b"}
+        player = client.get("/player").json()
+    assert (player["game_name"], player["tag_line"], player["is_owner"]) == ("a", "b", True)
+    # No rank stored yet, so no cohort fits, and the reason says why.
+    assert all(reason for reason in player["benchmarks"].values())
 
 
 async def test_the_player_endpoint_needs_a_synced_player(test_settings, sessions):

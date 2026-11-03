@@ -316,11 +316,22 @@ async def test_target_champions_need_five_jungle_games(sessions):
                     "tag_line": "b",
                     "region": "europe",
                     "raw_account": {},
-                }
+                    "is_owner": True,
+                },
+                {
+                    "puuid": "friend",
+                    "game_name": "c",
+                    "tag_line": "d",
+                    "region": "europe",
+                    "raw_account": {},
+                },
             ],
         )
         for n in range(5):
             await add_game(session, f"EUW1_{n}", champion="Viego")
+        # Another synced player's games never count, even towards the owner's 4 Ornn.
+        for n in range(20, 25):
+            await add_game(session, f"EUW1_{n}", champion="Ornn", puuid="friend")
         for n in range(5, 9):
             await add_game(session, f"EUW1_{n}", champion="Ornn")
         for n in range(9, 14):

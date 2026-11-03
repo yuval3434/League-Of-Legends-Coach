@@ -32,9 +32,10 @@ from analytics.stats import (
     win_rate_by_gold_diff,
     win_rates,
 )
-from benchmarks.cohorts import COHORTS
+from benchmarks.cohorts import COHORTS, why_no_benchmark
 from benchmarks.compare import compare, coverage
 from benchmarks.themes import THEMES
+from ingestion.players import SelectedPlayer
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +63,23 @@ HIDDEN = {"higher_is_better"}
 
 @dataclass(frozen=True)
 class ToolContext:
+    """What every tool runs against. The server builds it; the model can't change it.
+
+    `player` decides which benchmarks apply. None is only for tests that don't
+    touch benchmarks.
+    """
+
     sessions: Sessions
     benchmark_sessions: Sessions
     puuids: tuple[str, ...]
+    player: SelectedPlayer | None = None
+
+
+def _not_for_player(context: ToolContext, cohort: str) -> str | None:
+    player = context.player
+    if player is None:
+        return None
+    return why_no_benchmark(cohort, player.rank_tier, player.main_role, player.rank_checked)
 
 
 @dataclass(frozen=True)
@@ -102,7 +117,12 @@ def _stat_tool(
 
 async def _data_coverage(context: ToolContext, arguments: dict[str, Any]) -> Row:
     async with context.sessions() as mine, context.benchmark_sessions() as bench:
-        return await coverage(mine, bench, list(context.puuids))
+        result = await coverage(mine, bench, list(context.puuids))
+    # Which cohorts fit this player at all, so the model doesn't assume one does.
+    result["cohorts"] = {
+        cohort: _not_for_player(context, cohort) or "available" for cohort in COHORTS
+    }
+    return result
 
 
 async def _compare(context: ToolContext, arguments: dict[str, Any]) -> Row:
@@ -113,6 +133,7 @@ async def _compare(context: ToolContext, arguments: dict[str, Any]) -> Row:
             list(context.puuids),
             arguments["cohort"],
             arguments.get("champion"),
+            _not_for_player(context, arguments["cohort"]),
         )
     theme = arguments.get("theme")
     if theme:
@@ -124,8 +145,9 @@ TOOLS = (
     Tool(
         "data_coverage",
         "What data exists: the player's games, dates, patches and champions, and "
-        "which champions have a benchmark in each cohort. Call this first if you "
-        "don't know what's available.",
+        "which champions have a benchmark in each cohort. `cohorts` says which "
+        "cohorts fit this player at all: \"available\", or why not. Call this first "
+        "if you don't know what's available.",
         {},
         _data_coverage,
     ),

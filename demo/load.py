@@ -61,6 +61,7 @@ async def load(settings: Settings) -> int:
                 tag_line=player["tagLine"],
                 region="euw1",
                 raw_account=player,
+                is_owner=True,
             )
         )
         for m in data["matches"]:

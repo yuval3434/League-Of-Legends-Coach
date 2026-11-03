@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { href, type Page } from "../router";
+import { PlayerSwitcher } from "./PlayerSwitcher";
 import { HatchDefs } from "./Verdict";
 
 const PAGES: { id: Page; label: string }[] = [
@@ -23,22 +24,27 @@ export function Layout({ active, children }: { active: Page; children: ReactNode
             <a href={href("overview")} className="display text-[22px] leading-none">LoL Coach</a>
             <span className="smallcaps text-ink3">Scouting report</span>
           </div>
-          <nav className="flex gap-7 text-[14px]">
-            {PAGES.map((page) => (
-              <a
-                key={page.id}
-                href={href(page.id)}
-                aria-current={page.id === active ? "page" : undefined}
-                className={
-                  page.id === active
-                    ? "border-b border-ink pb-1 text-ink"
-                    : "border-b border-transparent pb-1 text-ink3 hover:text-ink"
-                }
-              >
-                {page.label}
-              </a>
-            ))}
-          </nav>
+          <div className="flex items-baseline gap-7">
+            <nav className="flex gap-7 text-[14px]">
+              {PAGES.map((page) => (
+                <a
+                  key={page.id}
+                  href={href(page.id)}
+                  aria-current={page.id === active ? "page" : undefined}
+                  className={
+                    page.id === active
+                      ? "border-b border-ink pb-1 text-ink"
+                      : "border-b border-transparent pb-1 text-ink3 hover:text-ink"
+                  }
+                >
+                  {page.label}
+                </a>
+              ))}
+            </nav>
+            <div className="self-center">
+              <PlayerSwitcher page={active} />
+            </div>
+          </div>
         </header>
         <main>{children}</main>
         <footer className="mt-24 border-t border-rule py-8 text-[12px] leading-relaxed text-ink3">

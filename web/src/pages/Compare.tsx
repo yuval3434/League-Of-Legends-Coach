@@ -1,17 +1,20 @@
-// You against two cohorts at once: Silver (your rank) and Emerald (a target).
-// Gold and CS by minute as lines with margin bands, then every theme's verdict
-// against both, side by side.
+// A player against two cohorts at once: Silver (peers) and Emerald (a target).
+// Gold and CS by minute as lines with the player's margin shaded, then every
+// theme's verdict against both. A cohort that doesn't fit the player says
+// "No benchmark" and why; nothing takes its place.
 
 import { useEffect, useState } from "react";
 
 import { api, type Comparison, type Theme } from "../api";
 import { Layout } from "../components/Layout";
-import { MinuteChart, SeriesKey } from "../components/MinuteChart";
+import { MinuteChart, SeriesKey, seriesFor } from "../components/MinuteChart";
 import { Marker, type State } from "../components/Verdict";
 import { compareHeadline, MINUTES, minutePoints, minuteRow } from "../compare";
 import { gapWords, THEME_NAMES } from "../metrics";
+import { usePlayer } from "../player";
 import { askCoach } from "../router";
 import { themeState } from "../state";
+import { type Subject, subjectOf, whoIs, whoLower, Whose, whose } from "../subject";
 import { PLAIN, PLAIN_TONE } from "../verdict";
 
 const VERDICT: Partial<Record<Theme["status"], string>> = {
@@ -20,10 +23,21 @@ const VERDICT: Partial<Record<Theme["status"], string>> = {
   no_benchmark: "No benchmark",
 };
 
-function ThemeVerdict({ theme }: { theme: Theme | undefined }) {
-  if (!theme) return <span className="text-ink3">—</span>;
-  const state: State = themeState(theme);
-  const label = VERDICT[theme.status];
+const COHORTS = [
+  { key: "silver", name: "Silver" },
+  { key: "emerald", name: "Emerald" },
+] as const;
+
+function ok(c: Comparison): boolean {
+  return c.status === "ok";
+}
+
+function ThemeVerdict({ comparison, theme }: { comparison: Comparison; theme: string }) {
+  if (!ok(comparison)) return <span className="text-ink3">No benchmark</span>;
+  const found = comparison.themes.find((t) => t.theme === theme);
+  if (!found) return <span className="text-ink3">—</span>;
+  const state: State = themeState(found);
+  const label = VERDICT[found.status];
   // "Not compared" and "No verdict yet" aren't a verdict, so they get no marker.
   return (
     <span className={`inline-flex items-center gap-2 ${label ? "text-ink3" : PLAIN_TONE[state]}`}>
@@ -49,26 +63,37 @@ function ChartPanel({
   value,
   silver,
   emerald,
+  subject,
 }: {
   title: string;
   value: string;
   silver: Comparison;
   emerald: Comparison;
+  subject: Subject;
 }) {
   const points = minutePoints(value, silver, emerald);
+  const series = seriesFor(subject, { silver: ok(silver), emerald: ok(emerald) });
   const lastMinute = MINUTES[MINUTES.length - 1];
-  const s = minuteRow(silver, value, lastMinute);
-  const e = minuteRow(emerald, value, lastMinute);
+  const gaps = COHORTS.map(({ key, name }) => {
+    const c = key === "silver" ? silver : emerald;
+    return ok(c) ? { name, row: minuteRow(c, value, lastMinute) } : null;
+  }).filter((g): g is { name: "Silver" | "Emerald"; row: NonNullable<ReturnType<typeof minuteRow>> } => !!g?.row);
   return (
     <div className="border-t border-rule pt-4">
       <h3 className="text-[16px] text-ink">{title}</h3>
       <div className="mt-3">
-        <MinuteChart points={points} unitLabel={title} />
+        <MinuteChart points={points} unitLabel={title} series={series} subject={subject} />
       </div>
-      {s && e && (
+      {gaps.length > 0 && (
         <p className="mt-2 text-[14px] text-ink3">
-          At {lastMinute} min you're <span className="text-ink2">{gapWords(s, "Silver")}</span> and{" "}
-          <span className="text-ink2">{gapWords(e, "Emerald")}</span>, on {s.my_sample} of your games.
+          At {lastMinute} min {subject.you ? "you're" : whoIs(subject)}{" "}
+          {gaps.map((g, i) => (
+            <span key={g.name}>
+              {i > 0 && " and "}
+              <span className="text-ink2">{gapWords(g.row, g.name)}</span>
+            </span>
+          ))}
+          , on {gaps[0].row.my_sample} of {whose(subject)} games.
         </p>
       )}
     </div>
@@ -76,65 +101,78 @@ function ChartPanel({
 }
 
 export function Compare() {
+  const { puuid, player, error: playerError } = usePlayer();
   const [data, setData] = useState<{ silver: Comparison; emerald: Comparison } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.compare("silver"), api.compare("emerald")])
+    setData(null);
+    setError(null);
+    Promise.all([api.compare("silver", puuid), api.compare("emerald", puuid)])
       .then(([silver, emerald]) => setData({ silver, emerald }))
       .catch((e: Error) => setError(e.message));
-  }, []);
+  }, [puuid]);
 
-  if (error || !data) {
+  const failed = playerError ?? error;
+  if (failed || !data || !player) {
     return (
       <Layout active="compare">
-        <p className={`mt-16 ${error ? "text-ink2" : "font-mono text-[12px] text-ink3"}`}>
-          {error ?? "Loading the comparisons…"}
+        <p className={`mt-16 ${failed ? "text-ink2" : "font-mono text-[12px] text-ink3"}`}>
+          {failed ?? "Loading the comparisons…"}
         </p>
       </Layout>
     );
   }
 
+  const s = subjectOf(player);
   const { silver, emerald } = data;
-  const themes = silver.themes.map((t) => t.theme);
+  const usable = [silver, emerald].filter(ok);
+  const themes = (usable[0] ?? silver).themes.map((t) => t.theme);
   // A note both comparisons carry is shown once, without a cohort.
   const notes = [
     ...silver.notes.filter((n) => emerald.notes.includes(n)).map((note) => ({ cohort: "", note })),
     ...silver.notes.filter((n) => !emerald.notes.includes(n)).map((note) => ({ cohort: "Silver", note })),
     ...emerald.notes.filter((n) => !silver.notes.includes(n)).map((note) => ({ cohort: "Emerald", note })),
   ];
+  const sizes = COHORTS.filter(({ key }) => ok(data[key])).map(
+    ({ key, name }) => `${data[key].benchmark_games} games from ${data[key].benchmark_players} ${name} junglers`,
+  );
+  const me = s.you ? "I" : s.name;
+  const does = s.you ? "do I" : `does ${s.name}`;
 
   return (
     <Layout active="compare">
       <div className="pt-12">
         <div className="smallcaps text-ink3">Compare</div>
-        <h1 className="display mt-1.5 max-w-[960px] text-[50px] leading-[1.02]">{compareHeadline(silver, emerald)}</h1>
+        <h1 className="display mt-1.5 max-w-[960px] text-[50px] leading-[1.02]">{compareHeadline(silver, emerald, s)}</h1>
         <p className="mt-5 max-w-[720px] text-[16px] text-ink2">
-          Your jungle games against {silver.benchmark_games} games from {silver.benchmark_players} Silver junglers and{" "}
-          {emerald.benchmark_games} from {emerald.benchmark_players} Emerald junglers, all on the same patches. Silver is
-          your rank; Emerald shows where the next steps lead.
+          {usable.length > 0
+            ? `${Whose(s)} jungle games against ${sizes.join(" and ")}, all on the same patches. Silver is for Silver players; Emerald is a target for anyone ranked below it.`
+            : `No benchmark fits ${whoLower(s)}, so nothing is compared. The notes below say why.`}
         </p>
       </div>
 
-      <section className="mt-14">
-        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
-          <div>
-            <div className="smallcaps text-ink3">Farm and gold</div>
-            <h2 className="display mt-1.5 text-[30px] leading-[1.1]">Minute by minute</h2>
+      {usable.length > 0 && (
+        <section className="mt-14">
+          <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+            <div>
+              <div className="smallcaps text-ink3">Farm and gold</div>
+              <h2 className="display mt-1.5 text-[30px] leading-[1.1]">Minute by minute</h2>
+            </div>
+            <SeriesKey series={seriesFor(s, { silver: ok(silver), emerald: ok(emerald) })} subject={s} />
           </div>
-          <SeriesKey />
-        </div>
-        <div className="mt-6 grid gap-x-12 gap-y-10 lg:grid-cols-2">
-          <ChartPanel title="Gold" value="avg_gold" silver={silver} emerald={emerald} />
-          <ChartPanel title="CS, lane minions and jungle camps" value="avg_cs" silver={silver} emerald={emerald} />
-        </div>
-        <p className="mt-4 text-[13px] text-ink3">Hover a minute for the exact numbers.</p>
-        <div className="mt-5">
-          <AskLink question="Where in the game do I fall behind Silver and Emerald junglers on farm, and what should I change?">
-            Ask the coach where you lose farm
-          </AskLink>
-        </div>
-      </section>
+          <div className="mt-6 grid gap-x-12 gap-y-10 lg:grid-cols-2">
+            <ChartPanel title="Gold" value="avg_gold" silver={silver} emerald={emerald} subject={s} />
+            <ChartPanel title="CS, lane minions and jungle camps" value="avg_cs" silver={silver} emerald={emerald} subject={s} />
+          </div>
+          <p className="mt-4 text-[13px] text-ink3">Hover a minute for the exact numbers.</p>
+          <div className="mt-5">
+            <AskLink question={`Where in the game ${does} fall behind on farm, and what should ${me} change?`}>
+              {s.you ? "Ask the coach where you lose farm" : `Ask the coach where ${s.name} loses farm`}
+            </AskLink>
+          </div>
+        </section>
+      )}
 
       <section className="mt-16">
         <div className="smallcaps text-ink3">Theme by theme</div>
@@ -145,12 +183,11 @@ export function Compare() {
               <th scope="col" className="smallcaps border-b border-rule pb-2 text-left font-normal text-ink3">
                 Theme
               </th>
-              <th scope="col" className="smallcaps border-b border-rule pb-2 text-left font-normal text-ink3">
-                Against Silver
-              </th>
-              <th scope="col" className="smallcaps border-b border-rule pb-2 text-left font-normal text-ink3">
-                Against Emerald
-              </th>
+              {COHORTS.map(({ name }) => (
+                <th key={name} scope="col" className="smallcaps border-b border-rule pb-2 text-left font-normal text-ink3">
+                  Against {name}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -159,12 +196,11 @@ export function Compare() {
                 <th scope="row" className="py-3 pr-6 text-left font-normal text-ink">
                   {THEME_NAMES[name] ?? name}
                 </th>
-                <td className="py-3 pr-6">
-                  <ThemeVerdict theme={silver.themes.find((t) => t.theme === name)} />
-                </td>
-                <td className="py-3">
-                  <ThemeVerdict theme={emerald.themes.find((t) => t.theme === name)} />
-                </td>
+                {COHORTS.map(({ key }) => (
+                  <td key={key} className="py-3 pr-6">
+                    <ThemeVerdict comparison={data[key]} theme={name} />
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
@@ -178,11 +214,17 @@ export function Compare() {
             ))}
           </ul>
         )}
-        <div className="mt-6">
-          <AskLink question="What's the biggest difference between me and Emerald junglers, and what should I work on first?">
-            Ask the coach what to work on first
-          </AskLink>
-        </div>
+        {usable.length > 0 && (
+          <div className="mt-6">
+            <AskLink
+              question={`What's the biggest difference between ${s.you ? "me" : s.name} and ${
+                ok(emerald) ? "Emerald" : "Silver"
+              } junglers, and what should ${me} work on first?`}
+            >
+              {`Ask the coach what ${s.you ? "to work on" : `${s.name} should work on`} first`}
+            </AskLink>
+          </div>
+        )}
       </section>
     </Layout>
   );

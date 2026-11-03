@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # no
 from agent.coach import CoachAnswer, ask_coach  # noqa: E402
 from agent.tools import ToolContext, run_tool  # noqa: E402
 from benchmarks.models import create_benchmark_engine  # noqa: E402
-from benchmarks.pull import tracked_puuids  # noqa: E402
+from ingestion.players import load_player  # noqa: E402
 from ingestion.config import Settings  # noqa: E402
 
 QUESTION = "How is my farming compared with Silver?"
@@ -46,10 +46,10 @@ async def main() -> None:
     mine = async_sessionmaker(create_async_engine(settings.database_url))
     bench = async_sessionmaker(create_benchmark_engine(settings))
     async with mine() as session:
-        puuids = tuple(sorted(await tracked_puuids(session)))
-    if not puuids:
+        owner = await load_player(session)
+    if owner is None:
         sys.exit("No player synced yet: run POST /sync first.")
-    context = ToolContext(mine, bench, puuids)
+    context = ToolContext(mine, bench, (owner.puuid,), owner)
 
     result = await run_tool(context, *COMPARE)
     row = next(

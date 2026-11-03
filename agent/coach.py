@@ -8,6 +8,7 @@ from agent.llm import ModelClient, ModelReply, ToolCall, Usage
 from agent.numbers import check_numbers
 from agent.prompt import SYSTEM_PROMPT
 from agent.tools import ToolContext, ToolResult, run_tool, tool_definitions
+from ingestion.players import SelectedPlayer
 
 MAX_STEPS = 8
 
@@ -75,10 +76,25 @@ def _results_message(calls: list[ToolCall], results: list[ToolResult]) -> dict[s
     }
 
 
+def riot_id(player: SelectedPlayer) -> str:
+    return f"{player.game_name}#{player.tag_line}"
+
+
 async def ask_coach(
     model: ModelClient, context: ToolContext, question: str
 ) -> CoachAnswer:
-    """Answer one question. A reply with unsupported numbers gets one retry."""
+    """Answer one question. A reply with unsupported numbers gets one retry.
+
+    When the context's player isn't the owner, the question says whose games
+    these are, so the reply names them instead of saying "you". The system
+    prompt stays the same, so its cache still works.
+    """
+    player = context.player if context else None
+    if player and not player.is_owner:
+        question = (
+            f"[This question is about the player {riot_id(player)}, not the person "
+            'asking. Refer to them by name, not as "you".]\n\n' + question
+        )
     messages: list[dict[str, Any]] = [{"role": "user", "content": question}]
     tools = tool_definitions()
     answer = CoachAnswer("", "gave_up")
@@ -108,6 +124,8 @@ async def ask_coach(
         # Tool descriptions count too: they hold fixed facts, such as phase boundaries.
         outputs = [log.content for log in answer.tool_log if not log.is_error]
         outputs += [tool["description"] for tool in tools]
+        # A Riot ID can hold digits, and the reply may name the player.
+        outputs += [riot_id(player)] if player else []
         unsupported = check_numbers(reply.text, outputs)
         if not unsupported:
             answer.text, answer.status = reply.text, "verified"

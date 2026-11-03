@@ -107,6 +107,15 @@ curl localhost:8000/sync/status
 is 100 calls per 2 minutes. A sync can be run again safely: it fetches only what's
 missing.
 
+The first player synced is the owner: the default on every page and the one the
+eval runs on. Other players can be added from the web app's Players page, and
+their games stay in the same local database. Every stat, comparison and coach
+answer is about one player, picked by the server; the model never sees or
+chooses a PUUID. A player only gets a benchmark their rank and role fit: Silver
+for Silver junglers, Emerald as a target for junglers below Emerald. Anyone else
+sees "no benchmark", never another player's or another rank's comparison. Ranks
+are current solo/duo ranks, because match data doesn't record rank per game.
+
 ## Benchmarks
 
 Compare your jungle stats with real Silver and Emerald games:

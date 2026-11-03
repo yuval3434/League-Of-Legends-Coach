@@ -8,7 +8,9 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Text,
+    false,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -22,6 +24,9 @@ class Player(Base):
     """A tracked player. Riot IDs can change, so the PUUID is the key."""
 
     __tablename__ = "players"
+    __table_args__ = (
+        Index("ix_players_one_owner", "is_owner", unique=True, postgresql_where=text("is_owner")),
+    )
 
     puuid: Mapped[str] = mapped_column(Text, primary_key=True)
     game_name: Mapped[str] = mapped_column(Text)
@@ -29,6 +34,12 @@ class Player(Base):
     region: Mapped[str] = mapped_column(Text)
     raw_account: Mapped[dict[str, Any]] = mapped_column(JSONB)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The owner is the default player everywhere, and the one the eval uses.
+    is_owner: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Current solo/duo tier, with Riot's raw league entries it came from.
+    rank_tier: Mapped[str | None] = mapped_column(Text)
+    raw_league: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    rank_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RawResponse(Base):
