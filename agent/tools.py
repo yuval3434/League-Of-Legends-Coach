@@ -214,7 +214,11 @@ TOOLS = (
     _stat_tool(
         "wards_per_minute",
         wards_per_minute,
-        "Wards placed and destroyed per minute, in jungle games.",
+        "Wards placed per minute, split into control wards and trinket wards, and "
+        "wards destroyed per minute, in jungle games. Also vision score per minute "
+        "and oracle_lens_pct, the share of games ending with Oracle Lens. Trinket "
+        "wards mostly show which trinket the player holds, and Riot's vision score "
+        "formula isn't public, so treat those three as context only.",
     ),
     _stat_tool(
         "first_lane_kill",

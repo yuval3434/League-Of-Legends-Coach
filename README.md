@@ -139,7 +139,7 @@ so they never count as the coach failing.
 
 The grader is checked before it's trusted: `calibrate` grades replies with known
 verdicts, made by planting one error into a real coach reply, plus honest replies
-it once got wrong. The latest run agrees on 65 of 66. Its one miss is a grader
+it once got wrong. The latest run agrees on 63 of 66. Its one miss is a grader
 that judged the same reply both ways across two passes, so calibration also
 reports verdicts that change between passes.
 
@@ -148,24 +148,31 @@ reports verdicts that change between passes.
 The first run found real coach failures, such as ranking CS against wards as "the
 biggest gap", and also grader mistakes. After fixing both, the same 8 questions:
 
-| Check | How | First run | After fixes |
-|---|---|---|---|
-| The number check passed | Code | 7 / 8 | 8 / 8 |
-| A tool was called | Code | 8 / 8 | 8 / 8 |
-| Says "no benchmark" or "not enough data" | Code | 1 / 2 | 2 / 2 |
-| Numbers in words | Code, then model | 6 / 8 | 8 / 8 |
-| Ranking gaps in different units | Model | 1 / 4 | 4 / 4 |
-| Win-only or loss-only rows as findings | Model | 1 / 3 | 3 / 3 |
-| A real number on the wrong stat | Model | 7 / 8 | 7 / 8 |
-| Claims the tools don't support | Model | 6 / 8 | 6 / 8 |
-| Presents both Silver findings | Model | 1 / 1 | 1 / 1 |
-| No relative stats compared against Emerald | Model | 1 / 1 | 1 / 1 |
-| **Total** | | **39 / 51** | **48 / 51** |
+| Check | How | First run | After fixes | Wards split |
+|---|---|---|---|---|
+| The number check passed | Code | 7 / 8 | 8 / 8 | 8 / 8 |
+| A tool was called | Code | 8 / 8 | 8 / 8 | 8 / 8 |
+| Says "no benchmark" or "not enough data" | Code | 1 / 2 | 2 / 2 | 2 / 2 |
+| Numbers in words | Code, then model | 6 / 8 | 8 / 8 | 7 / 8 |
+| Ranking gaps in different units | Model | 1 / 4 | 4 / 4 | 4 / 4 |
+| Win-only or loss-only rows as findings | Model | 1 / 3 | 3 / 3 | 2 / 3 |
+| A real number on the wrong stat | Model | 7 / 8 | 7 / 8 | 8 / 8 |
+| Claims the tools don't support | Model | 6 / 8 | 6 / 8 | 8 / 8 |
+| Presents both Silver findings | Model | 1 / 1 | 1 / 1 | 1 / 1 |
+| No relative stats compared against Emerald | Model | 1 / 1 | 1 / 1 | 0 / 1 |
+| **Total** | | **39 / 51** | **48 / 51** | **48 / 51** |
 
 Each run cost about $0.85. The grader's rubrics changed between the runs too, so
 not all of the gain is the coach's. Two of the three remaining failures led to
 small fixes, a prompt line and a grader input, that haven't been through a live
 run yet.
+
+The third run followed the wards split (see DECISIONS.md), which turned vision
+from a finding behind Silver into one ahead, so its answers aren't the same test as
+before. Its one Emerald failure is a grader mistake: the reply refused gold
+difference against Emerald and compared only gold and CS at each minute, which
+are allowed. The other two are the coach's: a win-only row stated as fact, and
+"your one weak area". It cost $0.91.
 
 **Limits:**
 - **The sample is small.** With 8 cases run once, a difference in pass rate under

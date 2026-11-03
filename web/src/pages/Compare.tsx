@@ -97,9 +97,11 @@ export function Compare() {
 
   const { silver, emerald } = data;
   const themes = silver.themes.map((t) => t.theme);
+  // A note both comparisons carry is shown once, without a cohort.
   const notes = [
-    ...silver.notes.map((n) => ({ cohort: "Silver", note: n })),
-    ...emerald.notes.map((n) => ({ cohort: "Emerald", note: n })),
+    ...silver.notes.filter((n) => emerald.notes.includes(n)).map((note) => ({ cohort: "", note })),
+    ...silver.notes.filter((n) => !emerald.notes.includes(n)).map((note) => ({ cohort: "Silver", note })),
+    ...emerald.notes.filter((n) => !silver.notes.includes(n)).map((note) => ({ cohort: "Emerald", note })),
   ];
 
   return (
@@ -171,7 +173,7 @@ export function Compare() {
           <ul className="mt-5 max-w-[760px] space-y-1.5 text-[13px] text-ink3">
             {notes.map(({ cohort, note }) => (
               <li key={note}>
-                <span className="text-ink2">{cohort}:</span> {note}
+                {cohort && <span className="text-ink2">{cohort}:</span>} {note}
               </li>
             ))}
           </ul>

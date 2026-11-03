@@ -6,10 +6,10 @@ import type { Evidence, Theme } from "./api";
 function phrase(theme: string, rows: Evidence[]): string {
   if (theme === "economy") return "farm";
   if (theme === "vision") {
-    const placed = rows.some((r) => r.value === "avg_placed_per_min");
+    const control = rows.some((r) => r.value === "avg_control_placed_per_min");
     const destroyed = rows.some((r) => r.value === "avg_destroyed_per_min");
-    if (placed && destroyed) return "vision";
-    return placed ? "wards placed" : "wards destroyed";
+    if (control && destroyed) return "vision";
+    return control ? "control wards" : "wards destroyed";
   }
   if (theme === "deaths") return "deaths";
   if (theme === "fights") return "kill participation";

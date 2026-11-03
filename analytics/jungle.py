@@ -212,29 +212,62 @@ WARDS_PER_MINUTE = (
     + """,
 per_game AS (
     SELECT j.match_id,
-           count(e.match_id) FILTER (WHERE e.type = 'WARD_PLACED') AS placed,
-           count(e.match_id) FILTER (WHERE e.type = 'WARD_KILL') AS destroyed,
+           w.placed, w.control_placed, w.placed - w.control_placed AS trinket_placed,
+           w.destroyed,
+           p.vision_score,
+           -- The trinket held at the end. Riot's item6 isn't parsed into a column,
+           -- so it comes from the raw match response stored next to the parsed data.
+           (SELECT (x->>'item6')::int
+            FROM raw_responses r,
+                 jsonb_array_elements(r.payload->'info'->'participants') x
+            WHERE r.match_id = j.match_id AND r.kind = 'match'
+              AND (x->>'participantId')::int = j.participant_id) AS trinket,
            j.duration_s / 60.0 AS minutes
     FROM jungle_games j
-    LEFT JOIN timeline_events e
-      ON  e.match_id = j.match_id
-      AND e.actor_id = j.participant_id
-      AND e.type IN ('WARD_PLACED', 'WARD_KILL')
-      AND e.data->>'wardType' NOT IN ('UNDEFINED', 'TEEMO_MUSHROOM')
-    GROUP BY j.match_id, j.participant_id, j.duration_s
+    JOIN match_participants p
+      ON p.match_id = j.match_id AND p.participant_id = j.participant_id
+    CROSS JOIN LATERAL (
+        SELECT count(*) FILTER (WHERE e.type = 'WARD_PLACED') AS placed,
+               count(*) FILTER (
+                   WHERE e.type = 'WARD_PLACED' AND e.data->>'wardType' = 'CONTROL_WARD'
+               ) AS control_placed,
+               count(*) FILTER (WHERE e.type = 'WARD_KILL') AS destroyed
+        FROM timeline_events e
+        WHERE e.match_id = j.match_id
+          AND e.actor_id = j.participant_id
+          AND e.type IN ('WARD_PLACED', 'WARD_KILL')
+          AND e.data->>'wardType' NOT IN ('UNDEFINED', 'TEEMO_MUSHROOM')
+    ) w
 )
 SELECT count(*) AS games,
        sum(placed)::int AS placed,
+       sum(control_placed)::int AS control_placed,
+       sum(trinket_placed)::int AS trinket_placed,
        sum(destroyed)::int AS destroyed,
        round(avg(placed / minutes), 3) AS avg_placed_per_min,
        round((1.96 * stddev(placed / minutes) / sqrt(count(*)))::numeric, 3) AS margin_placed_per_min,
        round(percentile_cont(0.5) WITHIN GROUP (ORDER BY placed / minutes)::numeric, 3)
            AS median_placed_per_min,
+       round(avg(control_placed / minutes), 3) AS avg_control_placed_per_min,
+       round((1.96 * stddev(control_placed / minutes) / sqrt(count(*)))::numeric, 3)
+           AS margin_control_placed_per_min,
+       round(
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY control_placed / minutes)::numeric, 3
+       ) AS median_control_placed_per_min,
+       round(avg(trinket_placed / minutes), 3) AS avg_trinket_placed_per_min,
+       round((1.96 * stddev(trinket_placed / minutes) / sqrt(count(*)))::numeric, 3)
+           AS margin_trinket_placed_per_min,
        round(avg(destroyed / minutes), 3) AS avg_destroyed_per_min,
        round((1.96 * stddev(destroyed / minutes) / sqrt(count(*)))::numeric, 3) AS margin_destroyed_per_min,
        round(
            percentile_cont(0.5) WITHIN GROUP (ORDER BY destroyed / minutes)::numeric, 3
-       ) AS median_destroyed_per_min
+       ) AS median_destroyed_per_min,
+       round(avg(vision_score / minutes), 2) AS avg_vision_score_per_min,
+       round((1.96 * stddev(vision_score / minutes) / sqrt(count(*)))::numeric, 2)
+           AS margin_vision_score_per_min,
+       count(trinket)::int AS trinket_games,
+       round(100.0 * count(*) FILTER (WHERE trinket = 3364) / nullif(count(trinket), 0), 1)
+           AS oracle_lens_pct
 FROM per_game
 HAVING count(*) > 0
 """
@@ -242,10 +275,16 @@ HAVING count(*) > 0
 
 
 async def wards_per_minute(session: AsyncSession, puuids: Players) -> list[Row]:
-    """Wards placed and destroyed per minute by the player.
+    """Wards placed and destroyed per minute by the player, with vision context.
 
-    Leaves out Riot's UNDEFINED events and Teemo mushrooms, which don't count
-    as wards in Riot's own end-of-game totals.
+    Placed wards are split into control wards and trinket wards. Trinket wards
+    mostly measure which trinket a jungler holds: one who swaps to Oracle Lens
+    places few, so they're context, not a sign of worse vision (see
+    DECISIONS.md). `oracle_lens_pct` is the share of games ending with Oracle
+    Lens (item 3364), over `trinket_games` with a stored match response.
+    `avg_vision_score_per_min` is Riot's vision score, whose formula isn't
+    public. Leaves out Riot's UNDEFINED events and Teemo mushrooms, which don't
+    count as wards in Riot's own end-of-game totals.
     """
     return await fetch(session, WARDS_PER_MINUTE, puuids=puuids)
 

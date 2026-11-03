@@ -46,6 +46,9 @@ class Metric:
     sample: str = "games"
     theme: str | None = None
     higher_is_better: bool = True
+    # Values shown beside the theme but never judged: their rows get no
+    # clear_gap, so they can't make or support a finding.
+    context: tuple[str, ...] = ()
 
 
 ABSOLUTE_METRICS = (
@@ -83,12 +86,18 @@ ABSOLUTE_METRICS = (
         wards_per_minute,
         (),
         (
-            "avg_placed_per_min",
-            "median_placed_per_min",
+            "avg_control_placed_per_min",
+            "median_control_placed_per_min",
             "avg_destroyed_per_min",
             "median_destroyed_per_min",
+            "avg_trinket_placed_per_min",
+            "oracle_lens_pct",
+            "avg_vision_score_per_min",
         ),
         theme="vision",
+        # Trinket wards mostly measure trinket choice, and vision score's formula
+        # isn't public: see DECISIONS.md.
+        context=("avg_trinket_placed_per_min", "oracle_lens_pct", "avg_vision_score_per_min"),
     ),
 )
 
@@ -119,6 +128,13 @@ def zero_sum_note(cohort: str) -> str:
         "come out near 50% and 0 overall, because every game has one winner — so "
         "they only tell you something per champion."
     )
+
+VISION_NOTE = (
+    "Vision is judged on control wards placed and wards destroyed. Trinket wards "
+    "mostly show which trinket a jungler holds: one who swaps to Oracle Lens places "
+    "few. Vision score is Riot's own number and its formula isn't public. So "
+    "trinket wards, the Oracle Lens share and vision score are context only."
+)
 
 SAMPLE_SIZE = """
 SELECT count(*) AS games,
@@ -221,6 +237,9 @@ def _compare_metric(metric: Metric, mine: list[Row], theirs: list[Row]) -> list[
         benchmark_sample = their_row[metric.sample] if their_row else 0
         enough = benchmark_sample >= MIN_BENCHMARK_GAMES
         for value in metric.values:
+            gap = _gap(value, my_row, their_row, enough)
+            if value in metric.context:
+                gap |= {"clear_gap": None, "strong_gap": None}
             rows.append(
                 {
                     "metric": metric.name,
@@ -234,8 +253,9 @@ def _compare_metric(metric: Metric, mine: list[Row], theirs: list[Row]) -> list[
                     "my_low_sample": my_sample < MIN_GAMES,
                     "benchmark_value": their_row[value] if enough else None,
                     "benchmark_sample": benchmark_sample,
-                    **_gap(value, my_row, their_row, enough),
+                    **gap,
                     "status": "ok" if enough else "no_benchmark",
+                    **({"context_only": True} if value in metric.context else {}),
                 }
             )
     return rows
@@ -307,6 +327,7 @@ async def compare(
         return result
 
     result["status"] = "ok"
+    result["notes"].append(VISION_NOTE)
     metrics = ABSOLUTE_METRICS
     if COHORTS[cohort].relative_stats:
         metrics += RELATIVE_METRICS

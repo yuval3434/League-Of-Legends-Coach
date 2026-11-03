@@ -25,7 +25,13 @@ from analytics.stats import (
     win_rate_by_gold_diff,
     win_rates,
 )
-from ingestion.models import Match, MatchParticipant, TimelineEvent, TimelineFrame
+from ingestion.models import (
+    Match,
+    MatchParticipant,
+    RawResponse,
+    TimelineEvent,
+    TimelineFrame,
+)
 
 ME = "me"
 START = datetime(2026, 1, 1, tzinfo=UTC)
@@ -78,7 +84,7 @@ def _participant(match_id, participant_id, puuid, role, win, **stats):
         "jungle_cs": stats.pop("jungle_cs", 0),
         "gold_earned": 0,
         "damage_to_champions": 0,
-        "vision_score": 0,
+        "vision_score": stats.pop("vision_score", 0),
     }
 
 
@@ -831,6 +837,56 @@ async def test_wards_per_minute_uses_game_length(session):
     assert (row["placed"], row["destroyed"]) == (2, 1)
     assert row["avg_placed_per_min"] == 0.2
     assert row["avg_destroyed_per_min"] == 0.1
+
+
+async def test_wards_placed_split_into_control_and_trinket(session):
+    await jungle_game(session, duration_s=600)
+    for ms, ward in ((1000, "CONTROL_WARD"), (2000, "YELLOW_TRINKET"), (3000, "BLUE_TRINKET")):
+        await add_event(session, "EUW1_1", "WARD_PLACED", ms, actor=2, wardType=ward)
+
+    row = (await wards_per_minute(session, [ME]))[0]
+
+    # The total still counts all three, so it still matches Riot's wardsPlaced.
+    assert (row["placed"], row["control_placed"], row["trinket_placed"]) == (3, 1, 2)
+    # Over 10 minutes: 1 control ward and 2 trinket wards.
+    assert row["avg_control_placed_per_min"] == 0.1
+    assert row["avg_trinket_placed_per_min"] == 0.2
+
+
+async def test_vision_score_is_per_minute(session):
+    await jungle_game(session, duration_s=600, vision_score=8)
+
+    row = (await wards_per_minute(session, [ME]))[0]
+
+    # 8 over 10 minutes.
+    assert row["avg_vision_score_per_min"] == 0.8
+
+
+async def add_raw_match(session, match_id, trinkets):
+    """A stored match response holding only each participant's item6."""
+    participants = [{"participantId": pid, "item6": item} for pid, item in trinkets.items()]
+    session.add(
+        RawResponse(
+            match_id=match_id,
+            kind="match",
+            http_status=200,
+            payload={"info": {"participants": participants}},
+        )
+    )
+    await session.commit()
+
+
+async def test_oracle_lens_share_reads_the_raw_match(session):
+    for n, item in ((1, 3364), (2, 3364), (3, 3340)):
+        await jungle_game(session, f"EUW1_{n}")
+        # Participant 2 is the player; participant 7 holds Oracle Lens every time.
+        await add_raw_match(session, f"EUW1_{n}", {2: item, 7: 3364})
+    await jungle_game(session, "EUW1_4")  # no stored response
+
+    row = (await wards_per_minute(session, [ME]))[0]
+
+    # Two of the three games with a stored response ended with Oracle Lens.
+    assert (row["games"], row["trinket_games"], row["oracle_lens_pct"]) == (4, 3, 66.7)
 
 
 @pytest.mark.parametrize("ward", ["UNDEFINED", "TEEMO_MUSHROOM"])

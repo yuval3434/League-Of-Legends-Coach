@@ -26,7 +26,7 @@ const TOPIC: Record<string, string> = {
 // The few measures that tell a theme's story; the rest wait behind "Show all".
 const TELLING: Record<string, Key[]> = {
   economy: [{ value: "avg_cs_per_min" }, { value: "avg_cs", minute: 15 }, { value: "avg_gold", minute: 15 }],
-  vision: [{ value: "avg_placed_per_min" }, { value: "avg_destroyed_per_min" }],
+  vision: [{ value: "avg_control_placed_per_min" }, { value: "avg_destroyed_per_min" }],
   deaths: [
     { value: "avg_deaths", phase: "early" },
     { value: "avg_deaths", phase: "mid" },
@@ -64,9 +64,11 @@ function title(theme: Theme): string {
   if (theme.status === "finding") {
     const finding = theme.findings?.find((f) => f.direction === "behind") ?? theme.findings![0];
     if (theme.theme === "vision") {
-      const placed = finding.rows.some((r) => r.value === "avg_placed_per_min");
-      const more = finding.direction === "ahead";
-      return `You ${placed ? "place" : "destroy"} ${more ? "more" : "fewer"} wards than ${WHO}`;
+      const control = finding.rows.some((r) => r.value === "avg_control_placed_per_min");
+      const destroyed = finding.rows.some((r) => r.value === "avg_destroyed_per_min");
+      const more = finding.direction === "ahead" ? "more" : "fewer";
+      if (control && destroyed) return `You place ${more} control wards and destroy ${more} wards than ${WHO}`;
+      return control ? `You place ${more} control wards than ${WHO}` : `You destroy ${more} wards than ${WHO}`;
     }
     const lead = (finding.direction === "behind" ? BEHIND : AHEAD)[theme.theme];
     return lead ? `${lead} ${WHO}` : capital(topic);
@@ -137,6 +139,40 @@ function SectionHead({
   );
 }
 
+/** Vision's background numbers: shown so the verdict can be read in context, never judged. */
+function VisionContext({ rows }: { rows: CompareRow[] }) {
+  const get = (value: string) => rows.find((r) => r.value === value && r.context_only);
+  const trinket = get("avg_trinket_placed_per_min");
+  const lens = get("oracle_lens_pct");
+  const score = get("avg_vision_score_per_min");
+  if (!trinket && !lens && !score) return null;
+  const pair = (r: CompareRow, suffix = "") => (
+    <>
+      you <span className="text-ink2">{fmt(r.my_value)}{suffix}</span> · {COHORT} {fmt(r.benchmark_value)}{suffix}
+    </>
+  );
+  return (
+    <div className="mt-6 max-w-[860px] border-l border-rule pl-4 text-[14px] leading-relaxed text-ink3">
+      <div className="smallcaps">Context, not judged</div>
+      <ul className="mt-1.5 space-y-1">
+        {trinket && (
+          <li>
+            Trinket wards placed per minute: {pair(trinket)}.
+            {lens && <> Games ending with Oracle Lens: {pair(lens, "%")}, on {lens.my_sample} of your games.</>} A
+            jungler who swaps to Oracle Lens places few trinket wards, so this shows trinket choice, not vision.
+          </li>
+        )}
+        {score && (
+          <li>
+            Vision score per minute: {pair(score)}. Riot's formula for vision score isn't public, so it never gets a
+            verdict here.
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
 function ThemeSection({ theme, rows, themes }: { theme: Theme; rows: CompareRow[]; themes: Theme[] }) {
   const [open, setOpen] = useState(false);
   const telling = (TELLING[theme.theme] ?? [])
@@ -165,6 +201,7 @@ function ThemeSection({ theme, rows, themes }: { theme: Theme; rows: CompareRow[
           ))}
         </div>
       )}
+      {theme.theme === "vision" && <VisionContext rows={rows} />}
       {objectives.length > 0 && (
         <div className="mt-5 flex flex-wrap gap-x-10 gap-y-2 text-[14px] text-ink3">
           {objectives.map((r) => (

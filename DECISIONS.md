@@ -221,6 +221,50 @@ wards. Unfiltered, the player's total was 2,504 placed against Riot's own 496.
 filter, wards placed match for this player in all 96 games and in 958 of 960
 player rows. Wards destroyed match in all 960.
 
+## Vision is judged on control wards and wards destroyed, not wards placed
+
+**Decision:** wards placed is split into control wards and trinket wards. The
+vision theme judges only control wards placed and wards destroyed per minute.
+Trinket wards, the share of games ending with Oracle Lens, and Riot's vision
+score per minute are shown as context: their comparison rows are marked
+`context_only` and get no `clear_gap`, so they can never make or support a
+finding.
+
+**Why:** the first version judged vision on all wards placed, and called it a
+finding that the player was behind Silver: 0.119 wards a minute against 0.252.
+That finding measured trinket choice, not vision. Trinket wards are most wards
+placed, and a jungler who swaps to Oracle Lens stops placing them. Split by type,
+over the 30 jungle games and 500 games per cohort on patches 16.19 to 16.21:
+
+| Per minute | Silver | Emerald | Player |
+|---|---|---|---|
+| Trinket wards placed | 0.224 | 0.139 | 0.051 |
+| Control wards placed | 0.026 | 0.039 | 0.060 |
+| Wards destroyed | 0.083 | 0.128 | 0.126 |
+| Games ending with Oracle Lens | 41% | 72% | 90% |
+
+(Totals over all minutes, from the check below. The stat itself averages per
+game, so its numbers differ slightly.) Emerald junglers place fewer wards than
+Silver because most of them swap to Oracle Lens, and they make up for it with
+control wards and clearing. The player does the same, more so. Judged on control
+wards and wards destroyed, vision against Silver turns from a finding behind into
+a finding ahead.
+
+Vision score isn't judged either: it's Riot's own number and its formula isn't
+public, so a gap in it can't be explained. The player's is a little lower than
+both cohorts' (0.79 a minute against 0.85 and 0.88), shown as context only.
+
+**How it was caught:** a sanity check on the benchmarks, not on the player.
+Emerald junglers placed fewer wards a minute (0.185) than Silver ones (0.252),
+the opposite of what a higher rank should show. Counting was ruled out first: our
+filtered count matched Riot's end-of-game `wardsPlaced` in all 500 Emerald games,
+497 of 500 Silver games and all 30 of the player's. Splitting by `wardType` and
+reading the trinket slot (`item6`) from the stored raw match responses showed
+where the gap was.
+
+**Limits:** the trinket is read at the end of the game, so a mid-game swap isn't
+seen. Oracle Lens share is a plain percentage of games, with no margin.
+
 ## Objectives with killerTeamId 300 count for neither team
 
 **Decision:** objective stats keep only events with `killerTeamId` 100 or 200.

@@ -651,23 +651,51 @@ async def test_a_cohort_without_relative_stats_marks_objectives_not_comparable(
     assert themes["objectives"] == "not_comparable"
 
 
-async def test_wards_placed_have_a_margin(sessions, benchmark_sessions):
+async def test_control_wards_placed_have_a_margin(sessions, benchmark_sessions):
     async with benchmark_sessions() as bench, sessions() as mine:
         await fill_cohort(bench)
         for n in (1, 2):
             await add_game(mine, f"EUW1_{n}", patch="16.21", duration_s=600)
             await add_frames(mine, f"EUW1_{n}", 1, {})
         await add_event(
-            mine, "EUW1_1", "WARD_PLACED", 1000, actor=2, wardType="SIGHT_WARD"
+            mine, "EUW1_1", "WARD_PLACED", 1000, actor=2, wardType="CONTROL_WARD"
         )
 
         result = await compare(mine, bench, [ME], SILVER)
 
     row = find(
-        result["rows"], metric="wards_per_minute", value="avg_placed_per_min"
+        result["rows"], metric="wards_per_minute", value="avg_control_placed_per_min"
     )
     # 0.1 and 0 wards a minute: spread 0.0707, so 1.96 * 0.0707 / sqrt(2).
     assert row["my_margin"] == 0.098
+    assert "context_only" not in row
+
+
+async def test_trinket_wards_are_context_and_never_a_finding(sessions, benchmark_sessions):
+    async with benchmark_sessions() as bench, sessions() as mine:
+        await fill_cohort(bench)
+        # Every benchmark jungler places 20 trinket wards; the player places none.
+        for n in range(30):
+            for k in range(20):
+                await add_event(
+                    bench, f"EUW1_{n}", "WARD_PLACED", 1000 + k, actor=2, wardType="YELLOW_TRINKET"
+                )
+        for n in range(12):
+            await add_game(mine, f"EUW1_M{n}", patch="16.21")
+            await add_frames(mine, f"EUW1_M{n}", 1, {})
+
+        result = await compare(mine, bench, [ME], SILVER)
+
+    row = find(
+        result["rows"], metric="wards_per_minute", value="avg_trinket_placed_per_min"
+    )
+    # A huge gap with a margin, but it's context: no verdict either way.
+    assert row["difference"] < 0 and row["difference_margin"] is not None
+    assert row["context_only"] is True
+    assert row["clear_gap"] is None and row["strong_gap"] is None
+    vision = next(t for t in result["themes"] if t["theme"] == "vision")
+    assert vision["status"] != "finding"
+    assert any("formula isn't public" in note for note in result["notes"])
 
 
 async def test_objective_shares_rest_on_objectives_not_games(

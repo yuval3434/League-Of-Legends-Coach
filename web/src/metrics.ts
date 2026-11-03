@@ -44,6 +44,14 @@ export function metricLabel(row: Key): string {
       return `CS vs enemy jungler, ${minute}${split}`;
     case "avg_placed_per_min":
       return "Wards placed per minute";
+    case "avg_control_placed_per_min":
+      return "Control wards placed per minute";
+    case "avg_trinket_placed_per_min":
+      return "Trinket wards placed per minute";
+    case "oracle_lens_pct":
+      return "Games ending with Oracle Lens";
+    case "avg_vision_score_per_min":
+      return "Vision score per minute";
     case "avg_destroyed_per_min":
       return "Wards destroyed per minute";
     case "avg_deaths":

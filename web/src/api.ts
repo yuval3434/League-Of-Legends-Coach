@@ -36,6 +36,8 @@ export type CompareRow = {
   clear_gap: boolean | null;
   strong_gap: boolean | null;
   status: "ok" | "no_benchmark";
+  // Shown beside its theme but never judged: no clear_gap, never a finding.
+  context_only?: boolean;
 };
 
 export type Evidence = Pick<CompareRow, "metric" | "value" | "minute" | "phase">;

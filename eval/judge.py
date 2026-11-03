@@ -45,7 +45,7 @@ pass.""",
     "unit_comparison": """\
 Fail if the reply compares or ranks gaps measured in different units as if they \
 were on one scale, when no tool result ranks them. For example, "CS per minute is \
-your biggest gap" when wards per minute is also behind, or "your worst area is \
+your biggest gap" when vision is also a finding, or "your worst area is \
 vision". Comparing the same stat at different minutes, or the same stat between \
 cohorts, passes. Saying that two areas are both findings passes, and so does \
 grouping findings together against an area with no gap, such as "farm and \
@@ -61,7 +61,8 @@ about wins and losses, using split rows is expected and passes on the same terms
 Fail if the reply calls something a finding, a clear difference or a real gap when \
 the tool results don't support it: a theme whose status isn't "finding", a row in \
 `worth_watching` presented as certain, a row with no `clear_gap` presented as part \
-of a finding, or anything a result marks "not_enough_data" or "no_benchmark". \
+of a finding, a row marked `context_only` presented as a finding, a strength or a \
+weakness, or anything a result marks "not_enough_data" or "no_benchmark". \
 Rows listed under a theme's `findings` are clear by definition, so a reply may \
 call them findings. Pass otherwise.""",
     "findings_covered": """\

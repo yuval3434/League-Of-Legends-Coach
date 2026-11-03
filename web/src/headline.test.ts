@@ -15,10 +15,20 @@ describe("headline", () => {
   it("names each finding you're behind on", () => {
     const themes = [
       finding("economy", "behind", ["avg_cs", "avg_gold"]),
-      finding("vision", "behind", ["avg_placed_per_min"]),
+      finding("vision", "behind", ["avg_control_placed_per_min"]),
     ];
     expect(headline(themes, "Silver junglers")).toBe(
-      "You're behind Silver junglers on farm, and on wards placed.",
+      "You're behind Silver junglers on farm, and on control wards.",
+    );
+  });
+
+  it("calls control wards and wards destroyed together vision", () => {
+    const themes = [
+      finding("economy", "behind", ["avg_cs", "avg_gold"]),
+      finding("vision", "ahead", ["avg_control_placed_per_min", "avg_destroyed_per_min"]),
+    ];
+    expect(headline(themes, "Silver junglers")).toBe(
+      "You're behind Silver junglers on farm, and ahead on vision.",
     );
   });
 

@@ -43,6 +43,8 @@ Rows whose `result` is "win" or "loss" cover only won or only lost games, and \
 never count towards findings. Present them only as a suggestion, never as fact, \
 even when the question is about wins and losses.
 
+Rows with `context_only` true are background, not evidence. Never call them a finding, a strength or a weakness, and never use them to support one.
+
 Reading results
 Silver is peers and Emerald is a target. Follow the notes in each result. Stats \
 show what happened, not why, so if you suggest a cause, say it's a suggestion. No \

@@ -3,6 +3,11 @@
 Each bad reply plants one error into a real coach reply, so the only thing that
 changes is the property being tested. Every label is meant to be clear-cut: a
 borderline case would measure the labeller, not the judge.
+
+The replies' vision passages were rewritten by hand when wards placed was split
+into control and trinket wards (see DECISIONS.md): the originals called a gap a
+finding that the split showed was trinket choice. Their numbers come from the
+recaptured tool results; everything else is the coach's own text.
 """
 
 import json
@@ -79,7 +84,7 @@ def load_examples() -> list[Example]:
         ex(
             "twice_as_many",
             "number_words",
-            r2 + "\n\nSilver junglers place twice as many wards as you.",
+            r2 + "\n\nYou place twice as many control wards as Silver junglers.",
             False,
         ),
         ex(
@@ -91,7 +96,7 @@ def load_examples() -> list[Example]:
         ex(
             "half_the_rate",
             "number_words",
-            r2 + "\n\nYou place about half as many wards as a Silver jungler.",
+            r2 + "\n\nSilver junglers place about half as many control wards as you.",
             False,
         ),
         # Ranking gaps in different units.
@@ -100,7 +105,7 @@ def load_examples() -> list[Example]:
         ex(
             "weakest_area",
             "unit_comparison",
-            r1 + "\n\nVision is your weakest area overall.",
+            r1 + "\n\nVision is your strongest area overall.",
             False,
             q1,
         ),
@@ -142,10 +147,12 @@ def load_examples() -> list[Example]:
             "only_farming",
             "findings_covered",
             _replace(
-                r2.split("**2. Placing wards")[0],
-                "I'd work on two things: **farming** and **placing wards**. Those are "
-                "the only two areas where",
-                "I'd work on one thing: **farming**. That's the only area where",
+                r2.split("**2. Vision")[0],
+                "I'd work on **farming**, and keep doing what you do for **vision**. Those "
+                "are the only two areas where your numbers clearly differ from Silver "
+                "junglers: you're behind on farming and ahead on vision.",
+                "I'd work on one thing: **farming**. That's the only area where your "
+                "numbers clearly differ from Silver junglers.",
             ),
             False,
         ),
@@ -218,8 +225,9 @@ def load_examples() -> list[Example]:
             "findings_cant_be_ranked",
             "unit_comparison",
             "Your findings can't be ranked on one scale, because they're measured in "
-            "different units. Both are findings against Silver: farming (5.45 CS per "
-            "minute against 6.27) and placing wards (0.119 a minute against 0.252).",
+            "different units. Both are findings against Silver: farming, where you're "
+            "behind (5.45 CS per minute against 6.27), and vision, where you're ahead "
+            "(0.063 control wards a minute against 0.027).",
             True,
             weakest_q,
         ),
