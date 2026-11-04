@@ -2,6 +2,7 @@ import { Champions } from "./pages/Champions";
 import { Coach } from "./pages/Coach";
 import { Compare } from "./pages/Compare";
 import { Draft } from "./pages/Draft";
+import { Matches } from "./pages/Matches";
 import { Overview } from "./pages/Overview";
 import { Players } from "./pages/Players";
 import { Settings } from "./pages/Settings";
@@ -14,6 +15,8 @@ export default function App() {
       return <Champions />;
     case "compare":
       return <Compare />;
+    case "matches":
+      return <Matches id={route.params.get("id")} />;
     case "draft":
       return <Draft />;
     case "settings":

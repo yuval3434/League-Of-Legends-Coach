@@ -6,6 +6,7 @@ import { HatchDefs } from "./Verdict";
 
 const PAGES: { id: Page; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "matches", label: "Matches" },
   { id: "champions", label: "Champions" },
   { id: "compare", label: "Compare" },
   { id: "draft", label: "Draft" },
@@ -26,7 +27,7 @@ export function Layout({ active, children }: { active: Page; children: ReactNode
             <span className="smallcaps text-ink3">Scouting report</span>
           </div>
           <div className="flex flex-wrap items-baseline gap-x-5 gap-y-3 sm:gap-x-7">
-            <nav className="flex gap-5 text-[14px] sm:gap-7">
+            <nav className="flex flex-wrap gap-x-4 gap-y-2 text-[14px] sm:gap-x-7">
               {PAGES.map((page) => (
                 <a
                   key={page.id}

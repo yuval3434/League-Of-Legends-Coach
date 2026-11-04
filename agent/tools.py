@@ -234,7 +234,10 @@ TOOLS = (
         "Champion select: what the player's team lacks, from rules over Riot's "
         "Data Dragon tags and attack/magic ratings (no frontline, no magic damage, "
         "no physical damage), and which of the player's own jungle champions (3+ "
-        "games) fill each gap, with their games and win rate. Enemy matchups are "
+        "games) fill each gap, with their games and win rate. `enemy_composition` "
+        "gives the enemy's damage mix and frontline by the same rules; its "
+        "`general_advice` is general game knowledge, not from the player's games, "
+        "so say so if you use it. Enemy matchups are "
         "never available: say there is no matchup data. It does not choose: show "
         "the options and leave the pick to the player; never say which champion "
         "to pick or rank them. Takes only the champions shown on screen.",

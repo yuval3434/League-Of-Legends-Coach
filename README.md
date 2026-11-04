@@ -23,8 +23,12 @@ in its answer appears in a tool result.
   local model.
 - **Champion select** (v4): what your team lacks and which of your champions add
   it. It never picks for you, and it has no matchup data.
-- **Web app** (v2 to v4): Overview, Champions, Compare, Draft and Coach pages,
-  plus Players and Settings. Fits a phone screen.
+- **Enemy composition** (v5): the enemy's damage mix and frontline, by the same
+  rules, with one line of general build advice labelled as general advice.
+- **Matches** (v5): your recent games, and each game's two teams with every
+  champion's stats. Champions only, no player names.
+- **Web app** (v2 to v5): Overview, Matches, Champions, Compare, Draft and Coach
+  pages, plus Players and Settings. Fits a phone screen.
 - **Several players:** sync friends and switch between them. Each player only
   gets the benchmarks that fit their rank and role.
 - **Eval:** 10 questions to the real coach, graded by code and by a model grader
@@ -91,12 +95,19 @@ damage. It then lists which of your jungle champions with 3 or more games add
 it, with their games and win rate, or "too early to tell" under 10 games. They
 are listed most played first and never ranked, and the page never picks one:
 Riot's League policy lists apps that dictate player decisions as unapproved.
-Every enemy pick shows "No matchup data", because no champion pair has anywhere
-near the games a reliable win rate needs. `POST /draft` and the coach's
+The enemy team gets the same rules: its damage mix ("mostly physical: 3 of 4")
+and its frontline, with one line of general build advice, labelled as general
+advice and not from your games. One line under the enemy picks says there's no
+matchup data, because no champion pair has anywhere near the games a reliable
+win rate needs. `POST /draft` and the coach's
 `draft_board` tool give the same board. [DECISIONS.md](DECISIONS.md) has the
 policy quotes and the numbers.
 
 ![The Draft page: a board with no frontline, and the player's jungle champions that add one](docs/screens/draft.png)
+
+**Matches:** your games, newest first, and a view of each one with both teams by
+role: champion, K/D/A, CS, gold, damage and vision. Champions only, never a
+player's name, and only games the selected player was in.
 
 The stretch table and Draft screenshots are cropped below the page header instead
 of swapping the Riot ID.

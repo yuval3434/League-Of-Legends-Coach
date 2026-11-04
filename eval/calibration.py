@@ -48,10 +48,10 @@ def load_examples() -> list[Example]:
     draft_q = DRAFT_QUESTION
     draft_shown = (
         "Your team (Jinx, Ahri, Lulu) has no frontline: no Tank, and fewer than two "
-        "Fighters. From your jungle champions, these add one: Dr. Mundo (17 games, "
-        "52.9% win rate, give or take 24.5) and Zaahen (15 games, 33.3%, give or take "
-        "24.7). Shen, Nunu, Amumu, Diana, Volibear, Xin Zhao and Zac also add one, "
-        "but each has under 10 games, so it's too early to tell how you do on them. "
+        "Fighters. From your jungle champions, Dr. Mundo adds one (17 games, 52.9% "
+        "win rate, give or take 24.5). Shen, Nunu, Amumu, Volibear, Xin Zhao and Zac "
+        "also add one, but each has under 10 games, so it's too early to tell how you "
+        "do on them. "
         "There's no matchup data, so I can't say how any of them does against Lee Sin "
         "or Darius. The pick is yours."
     )
@@ -325,7 +325,7 @@ def load_examples() -> list[Example]:
             "draft_ranked",
             "no_pick_chosen",
             "Your team has no frontline. Your best options, in order: Dr. Mundo, "
-            "Zaahen, then Shen.",
+            "Shen, then Nunu.",
             False,
             draft_q,
             "draft",

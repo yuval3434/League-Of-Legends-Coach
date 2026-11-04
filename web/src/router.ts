@@ -3,10 +3,10 @@
 
 import { useEffect, useState } from "react";
 
-export type Page = "overview" | "champions" | "compare" | "draft" | "coach" | "players" | "settings";
+export type Page = "overview" | "matches" | "champions" | "compare" | "draft" | "coach" | "players" | "settings";
 export type Route = { page: Page; params: URLSearchParams };
 
-const PAGES: Page[] = ["overview", "champions", "compare", "draft", "coach", "players", "settings"];
+const PAGES: Page[] = ["overview", "matches", "champions", "compare", "draft", "coach", "players", "settings"];
 
 export function parseRoute(hash: string): Route {
   const [path, query = ""] = hash.replace(/^#\/?/, "").split("?");

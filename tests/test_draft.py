@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from analytics.draft import (
     GAPS,
+    enemy_composition,
     NO_MATCHUP_DATA,
     damage_type,
     draft_board,
@@ -72,6 +73,46 @@ def test_gap_rules():
     assert missing("Ezreal", "Garen") == []
 
 
+def test_a_champion_adds_a_piece_only_if_the_rule_then_holds():
+    frontline = GAPS[0]
+    no_fighters = [CHAMPIONS["Jinx"], CHAMPIONS["Ahri"]]
+    # A lone Fighter is still no frontline; a Tank is one.
+    assert not frontline.added_by(no_fighters, CHAMPIONS["Viego"])
+    assert frontline.added_by(no_fighters, CHAMPIONS["Nunu"])
+    # A second Fighter makes one.
+    assert frontline.added_by([CHAMPIONS["Jinx"], CHAMPIONS["Diana"]], CHAMPIONS["Viego"])
+    # Nothing adds what the team already has.
+    assert not frontline.added_by([CHAMPIONS["Garen"]], CHAMPIONS["Nunu"])
+
+
+def enemy(*names):
+    return enemy_composition([CHAMPIONS[n] for n in names])
+
+
+def test_the_enemy_damage_mix_and_frontline_follow_the_same_rules():
+    found = enemy("Darius", "Jinx", "Garen", "Viego")
+    assert found["damage"] == {"physical": 4, "magic": 0, "mixed": 0}
+    assert found["mix"] == "mostly_physical"
+    # Tanks first; Fighters that aren't also Tanks second.
+    assert (found["tanks"], found["fighters"], found["has_frontline"]) == (
+        ["Darius", "Garen"], ["Viego"], True,
+    )
+    assert found["general_advice"]["text"].startswith("Against mostly physical damage")
+    assert "not from the player's games" in found["general_advice"]["source"]
+
+
+def test_the_mix_needs_three_picks_and_three_quarters():
+    assert enemy("Ahri", "Nunu", "Diana")["mix"] == "mostly_magic"
+    two = enemy("Ahri", "Nunu")
+    assert two["mix"] is None and "general_advice" not in two
+    # 2 of 4 physical, with one champion rated equal for both: no single type.
+    split = enemy("Jinx", "Viego", "Ahri", "Ezreal")
+    assert split["damage"] == {"physical": 2, "magic": 1, "mixed": 1}
+    assert split["mix"] == "mixed" and "general_advice" not in split
+    assert enemy("Ahri")["has_frontline"] is False
+    assert enemy_composition([]) is None
+
+
 def test_names_resolve_by_id_or_display_name():
     found = resolve(["wukong", "MonkeyKing", "nunu & willump", "Nunu"], CHAMPIONS)
     assert [c.champion for c in found] == ["MonkeyKing", "MonkeyKing", "Nunu", "Nunu"]
@@ -114,21 +155,34 @@ async def test_board_shows_gaps_from_the_pool_without_ranking(session):
     assert [p["champion"] for p in board["pool"]] == ["Viego", "Garen", "Nunu"]
     viego = board["pool"][0]
     assert (viego["games"], viego["wins"], viego["low_sample"]) == (4, 2, True)
-    assert viego["fills"] == ["no_frontline"]
+    # Jinx and Ahri have no Fighter, so Viego alone isn't a frontline.
+    assert viego["fills"] == []
     assert board["pool"][1]["unavailable"] == "banned"
     assert "fills" not in board["pool"][1]
     assert board["gaps"] == [
         {
             "gap": "no_frontline",
             "description": GAPS[0].description,
-            "filled_by": ["Viego", "Nunu"],
+            "filled_by": ["Nunu"],
         }
     ]
     assert board["enemy_team"][0]["champion"] == "MonkeyKing"
-    assert board["enemy_team"][0]["matchup"] == "no_matchup_data"
+    assert "matchup" not in board["enemy_team"][0]  # said once, in "matchups"
     assert board["matchups"] == NO_MATCHUP_DATA
     # Shown, never chosen: no field ranks or names a best champion.
     assert not {"best", "recommended", "score", "rank"} & (set(board) | set(viego))
+
+
+async def test_match_data_names_match_data_dragon_whatever_the_case(session):
+    champions = CHAMPIONS | {"Fiddlesticks": champ("Fiddlesticks", ["Mage", "Support"], 2, 9)}
+    await play(session, "FiddleSticks", 3)  # how match data spells it
+    board = await draft_board(session, [ME], champions, ["Jinx"], [], [])
+    entry = board["pool"][0]
+    assert (entry["champion"], entry["tags"], entry["fills"]) == (
+        "Fiddlesticks", ["Mage", "Support"], ["no_magic_damage"],
+    )
+    banned = await draft_board(session, [ME], champions, ["Jinx"], [], ["Fiddlesticks"])
+    assert banned["pool"][0]["unavailable"] == "banned"
 
 
 async def test_no_gaps_before_the_team_picks(session):
@@ -204,7 +258,7 @@ async def test_the_api_stores_data_dragon_at_startup_and_serves_the_board(test_s
     }
     board = mine.json()
     assert [p["champion"] for p in board["pool"]] == ["Viego"]
-    assert board["enemy_team"][0]["matchup"] == "no_matchup_data"
+    assert board["enemy_composition"]["picked"] == 1
     # The friend's 2 Ornn games are under the pool's 3, and their games aren't mine.
     assert friend.json()["pool"] == []
     assert refused.status_code == 422 and refused.json()["detail"] == "Unknown champions: Teemo."
