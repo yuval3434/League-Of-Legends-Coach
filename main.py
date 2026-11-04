@@ -3,19 +3,21 @@
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 import anthropic
-from fastapi import FastAPI, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from agent.coach import ask_coach
-from agent.llm import ModelClient, create_model
+from agent.llm import LocalModelError, ModelClient, create_model, local_model_ready
+from agent.models import BY_ID, CHOICES, estimated_cost
 from agent.pricing import answer_cost
 from agent.samples import summarize
 from agent.tools import TOOLS, ToolContext, run_tool
@@ -24,6 +26,7 @@ from benchmarks.compare import compare
 from benchmarks.models import create_benchmark_engine
 from benchmarks.pull import pull_cohort, target_champions, tracked_puuids
 from ingestion.config import Settings
+from ingestion.keys import KEYS, describe, key_value, save_key
 from ingestion.rate_limiter import RateLimiter
 from ingestion.players import SelectedPlayer, list_players, load_player
 from ingestion.riot_client import RiotAuthError, RiotClient, RiotError, RiotNotFound
@@ -45,29 +48,64 @@ class PullRequest(BaseModel):
     max_matches: int
 
 
+class KeyRequest(BaseModel):
+    key: str = Field(min_length=8, max_length=200)
+
+
+# Tests a candidate key with one cheap call; raises if the key is refused.
+KeyTester = Callable[[str], Awaitable[None]]
+
+# Requests to the settings endpoints must name one of these hosts. The port is
+# bound to 127.0.0.1, so only this machine reaches the API; checking the Host
+# also stops a website from posing as localhost through DNS rebinding.
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]"}
+# A header only a script on our own page sends. A browser asks the API before
+# sending it from another site, and the API never says yes, so a page open in
+# another tab can't change a key.
+SETTINGS_HEADER = "X-LoLCoach-Settings"
+
+
+def local_only(request: Request) -> None:
+    # "localhost:8000" -> "localhost"; "[::1]:8000" -> "[::1]".
+    host = (request.headers.get("host") or "").rsplit(":", 1)[0].lower()
+    if host not in LOCAL_HOSTS or request.headers.get(SETTINGS_HEADER) != "1":
+        raise HTTPException(403, "Settings can only be changed from this computer's web app")
+
+
 class CoachRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     # The PUUID of the player to ask about, from GET /players. None is the owner.
     player: str | None = None
+    # One of GET /coach/models' ids. None is COACH_MODEL from .env.
+    model: str | None = None
 
 
 def create_app(
-    settings: Settings | None = None, coach_model: ModelClient | None = None
+    settings: Settings | None = None,
+    coach_model: ModelClient | None = None,
+    env_path: Path | None = None,
+    key_testers: dict[str, KeyTester] | None = None,
 ) -> FastAPI:
-    """`coach_model` replaces the model named in settings, so tests can pass a fake."""
+    """`coach_model` replaces the model named in settings, so tests can pass a fake.
+
+    `env_path` is the .env that keys are read from and saved to; None (as in
+    tests) leaves the keys in `settings` and turns the key settings off. `key_testers`
+    replace the real key checks, so tests make no calls to Riot or Anthropic.
+    """
     settings = settings or Settings()
+    # A key saved from the settings page is in .env, but a container keeps the
+    # environment it was created with. So .env wins for the keys.
+    for name, key in KEYS.items():
+        if env_path and (stored := key_value(env_path, name)):
+            setattr(settings, key.env.lower(), SecretStr(stored))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = create_async_engine(settings.database_url)
         app.state.sessions = async_sessionmaker(engine, expire_on_commit=False)
-        app.state.riot = RiotClient(
-            settings.riot_api_key.get_secret_value(),
-            RateLimiter(),
-            settings.riot_account_region,
-            settings.riot_match_region,
-            settings.riot_platform_region,
-        )
+        # One limiter for every Riot client, so a replaced key keeps the count.
+        app.state.limiter = RateLimiter()
+        app.state.riot = riot_client(settings.riot_api_key.get_secret_value())
         benchmark_engine = create_benchmark_engine(settings)
         app.state.benchmark_sessions = async_sessionmaker(
             benchmark_engine, expire_on_commit=False
@@ -76,9 +114,9 @@ def create_app(
         app.state.sync_task = None
         app.state.pull_status = {"state": "idle"}
         app.state.pull_task = None
-        app.state.coach_model = coach_model
-        if coach_model is None and settings.anthropic_api_key.get_secret_value():
-            app.state.coach_model = create_model(settings)
+        # Models are built when first asked for, one per choice, and dropped when
+        # the Anthropic key changes.
+        app.state.models = {}
         yield
         for task in (app.state.sync_task, app.state.pull_task):
             if task:
@@ -88,6 +126,34 @@ def create_app(
         await engine.dispose()
 
     app = FastAPI(title="LoL Coach", lifespan=lifespan)
+
+    def riot_client(key: str) -> RiotClient:
+        return RiotClient(
+            key,
+            app.state.limiter,
+            settings.riot_account_region,
+            settings.riot_match_region,
+            settings.riot_platform_region,
+        )
+
+    async def test_riot(key: str) -> None:
+        client = riot_client(key)
+        try:
+            await client.get_platform_status()
+        finally:
+            await client.aclose()
+
+    async def test_anthropic(key: str) -> None:
+        # Listing models costs nothing and uses no tokens.
+        async with anthropic.AsyncAnthropic(api_key=key) as client:
+            await client.models.list(limit=1)
+
+    testers = key_testers or {"riot": test_riot, "anthropic": test_anthropic}
+
+    def keys_file() -> Path:
+        if env_path is None:
+            raise HTTPException(503, "Key settings are off: the API wasn't given a .env file")
+        return env_path
 
     async def run_sync(request: SyncRequest) -> None:
         riot_id = f"{request.game_name}#{request.tag_line}"
@@ -188,6 +254,38 @@ def create_app(
             for cohort in COHORTS
         }
 
+    @app.get("/settings/keys", dependencies=[Depends(local_only)])
+    async def keys() -> dict[str, Any]:
+        """Whether each key is set, its last 4 characters and when. Never the key."""
+        return {name: describe(keys_file(), name) for name in KEYS}
+
+    @app.put("/settings/keys/{name}", dependencies=[Depends(local_only)])
+    async def set_key(name: str, body: KeyRequest, request: Request) -> dict[str, Any]:
+        """Test a key with one cheap call, then save it to .env and start using it."""
+        if name not in KEYS:
+            raise HTTPException(404, f"No key called {name}")
+        state = request.app.state
+        if name == "riot":
+            refuse_if_busy(state)
+        key = body.key.strip()
+        try:
+            await testers[name](key)
+        except (RiotError, anthropic.AuthenticationError, anthropic.PermissionDeniedError):
+            raise HTTPException(400, f"The {name.capitalize()} key was refused, so it wasn't saved.")
+        except (anthropic.APIError, OSError) as error:
+            # Don't log the error itself: some libraries put the request in it.
+            logger.warning("Testing the %s key failed: %s", name, type(error).__name__)
+            raise HTTPException(502, f"Couldn't reach {name.capitalize()} to test the key; it wasn't saved.")
+        save_key(keys_file(), name, key)
+        setattr(settings, KEYS[name].env.lower(), SecretStr(key))
+        if name == "riot":
+            old, state.riot = state.riot, riot_client(key)
+            await old.aclose()
+        else:
+            state.models = {}
+        logger.info("The %s key was replaced", name)
+        return describe(keys_file(), name)
+
     @app.get("/health")
     async def health(request: Request) -> dict[str, str]:
         async with request.app.state.sessions() as session:
@@ -248,23 +346,64 @@ def create_app(
                     my_session, benchmark_session, [chosen.puuid], cohort, champion, reason
                 )
 
+    def has_anthropic_key() -> bool:
+        return bool(settings.anthropic_api_key.get_secret_value())
+
+    def model_for(request: Request, choice: str) -> ModelClient:
+        if coach_model is not None:
+            return coach_model  # a test's fake
+        if BY_ID[choice].provider == "anthropic" and not has_anthropic_key():
+            raise HTTPException(503, "ANTHROPIC_API_KEY is not set in .env")
+        models = request.app.state.models
+        if choice not in models:
+            models[choice] = create_model(settings, choice)
+        return models[choice]
+
     @app.get("/coach/status")
     async def coach_status(request: Request) -> dict[str, Any]:
-        """Whether the coach can answer: it needs ANTHROPIC_API_KEY. Free."""
-        return {"available": request.app.state.coach_model is not None}
+        """Whether a Claude model can answer: it needs ANTHROPIC_API_KEY. Free."""
+        return {"available": coach_model is not None or has_anthropic_key()}
+
+    @app.get("/coach/models")
+    async def coach_models() -> list[dict[str, Any]]:
+        """The models to pick from, each with its estimated cost per question. Free."""
+        local = await local_model_ready(settings.ollama_url, settings.local_model)
+        rows = []
+        for choice in CHOICES:
+            if choice.provider == "ollama":
+                reason = local
+                label = f"{choice.label} · {settings.local_model}"
+            else:
+                reason = None if has_anthropic_key() or coach_model else "Needs an Anthropic API key."
+                label = choice.label
+            rows.append(
+                {
+                    "id": choice.id,
+                    "label": label,
+                    "estimated_cost_usd": estimated_cost(choice.id),
+                    "available": reason is None,
+                    "reason": reason,
+                    "default": choice.id == settings.coach_model,
+                }
+            )
+        return rows
 
     @app.post("/coach")
     async def ask(body: CoachRequest, request: Request) -> dict[str, Any]:
-        """Ask the coach a question. This makes paid model calls."""
-        state = request.app.state
-        if state.coach_model is None:
-            raise HTTPException(503, "ANTHROPIC_API_KEY is not set in .env")
+        """Ask the coach a question. Paid, unless the local model answers."""
+        choice = body.model or settings.coach_model
+        if choice not in BY_ID:
+            raise HTTPException(422, f"Unknown model: {choice}")
+        model = model_for(request, choice)
         context = context_for(request, await selected(request, body.player))
         try:
-            answer = await ask_coach(state.coach_model, context, body.question)
+            answer = await ask_coach(model, context, body.question)
         except anthropic.APIError:
             logger.exception("The model API call failed")
             raise HTTPException(502, "The model API call failed; see the server log.")
+        except LocalModelError as error:
+            logger.warning("The local model failed: %s", error)
+            raise HTTPException(502, f"The local model didn't answer. {error}")
         logger.info(
             "Coach: %s, tools %s, caught %s, %s",
             answer.status,
@@ -333,4 +472,4 @@ def create_app(
     return app
 
 
-app = create_app()
+app = create_app(env_path=Path(".env"))

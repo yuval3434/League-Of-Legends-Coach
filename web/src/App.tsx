@@ -3,6 +3,7 @@ import { Coach } from "./pages/Coach";
 import { Compare } from "./pages/Compare";
 import { Overview } from "./pages/Overview";
 import { Players } from "./pages/Players";
+import { Settings } from "./pages/Settings";
 import { useRoute } from "./router";
 
 export default function App() {
@@ -12,6 +13,8 @@ export default function App() {
       return <Champions />;
     case "compare":
       return <Compare />;
+    case "settings":
+      return <Settings />;
     case "players":
       return <Players />;
     case "coach":

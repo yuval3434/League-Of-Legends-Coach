@@ -44,6 +44,13 @@ export function Layout({ active, children }: { active: Page; children: ReactNode
             <div className="self-center">
               <PlayerSwitcher page={active} />
             </div>
+            <a
+              href={href("settings")}
+              aria-current={active === "settings" ? "page" : undefined}
+              className={`text-[14px] ${active === "settings" ? "text-ink" : "text-ink3 hover:text-ink"}`}
+            >
+              Settings
+            </a>
           </div>
         </header>
         <main>{children}</main>
