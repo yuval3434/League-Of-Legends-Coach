@@ -246,6 +246,47 @@ function query(params: Record<string, string | null | undefined>): string {
 
 const JSON_POST = { method: "POST", headers: { "Content-Type": "application/json" } };
 
+/** A champion from Data Dragon, for the champion-select picker. */
+export type DraftChampion = { champion: string; name: string; tags: string[] };
+
+/** What champion select shows: champions only, never a player. */
+export type Board = { allies: string[]; enemies: string[]; bans: string[] };
+
+export type GapId = "no_frontline" | "no_magic_damage" | "no_physical_damage";
+
+type Described = {
+  champion: string;
+  name: string;
+  tags: string[];
+  damage: "physical" | "magic" | "mixed";
+  attack_rating: number;
+  magic_rating: number;
+};
+
+/** One of the player's jungle champions (3+ games), in the API's order: most played first. */
+export type PoolEntry = Partial<Described> & {
+  champion: string;
+  games: number;
+  wins: number;
+  win_rate_pct: number;
+  margin_win_rate_pct?: number;
+  low_sample?: boolean;
+  fills?: GapId[];
+  unavailable?: "picked" | "banned";
+};
+
+export type DraftBoard = {
+  your_team: Described[];
+  enemy_team: (Described & { matchup: "no_matchup_data" })[];
+  bans: string[];
+  rules_checked: string[];
+  gaps: { gap: GapId; description: string; filled_by: string[] }[];
+  pool: PoolEntry[];
+  matchups: string;
+  notes: string[];
+  data_dragon_version: string;
+};
+
 // `player` is a PUUID from api.players(); null asks about the owner.
 export const api = {
   coachStatus: () => get<{ available: boolean }>("/coach/status"),
@@ -261,6 +302,10 @@ export const api = {
   compare: (cohort: "silver" | "emerald", player: string | null) =>
     get<Comparison>(`/benchmarks/compare${query({ cohort, player })}`),
   stretches: (player: string | null) => get<Stretches>(`/benchmarks/stretches${query({ player })}`),
+  draftChampions: () => get<{ version: string; champions: DraftChampion[] }>("/draft/champions"),
+  /** The champion-select board for what's on screen. Free: no model call. */
+  draft: (board: Board, player: string | null) =>
+    get<DraftBoard>("/draft", { ...JSON_POST, body: JSON.stringify({ ...board, player }) }),
   /** Starts a sync: free, but it uses the Riot call budget for a few minutes. */
   sync: (game_name: string, tag_line: string) =>
     get<SyncStatus>("/sync", { ...JSON_POST, body: JSON.stringify({ game_name, tag_line }) }),

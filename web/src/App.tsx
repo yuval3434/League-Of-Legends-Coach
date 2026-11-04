@@ -1,6 +1,7 @@
 import { Champions } from "./pages/Champions";
 import { Coach } from "./pages/Coach";
 import { Compare } from "./pages/Compare";
+import { Draft } from "./pages/Draft";
 import { Overview } from "./pages/Overview";
 import { Players } from "./pages/Players";
 import { Settings } from "./pages/Settings";
@@ -13,6 +14,8 @@ export default function App() {
       return <Champions />;
     case "compare":
       return <Compare />;
+    case "draft":
+      return <Draft />;
     case "settings":
       return <Settings />;
     case "players":

@@ -12,7 +12,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -103,6 +103,38 @@ class MatchParticipant(Base):
     gold_earned: Mapped[int]
     damage_to_champions: Mapped[int]
     vision_score: Mapped[int]
+
+
+class DdragonFile(Base):
+    """A Data Dragon file as it came, so the parsed champions can be rebuilt."""
+
+    __tablename__ = "ddragon_files"
+
+    version: Mapped[str] = mapped_column(Text, primary_key=True)
+    file: Mapped[str] = mapped_column(Text, primary_key=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Champion(Base):
+    """One champion's static data from one Data Dragon version.
+
+    `champion` is Data Dragon's id, which is also the match data's champion
+    name (MonkeyKing); `name` is the display name (Wukong). `attack`, `magic`
+    and `defense` are Riot's hand-set 0-10 ratings, not stats from games.
+    """
+
+    __tablename__ = "champions"
+
+    version: Mapped[str] = mapped_column(Text, primary_key=True)
+    champion: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    attack: Mapped[int]
+    magic: Mapped[int]
+    defense: Mapped[int]
 
 
 class TimelineFrame(Base):

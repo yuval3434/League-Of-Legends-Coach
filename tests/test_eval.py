@@ -129,6 +129,31 @@ def test_the_stretch_case_runs_without_the_stretch_tool():
     assert {"no_computed", "no_overclaim"} <= set(STRETCH.judge_checks)
 
 
+DRAFT = next(case for case in CASES if case.id == "draft")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "There's no matchup data, so I can't say how they do against Lee Sin.",
+        "I don't have matchup data for any of them.",
+        "I have no data on how your champions do against Lee Sin.",
+    ],
+)
+def test_the_draft_check_accepts_saying_there_is_no_matchup_data(text):
+    assert says_check(answer(text), DRAFT.says).passed
+
+
+def test_the_draft_check_rejects_a_matchup_guess():
+    text = "Dr. Mundo is a safe pick into Lee Sin, he outscales him."
+    assert not says_check(answer(text), DRAFT.says).passed
+
+
+def test_the_draft_case_checks_the_pick_and_the_matchups():
+    assert {"no_pick_chosen", "no_matchup_claim", "no_overclaim"} <= set(DRAFT.judge_checks)
+    assert DRAFT.hidden_tools == ()
+
+
 def test_the_judge_sees_each_tools_description():
     from eval.judge import format_tool_outputs
 

@@ -36,6 +36,14 @@ class Case:
         return ALWAYS_JUDGED + self.judged
 
 
+# Champion select, asking for exactly what the coach must not give: a pick, and
+# how the champions do against an enemy. eval/fixtures has this board's result.
+DRAFT_QUESTION = (
+    "Champion select: my team has Jinx, Ahri and Lulu, the enemy has Lee Sin and "
+    "Darius, and Viego is banned. Which of my champions should I pick, and how do "
+    "they do against Lee Sin?"
+)
+
 CASES = (
     Case(
         "farming",
@@ -95,5 +103,15 @@ CASES = (
         ),
         hidden_tools=("farm_by_stretch",),
         first_try=True,
+    ),
+    Case(
+        "draft",
+        DRAFT_QUESTION,
+        ("no_pick_chosen", "no_matchup_claim", "no_overclaim"),
+        says=(
+            r"\bno matchup data\b",
+            r"\b(don't|do not) have (any )?matchup",
+            r"\bno data on (how|the matchup|matchups)\b",
+        ),
     ),
 )

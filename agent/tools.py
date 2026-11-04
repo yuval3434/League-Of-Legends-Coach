@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from analytics.draft import MAX_ALLIES, MAX_BANS, MAX_ENEMIES, draft_board
 from analytics.jungle import (
     deaths_before_objective,
     first_lane_kill,
@@ -36,6 +37,7 @@ from benchmarks.cohorts import COHORTS, why_no_benchmark
 from benchmarks.compare import compare, coverage
 from benchmarks.stretches import farm_by_stretch
 from benchmarks.themes import THEMES
+from ingestion.ddragon import load_champions
 from ingestion.players import SelectedPlayer
 
 logger = logging.getLogger(__name__)
@@ -152,6 +154,42 @@ async def _farm_by_stretch(context: ToolContext, arguments: dict[str, Any]) -> R
         )
 
 
+def _champions(most: int, who: str) -> dict[str, Any]:
+    return {
+        "type": "array",
+        "items": {"type": "string"},
+        # The limit is in words, not maxItems, which strict mode may not accept;
+        # draft_board refuses a longer list.
+        "description": (
+            f"Up to {most} champions {who}, as champion select shows them. Empty if none."
+        ),
+    }
+
+
+class BadArguments(Exception):
+    """Arguments the model can fix; the message goes back to it as the error."""
+
+
+async def _draft_board(context: ToolContext, arguments: dict[str, Any]) -> Row:
+    async with context.sessions() as session:
+        # The app stores Data Dragon's champions at startup; a tool never fetches.
+        version, champions = await load_champions(session)
+        if not champions:
+            raise BadArguments("Champion data from Data Dragon isn't loaded yet.")
+        try:
+            board = await draft_board(
+                session,
+                context.puuids,
+                champions,
+                arguments["allies"],
+                arguments["enemies"],
+                arguments["bans"],
+            )
+        except ValueError as error:
+            raise BadArguments(str(error)) from error
+    return board | {"data_dragon_version": version}
+
+
 TOOLS = (
     Tool(
         "data_coverage",
@@ -190,6 +228,22 @@ TOOLS = (
         "for any question about when in the game farm or gold is lost.",
         {},
         _farm_by_stretch,
+    ),
+    Tool(
+        "draft_board",
+        "Champion select: what the player's team lacks, from rules over Riot's "
+        "Data Dragon tags and attack/magic ratings (no frontline, no magic damage, "
+        "no physical damage), and which of the player's own jungle champions (3+ "
+        "games) fill each gap, with their games and win rate. Enemy matchups are "
+        "never available: say there is no matchup data. It does not choose: show "
+        "the options and leave the pick to the player; never say which champion "
+        "to pick or rank them. Takes only the champions shown on screen.",
+        {
+            "allies": _champions(MAX_ALLIES, "picked on the player's team, not the player"),
+            "enemies": _champions(MAX_ENEMIES, "picked on the enemy team"),
+            "bans": _champions(MAX_BANS, "banned by either team"),
+        },
+        _draft_board,
     ),
     _stat_tool(
         "champion_stats",
@@ -327,7 +381,10 @@ def _problem(tool: Tool, arguments: dict[str, Any]) -> str | None:
         allowed = _allowed_values(spec)
         if allowed and value not in allowed:
             return f"{key} must be one of: {', '.join(str(v) for v in allowed)}."
-        if value is not None and not isinstance(value, str):
+        if spec.get("type") == "array":
+            if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+                return f"{key} must be a list of names."
+        elif value is not None and not isinstance(value, str):
             return f"{key} must be text."
     return None
 
@@ -344,6 +401,8 @@ async def run_tool(
         return ToolResult(problem, is_error=True)
     try:
         result = await tool.run(context, arguments)
+    except BadArguments as error:
+        return ToolResult(str(error), is_error=True)
     except Exception:
         # Anything can fail here, and one bad tool shouldn't end the conversation.
         logger.exception("Tool %s failed", name)

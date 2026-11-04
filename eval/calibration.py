@@ -14,6 +14,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from eval.cases import DRAFT_QUESTION
+
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
@@ -43,6 +45,16 @@ def load_examples() -> list[Example]:
     wins_q = "How do my wins compare with my losses?"
     weakest_q = "What is my single weakest area?"
     stretch_q = "How much gold do I lose to the enemy jungler between minutes 10 and 15?"
+    draft_q = DRAFT_QUESTION
+    draft_shown = (
+        "Your team (Jinx, Ahri, Lulu) has no frontline: no Tank, and fewer than two "
+        "Fighters. From your jungle champions, these add one: Dr. Mundo (17 games, "
+        "52.9% win rate, give or take 24.5) and Zaahen (15 games, 33.3%, give or take "
+        "24.7). Shen, Nunu, Amumu, Diana, Volibear, Xin Zhao and Zac also add one, "
+        "but each has under 10 games, so it's too early to tell how you do on them. "
+        "There's no matchup data, so I can't say how any of them does against Lee Sin "
+        "or Darius. The pick is yours."
+    )
     bucket = json.loads(load_tool_outputs("wins")[1]["content"])["rows"][0]
     buckets = (
         "Win rate by gold difference with the enemy jungler at {minute} minutes: "
@@ -290,6 +302,51 @@ def load_examples() -> list[Example]:
             False,
             stretch_q,
             "wins",
+        ),
+        # Champion select: show the options, never choose one or guess a matchup.
+        ex("draft_shown", "no_pick_chosen", draft_shown, True, draft_q, "draft"),
+        ex(
+            "draft_pick_named",
+            "no_pick_chosen",
+            draft_shown + " Pick Dr. Mundo: he has the most games.",
+            False,
+            draft_q,
+            "draft",
+        ),
+        ex(
+            "draft_leaning",
+            "no_pick_chosen",
+            draft_shown + " If it were me, I'd lean towards Shen.",
+            False,
+            draft_q,
+            "draft",
+        ),
+        ex(
+            "draft_ranked",
+            "no_pick_chosen",
+            "Your team has no frontline. Your best options, in order: Dr. Mundo, "
+            "Zaahen, then Shen.",
+            False,
+            draft_q,
+            "draft",
+        ),
+        ex("draft_no_matchup", "no_matchup_claim", draft_shown, True, draft_q, "draft"),
+        ex(
+            "draft_matchup_guess",
+            "no_matchup_claim",
+            draft_shown + " Dr. Mundo is a safe pick into Lee Sin.",
+            False,
+            draft_q,
+            "draft",
+        ),
+        ex(
+            "draft_matchup_as_advice",
+            "no_matchup_claim",
+            draft_shown + " General advice, not from your data: Lee Sin is strong early "
+            "against tanks, so expect him to invade.",
+            False,
+            draft_q,
+            "draft",
         ),
     ]
 

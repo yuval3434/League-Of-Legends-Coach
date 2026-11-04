@@ -8,6 +8,7 @@ const PAGES: { id: Page; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "champions", label: "Champions" },
   { id: "compare", label: "Compare" },
+  { id: "draft", label: "Draft" },
   { id: "coach", label: "Coach" },
 ];
 

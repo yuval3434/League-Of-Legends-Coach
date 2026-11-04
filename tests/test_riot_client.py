@@ -212,7 +212,14 @@ def test_only_request_method_can_reach_riot():
         for path, text in sources.items()
         if re.search(r"^\s*(import|from)\s+httpx\b", text, re.MULTILINE)
     ]
-    assert importers == ["riot_client.py"]
+    assert sorted(importers) == ["ddragon.py", "riot_client.py"]
+
+    # Data Dragon is a public file CDN, not the Riot API: no key, no rate limit.
+    # It may only fetch from Data Dragon, and never send the Riot key.
+    ddragon_source = sources[root / "ingestion" / "ddragon.py"]
+    urls = re.findall(r"https?://[^\s\"'/]+", ddragon_source)
+    assert urls and set(urls) == {"https://ddragon.leagueoflegends.com"}
+    assert "X-Riot-Token" not in ddragon_source and "api_key" not in ddragon_source
 
     client_source = sources[root / "ingestion" / "riot_client.py"]
     assert client_source.count("self._http.get(") == 1

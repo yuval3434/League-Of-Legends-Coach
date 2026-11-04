@@ -27,6 +27,7 @@ from benchmarks.models import create_benchmark_engine
 from benchmarks.pull import pull_cohort, target_champions, tracked_puuids
 from benchmarks.stretches import farm_by_stretch
 from ingestion.config import Settings
+from ingestion.ddragon import GetJson, get_json, load_champions, refresh_champions
 from ingestion.keys import KEYS, describe, key_value, save_key
 from ingestion.rate_limiter import RateLimiter
 from ingestion.players import SelectedPlayer, list_players, load_player
@@ -47,6 +48,15 @@ class SyncRequest(BaseModel):
 class PullRequest(BaseModel):
     cohort: str
     max_matches: int
+
+
+class DraftRequest(BaseModel):
+    """What champion select shows: champions only, never a player."""
+
+    player: str | None = None
+    allies: list[str] = Field(default_factory=list, max_length=4)
+    enemies: list[str] = Field(default_factory=list, max_length=5)
+    bans: list[str] = Field(default_factory=list, max_length=10)
 
 
 class KeyRequest(BaseModel):
@@ -86,12 +96,15 @@ def create_app(
     coach_model: ModelClient | None = None,
     env_path: Path | None = None,
     key_testers: dict[str, KeyTester] | None = None,
+    fetch_ddragon: GetJson | None = None,
 ) -> FastAPI:
     """`coach_model` replaces the model named in settings, so tests can pass a fake.
 
     `env_path` is the .env that keys are read from and saved to; None (as in
     tests) leaves the keys in `settings` and turns the key settings off. `key_testers`
     replace the real key checks, so tests make no calls to Riot or Anthropic.
+    `fetch_ddragon` stores Data Dragon's latest champions at startup; None (as in
+    tests) fetches nothing.
     """
     settings = settings or Settings()
     # A key saved from the settings page is in .env, but a container keeps the
@@ -118,8 +131,13 @@ def create_app(
         # Models are built when first asked for, one per choice, and dropped when
         # the Anthropic key changes.
         app.state.models = {}
+        app.state.ddragon_task = (
+            asyncio.create_task(store_champions(app.state.sessions, fetch_ddragon))
+            if fetch_ddragon
+            else None
+        )
         yield
-        for task in (app.state.sync_task, app.state.pull_task):
+        for task in (app.state.sync_task, app.state.pull_task, app.state.ddragon_task):
             if task:
                 task.cancel()
         await app.state.riot.aclose()
@@ -373,6 +391,37 @@ def create_app(
             models[choice] = create_model(settings, choice)
         return models[choice]
 
+    @app.get("/draft/champions")
+    async def draft_champions(request: Request) -> dict[str, Any]:
+        """Every champion with its tags, for the champion-select picker."""
+        async with request.app.state.sessions() as session:
+            version, champions = await load_champions(session)
+        if not champions:
+            raise HTTPException(503, "Champion data from Data Dragon isn't loaded yet")
+        return {
+            "version": version,
+            "champions": sorted(
+                (
+                    {"champion": c.champion, "name": c.name, "tags": list(c.tags)}
+                    for c in champions.values()
+                ),
+                key=lambda c: c["name"],
+            ),
+        }
+
+    @app.post("/draft")
+    async def draft(request: Request, body: DraftRequest) -> dict[str, Any]:
+        """The champion-select board for what's on screen. Free: no model call."""
+        context = context_for(request, await selected(request, body.player))
+        result = await run_tool(
+            context,
+            "draft_board",
+            {"allies": body.allies, "enemies": body.enemies, "bans": body.bans},
+        )
+        if result.is_error:
+            raise HTTPException(422, result.content)
+        return json.loads(result.content)
+
     @app.get("/coach/status")
     async def coach_status(request: Request) -> dict[str, Any]:
         """Whether a Claude model can answer: it needs ANTHROPIC_API_KEY. Free."""
@@ -486,4 +535,14 @@ def create_app(
     return app
 
 
-app = create_app(env_path=Path(".env"))
+async def store_champions(sessions: async_sessionmaker, fetch: GetJson) -> None:
+    """Store Data Dragon's latest champions. Offline, the stored ones are used."""
+    try:
+        async with sessions() as session:
+            version = await refresh_champions(session, fetch)
+        logger.info("Data Dragon champions: version %s", version)
+    except Exception:
+        logger.exception("Couldn't refresh Data Dragon's champions")
+
+
+app = create_app(env_path=Path(".env"), fetch_ddragon=get_json)
