@@ -437,3 +437,86 @@ per answer and less reliable". On a 4 GB GPU, the 32,768-token context a full
 comparison needs runs mostly on the CPU: answers took 4½ to 16 minutes, and 3 of 8
 questions didn't finish. The 600-second limit per call stays, so a stuck call fails
 instead of hanging the page.
+
+## Champion select shows options, reads only champions, and never picks
+
+**Decision:** the Draft page and the `draft_board` tool take only the champions
+on screen in champion select: picks on both teams and bans, typed in by the
+player. Nothing is read from the game client, and no other player's name, rank
+or history goes in. They show what the team lacks and which of the player's own
+champions fill it, and never say which one to pick or rank them.
+
+**Policy, checked on Riot's developer portal on 2026-11-04:**
+
+- [General Policies](https://developer.riotgames.com/policies/general), Game
+  Integrity (last updated May 29, 2025): "Products cannot de-anonymize players
+  who cannot reasonably be identified from visible information."
+- [League of Legends docs](https://developer.riotgames.com/docs/lol), Developer
+  API Policy, Game Integrity: "Products cannot identify or analyze players who
+  are deliberately hidden by the game." Ranked solo/duo champion select hides
+  the other players' names, so this rules out looking them up.
+- The same page, Game Policy, Examples of Unapproved Use Cases: "Apps that
+  dictate player decisions." This is why the helper shows and doesn't pick. It
+  also lists "Products may not provide any game-session-specific information
+  that would be previously unknown to the player."
+- The same page, Examples of Approved Use Cases for Personal Keys: "Game
+  overlays that provide static data that is available prior to the game" and
+  "Aggregate player stats (no specific players)". The gap rules use the first
+  kind of data, and the pool shows the player's own stats.
+
+**Not verified on Riot's own pages:** the rule written specifically for
+champion select, from patch 12.22: "Apps that reveal player names or stats in
+Champ Select will be asked to remove this feature immediately. This
+specifically applies only to Ranked Solo/Duo". I found it only in a
+[repost of Riot's announcement](https://devtrackers.gg/leagueoflegends/p/749a443a-apps-that-reveal-player-names-or-stats-in-champ-select-need-to-remove-these-informations-starting-patch-12-22).
+Riot's League policy article on its developer support site
+(support-developer.riotgames.com, article 22698698001939) is behind a bot
+check that automated tools can't pass, so it wasn't read. The design already
+meets the stricter reading, because no other player's name or stats are used at
+all, in any queue.
+
+**Manual entry, not the client:** the client's champion-select session carries
+player identifiers. Not reading it at all removes the risk instead of filtering
+it.
+
+## No matchup data, and none is estimated
+
+**Decision:** every enemy pick shows "No matchup data". There is no win rate
+for one champion against another, no estimate, and no general rule of thumb in
+its place. The coach is told the same, and the eval's `draft` case checks it.
+
+**Why:** a win rate within about ±10 points needs about 96 games of one exact
+pair (1.96 × 0.5 / √n). Counted on 2026-11-04, a jungler's champion against each
+enemy champion:
+
+| Data | Games | Pairs | Biggest pair | Pairs with 10+ games | Pairs with 96+ games |
+|---|---|---|---|---|---|
+| Benchmark (Silver and Emerald) | 1,271 | 5,841 | 26 | 69 | 0 |
+| My own games | — | 379 | 3 | 0 | 0 |
+
+The benchmark pull can't close that gap. Even the most common pair would need
+about 4,700 games, and typical pairs 60,000 to 120,000. At the app limit of 100
+requests per 2 minutes, about 3,000 matches an hour, that's 20 to 40 hours of
+pulling per rank, every two-week patch. And a jungler's win rate against, say, the enemy bot laner
+mostly measures team compositions, not a matchup.
+
+## Gaps are rules over Data Dragon's ratings
+
+**Decision:** a team's gaps (no frontline, no magic damage, no physical damage)
+are rules in `analytics/draft.py` over Data Dragon's tags and Riot's 0-10
+attack and magic ratings, not stats from games. Damage type is the higher of
+the two ratings, and a tie counts as both. A frontline is a Tank, or two
+Fighters.
+
+**Why ratings:** tags alone can't say which damage a champion deals, and a
+table of our own would be our judgement, updated by hand. **Cost:** some
+champions come out wrong. Riot rates Dr. Mundo's magic above his attack, so he
+counts as magic damage.
+
+**The pool:** jungle champions with 3 or more of the player's games, most
+played first. Under 10 games the win rate reads "too early to tell".
+
+**Data Dragon isn't the Riot API:** it's a public file CDN with no key and no
+rate limit, so its requests don't go through the rate limiter. The app stores
+the latest champion.json at startup, raw next to the parsed rows, once per
+version. The coach's tool only reads what's stored.

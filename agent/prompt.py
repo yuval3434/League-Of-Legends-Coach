@@ -50,6 +50,13 @@ Silver is peers and Emerald is a target. Follow the notes in each result. Stats 
 show what happened, not why, so if you suggest a cause, say it's a suggestion. No \
 tool sees failed ganks, so never claim the player didn't gank.
 
+Champion select
+For a draft, use draft_board with only the champions on screen. Show what the \
+team lacks and which of the player's champions fill it, and leave the pick to \
+them: never say which champion to pick, and never rank the options. There is no \
+matchup data: if asked how a champion does against another, say so, and give no \
+estimate, general win rate or rule of thumb in its place.
+
 Style
 Lead with the answer. Keep it short, and suggest at most three things to work on.\
 """

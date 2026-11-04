@@ -11,6 +11,8 @@ from test_benchmarks import (  # noqa: F401
 )
 
 from agent.tools import TOOLS, ToolContext, run_tool, tool_definitions
+from ingestion.ddragon import refresh_champions
+from test_draft import champ, fake_ddragon
 
 ME = "me"
 BY_CHAMPION = [t.name for t in TOOLS if "champion" in t.properties and t.name != "compare_to_benchmark"]
@@ -38,6 +40,15 @@ async def add_two_champions(sessions):
                 session, match_id, "ELITE_MONSTER_KILL", 600_000,
                 killerTeamId=100, monsterType="DRAGON",
             )
+        await session.commit()
+
+
+async def store_champions(sessions, *champions):
+    """Data Dragon's champions as the app stores them at startup, with no request."""
+    async with sessions() as session:
+        await refresh_champions(session, fake_ddragon("1.0.1", []))
+        for champion in champions:
+            session.add(champion)
         await session.commit()
 
 
@@ -76,7 +87,11 @@ def test_tool_names_are_unique():
 @pytest.mark.parametrize("name", [t.name for t in TOOLS])
 async def test_every_tool_runs(context, sessions, name):
     await add_two_champions(sessions)
-    arguments = {"cohort": "silver"} if name == "compare_to_benchmark" else {}
+    await store_champions(sessions)
+    arguments = {
+        "compare_to_benchmark": {"cohort": "silver"},
+        "draft_board": {"allies": [], "enemies": [], "bans": []},
+    }.get(name, {})
     await call(context, name, **arguments)
 
 
@@ -185,6 +200,7 @@ async def test_low_sample_is_only_mentioned_when_true(context, sessions):
         ("win_rates", {"puuid": "someone-else"}, "Unknown arguments"),
         ("compare_to_benchmark", {"cohort": "gold"}, "must be one of"),
         ("win_rates", {"champion": 7}, "must be text"),
+        ("draft_board", {"allies": "Ahri", "enemies": [], "bans": []}, "list of names"),
     ],
 )
 async def test_bad_calls_become_errors_for_the_model(context, name, arguments, expected):
@@ -201,3 +217,26 @@ async def test_a_failing_tool_becomes_an_error_for_the_model(sessions):
     result = await run_tool(context, "win_rates", {})
     assert result.is_error
     assert "database is down" not in result.content
+
+
+async def test_the_draft_board_takes_champions_and_explains_bad_boards(context, sessions):
+    await store_champions(sessions, champ("Ahri", ["Mage"], 3, 8))
+    async with sessions() as session:
+        for n in range(3):
+            await add_game(session, f"EUW1_{n}", champion="MonkeyKing")
+
+    board = await call(context, "draft_board", allies=["Ahri"], enemies=[], bans=[])
+    assert board["data_dragon_version"] == "1.0.1"
+    assert board["pool"][0]["fills"] == ["no_frontline", "no_physical_damage"]
+
+    result = await run_tool(
+        context, "draft_board", {"allies": ["Ahri"], "enemies": ["Ahri"], "bans": []}
+    )
+    assert result.is_error
+    assert result.content == "A champion can only be picked once: Ahri."
+
+
+async def test_the_draft_board_never_fetches(context):
+    result = await run_tool(context, "draft_board", {"allies": [], "enemies": [], "bans": []})
+    assert result.is_error
+    assert "isn't loaded yet" in result.content

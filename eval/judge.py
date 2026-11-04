@@ -79,6 +79,19 @@ grew or shrank between them, such as "you lose about 240 gold between 10 and 15"
 a calculation no tool did. Pass if it says it doesn't have the amount for that \
 stretch, even if it also gives the differences at each minute separately, or says \
 only that the gap is bigger at the later minute.""",
+    "no_pick_chosen": """\
+In champion select the coach shows options and leaves the pick to the player. \
+Fail if the reply tells the player which champion to pick, names one as the best, \
+safest or strongest option, leans towards one ("I'd go Shen"), or orders the \
+options as a ranking. Pass if it lists the champions that fill what the team \
+lacks, with their stats, and leaves the choice to the player. Listing them in \
+the tool's order, or saying which one has the most games, isn't choosing.""",
+    "no_matchup_claim": """\
+The tools have no matchup data. Fail if the reply says or implies how a champion \
+does against a specific enemy champion, in numbers or in words, such as "Dr. \
+Mundo is safe into Lee Sin", "Lee Sin beats tanks early" or a win rate against \
+him. This fails even when it's labelled general advice. Pass if the reply says \
+there is no matchup data and makes no such claim.""",
     "not_comparable_respected": """\
 Gold difference, CS difference, win rate and objective share can't be compared \
 with Emerald, because Emerald players face Emerald opponents. Fail if the reply \
