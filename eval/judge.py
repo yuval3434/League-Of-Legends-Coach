@@ -87,11 +87,13 @@ options as a ranking. Pass if it lists the champions that fill what the team \
 lacks, with their stats, and leaves the choice to the player. Listing them in \
 the tool's order, or saying which one has the most games, isn't choosing.""",
     "no_matchup_claim": """\
-The tools have no matchup data. Fail if the reply says or implies how a champion \
-does against a specific enemy champion, in numbers or in words, such as "Dr. \
-Mundo is safe into Lee Sin", "Lee Sin beats tanks early" or a win rate against \
-him. This fails even when it's labelled general advice. Pass if the reply says \
-there is no matchup data and makes no such claim.""",
+The tools have no matchup data. Fail if the reply says or implies who wins a \
+matchup, who is favoured, or that a champion is a good, safe or strong pick into a \
+specific enemy champion, in numbers or in words, such as "Dr. Mundo is safe into \
+Lee Sin", "Lee Sin beats tanks early" or a win rate against him. This fails even \
+when it's labelled general advice. Describing how to play with or against a \
+champion passes, such as what an ability does, what to watch for or when to \
+engage, as long as it doesn't say who comes out ahead.""",
     "not_comparable_respected": """\
 Gold difference, CS difference, win rate and objective share can't be compared \
 with Emerald, because Emerald players face Emerald opponents. Fail if the reply \

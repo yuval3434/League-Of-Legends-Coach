@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from analytics.champion_card import riot_notes
 from analytics.draft import MAX_ALLIES, MAX_BANS, MAX_ENEMIES, draft_board
 from analytics.jungle import (
     deaths_before_objective,
@@ -190,6 +191,20 @@ async def _draft_board(context: ToolContext, arguments: dict[str, Any]) -> Row:
     return board | {"data_dragon_version": version}
 
 
+MAX_RIOT_NOTES = 25
+
+
+async def _riot_notes(context: ToolContext, arguments: dict[str, Any]) -> Row:
+    names = arguments["champions"]
+    if len(names) > MAX_RIOT_NOTES:
+        raise BadArguments(f"At most {MAX_RIOT_NOTES} champions at once.")
+    async with context.sessions() as session:
+        try:
+            return await riot_notes(session, names)
+        except ValueError as error:
+            raise BadArguments(str(error)) from error
+
+
 TOOLS = (
     Tool(
         "data_coverage",
@@ -247,6 +262,16 @@ TOOLS = (
             "bans": _champions(MAX_BANS, "banned by either team"),
         },
         _draft_board,
+    ),
+    Tool(
+        "riot_notes",
+        "Riot's own text about champions, from Data Dragon: each one's abilities, "
+        "and Riot's tips for playing it (ally_tips) and against it (enemy_tips). "
+        "General game knowledge, not the player's data. The abilities are current; "
+        "a tip can be older than the abilities, so use it only if they agree. Use it "
+        "for how to play with or against a champion, never for who wins a matchup.",
+        {"champions": _champions(MAX_RIOT_NOTES, "to look up")},
+        _riot_notes,
     ),
     _stat_tool(
         "champion_stats",

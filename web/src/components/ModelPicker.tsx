@@ -9,11 +9,15 @@ export function ModelPicker({
   value,
   onChange,
   disabled,
+  costs = true,
 }: {
   models: CoachModel[];
   value: string | null;
   onChange: (id: string) => void;
   disabled?: boolean;
+  // Off where the per-question estimate doesn't fit, such as Draft's options,
+  // which shows its own ceiling for the board instead.
+  costs?: boolean;
 }) {
   return (
     <fieldset className="mt-5" disabled={disabled}>
@@ -41,16 +45,18 @@ export function ModelPicker({
                 <span className={`text-[14px] ${on ? "text-ink" : "text-ink2"}`}>{m.label}</span>
               </span>
               <span className="text-right font-mono text-[11px] text-ink3">
-                {m.available ? costWords(m) : m.reason}
+                {m.available ? (costs ? costWords(m) : "") : m.reason}
               </span>
             </label>
           );
         })}
       </div>
+      {costs && (
       <p className="mt-2 text-[12px] text-ink3">
         Costs are estimates from the average question in the last eval; a model that writes more costs more. Every model
         gets the same tools, rules and number check.
       </p>
+      )}
     </fieldset>
   );
 }

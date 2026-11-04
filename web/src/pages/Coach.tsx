@@ -71,7 +71,7 @@ function saveThread(thread: Exchange[]) {
 }
 
 /** The coach writes Markdown; these give it the page's type and rules. Raw HTML isn't rendered. */
-const MARKDOWN: Components = {
+export const MARKDOWN: Components = {
   p: ({ children }) => <p className="mt-3 first:mt-0">{children}</p>,
   strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
   ul: ({ children }) => <ul className="mt-3 list-disc space-y-1.5 pl-5 marker:text-ink3">{children}</ul>,
@@ -112,7 +112,7 @@ function ReceiptRow({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-function Receipt({ answer, seconds }: { answer: CoachAnswer; seconds?: number }) {
+export function Receipt({ answer, seconds }: { answer: CoachAnswer; seconds?: number }) {
   const name = useChampionNames();
   const check = CHECK[answer.status];
   const models = [...new Set(answer.models)].map((m) => MODELS[m] ?? m).join(" and ");

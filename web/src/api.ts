@@ -284,6 +284,63 @@ export type MatchDetail = Omit<MatchRow, "champion" | "role" | "win" | "kills" |
   players: MatchPlayer[];
 };
 
+/** One side of a card row: the champion's games, or all jungle games. */
+export type CardSide = { value: number; margin: number | null; games: number; low_sample: boolean };
+
+export type CardRow = { stat: string; label: string; champion: CardSide | null; overall: CardSide | null };
+
+type Measured = { value: number; margin: number | null };
+
+export type CardBenchmark = {
+  cohort: "silver" | "emerald";
+  tier: string;
+  benchmark_games: number;
+  benchmark_players: number;
+} & (
+  | { status: "no_benchmark"; note: string }
+  | {
+      status: "ok";
+      benchmark_patches: string[];
+      cs_per_min: Measured;
+      win_rate: Measured | "not_comparable";
+    }
+);
+
+/** Riot's own text about a champion, from Data Dragon. */
+export type RiotText = {
+  title: string;
+  abilities: { key: string; name: string; description: string }[];
+  ally_tips: string[];
+  enemy_tips: string[];
+};
+
+export type ChampionCard = {
+  champion: string;
+  games: number;
+  low_sample: boolean;
+  last_played: string | null;
+  rows: CardRow[];
+  benchmarks: Record<"silver" | "emerald", CardBenchmark>;
+  riot: RiotText | null;
+  notes: string[];
+};
+
+export type RiotNotes = {
+  data_dragon_version: string;
+  champions: ({ champion: string; name: string } & Partial<RiotText>)[];
+  note: string;
+};
+
+/** The most "Options for this draft" can cost on a board, counted before it's sent. */
+export type OptionsEstimate = {
+  model: string;
+  champions: string[];
+  input_tokens: number | null;
+  max_output_tokens: number | null;
+  max_cost_usd: number;
+  one_call_max_usd?: number;
+};
+
 /** A champion from Data Dragon, for the champion-select picker. */
 export type DraftChampion = { champion: string; name: string; tags: string[] };
 
@@ -359,6 +416,21 @@ export const api = {
     get<{ matches: MatchRow[]; total: number }>(`/matches${query({ player, offset: String(offset) })}`),
   match: (id: string, player: string | null) =>
     get<MatchDetail>(`/matches/${encodeURIComponent(id)}${query({ player })}`),
+  championCard: (champion: string, player: string | null) =>
+    get<ChampionCard>(`/draft/champion/${encodeURIComponent(champion)}${query({ player })}`),
+  riot: (champions: string[]) => get<RiotNotes>(`/draft/riot${query({ champions: champions.join(",") })}`),
+  /** Free: counts the tokens, sends nothing to a model. */
+  optionsEstimate: (board: Board, player: string | null, model: string) =>
+    get<OptionsEstimate>("/draft/options/estimate", {
+      ...JSON_POST,
+      body: JSON.stringify({ ...board, player, model }),
+    }),
+  /** Paid, unless the local model answers. */
+  options: (board: Board, player: string | null, model: string) =>
+    get<CoachAnswer & { champions: string[] }>("/draft/options", {
+      ...JSON_POST,
+      body: JSON.stringify({ ...board, player, model }),
+    }),
   draftChampions: () => get<{ version: string; champions: DraftChampion[] }>("/draft/champions"),
   /** The champion-select board for what's on screen. Free: no model call. */
   draft: (board: Board, player: string | null) =>

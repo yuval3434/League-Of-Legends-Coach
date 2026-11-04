@@ -101,7 +101,8 @@ def test_a_tested_key_is_saved_and_never_returned(test_settings, env, caplog):
         assert NEW_RIOT_KEY not in text
 
 
-def test_a_refused_key_isnt_saved(test_settings, env):
+def test_a_refused_key_isnt_saved(test_settings, env, caplog):
+    caplog.set_level(logging.DEBUG)
     with client_for(test_settings, env, refuse=True) as client:
         response = client.put("/settings/keys/riot", json={"key": NEW_RIOT_KEY}, headers=HEADERS)
 
@@ -109,6 +110,9 @@ def test_a_refused_key_isnt_saved(test_settings, env):
     assert "wasn't saved" in response.json()["detail"]
     assert read_env(env)["RIOT_API_KEY"] == "old-key-0000"
     assert NEW_RIOT_KEY not in response.text
+    # The log says what Riot answered, so a refusal can be diagnosed; never the key.
+    assert "refused on its test call: Riot returned 401." in caplog.text
+    assert NEW_RIOT_KEY not in caplog.text
 
 
 def test_the_new_key_is_used_without_a_restart(test_settings, env):

@@ -3,10 +3,12 @@
 // lacks and which of the player's own champions fill it. It never picks one,
 // and it has no matchup data.
 
-import { useEffect, useId, useState } from "react";
+import { Fragment, useEffect, useId, useState } from "react";
 
-import { api, type Board, type DraftBoard, type DraftChampion, type EnemyComposition } from "../api";
+import { api, type Board, type DraftBoard, type DraftChampion, type EnemyComposition, type RiotNotes } from "../api";
+import { ChampionCardView } from "../components/ChampionCardView";
 import { ChampionIcon } from "../components/ChampionIcon";
+import { DraftOptions } from "../components/DraftOptions";
 import { Layout } from "../components/Layout";
 import {
   add,
@@ -111,8 +113,27 @@ function Picker({
   );
 }
 
-function EnemyTeam({ composition, name }: { composition: EnemyComposition; name: (id: string) => string }) {
+function EnemyTeam({
+  composition,
+  enemies,
+  name,
+}: {
+  composition: EnemyComposition;
+  enemies: string[];
+  name: (id: string) => string;
+}) {
   const damage = damageWords(composition);
+  const [riot, setRiot] = useState<RiotNotes | null>(null);
+  const key = enemies.join(",");
+  useEffect(() => {
+    setRiot(null);
+    if (!key) return;
+    api
+      .riot(key.split(","))
+      .then(setRiot)
+      .catch(() => setRiot(null));
+  }, [key]);
+  const tipped = riot?.champions.filter((c) => c.enemy_tips?.length) ?? [];
   return (
     <section className="mt-14">
       <div className="smallcaps text-ink3">Enemy team</div>
@@ -135,6 +156,30 @@ function EnemyTeam({ composition, name }: { composition: EnemyComposition; name:
       <p className="mt-4 text-[13px] text-ink3">
         By the same rules as your team: Data Dragon's tags and Riot's attack and magic ratings.
       </p>
+      {tipped.length > 0 && (
+        <div className="mt-8 max-w-[760px]">
+          <h3 className="smallcaps text-ink3">Riot's tips against them, not from your games</h3>
+          <ul className="mt-3 space-y-4">
+            {tipped.map((c) => (
+              <li key={c.champion} className="flex gap-3">
+                <ChampionIcon champion={c.champion} size={28} />
+                <div>
+                  <div className="text-[14px] text-ink">{c.name}</div>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-[13px] text-ink2">
+                    {c.enemy_tips!.map((tip) => (
+                      <li key={tip}>{tip}</li>
+                    ))}
+                  </ul>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-[12px] text-ink3">
+            Riot's own text from Data Dragon. Riot doesn't always update tips when a champion changes, so a tip can be
+            older than the champion's abilities.
+          </p>
+        </div>
+      )}
     </section>
   );
 }
@@ -142,8 +187,18 @@ function EnemyTeam({ composition, name }: { composition: EnemyComposition; name:
 // One line under the enemy picks, instead of the same words on every champion.
 const NO_MATCHUPS = "No matchup data: no champion pair has anywhere near the games a reliable win rate needs.";
 
-function Results({ result, name }: { result: DraftBoard; name: (id: string) => string }) {
+function Results({
+  result,
+  name,
+  player,
+}: {
+  result: DraftBoard;
+  name: (id: string) => string;
+  player: string | null;
+}) {
   const noTeam = result.your_team.length === 0;
+  // The pool champion whose card is open, if any.
+  const [open, setOpen] = useState<string | null>(null);
   return (
     <>
       <section className="mt-14">
@@ -183,7 +238,13 @@ function Results({ result, name }: { result: DraftBoard; name: (id: string) => s
         </details>
       </section>
 
-      {result.enemy_composition && <EnemyTeam composition={result.enemy_composition} name={name} />}
+      {result.enemy_composition && (
+        <EnemyTeam
+          composition={result.enemy_composition}
+          enemies={result.enemy_team.map((e) => e.champion)}
+          name={name}
+        />
+      )}
 
       <section className="mt-14">
         <div className="smallcaps text-ink3">Your pool</div>
@@ -205,13 +266,20 @@ function Results({ result, name }: { result: DraftBoard; name: (id: string) => s
               <tbody>
                 {result.pool.map((p) => {
                   const rate = winRateCell(p);
+                  const isOpen = open === p.champion;
                   return (
-                    <tr key={p.champion} className={`border-b border-rule/60 align-top ${p.unavailable ? "text-ink3" : ""}`}>
+                    <Fragment key={p.champion}>
+                    <tr className={`border-b border-rule/60 align-top ${p.unavailable ? "text-ink3" : ""}`}>
                       <th scope="row" className="py-2.5 pr-6 text-left font-normal">
-                        <span className="flex items-center gap-2">
+                        <button
+                          onClick={() => setOpen(isOpen ? null : p.champion)}
+                          aria-expanded={isOpen}
+                          className="flex items-center gap-2 text-left hover:underline"
+                        >
                           <ChampionIcon champion={p.champion} size={28} />
                           {name(p.champion)}
-                        </span>
+                          <span className="text-[11px] text-ink3">{isOpen ? "▴" : "▾"}</span>
+                        </button>
                       </th>
                       <td className="py-2.5 pr-6 font-mono">{p.games}</td>
                       <td className="py-2.5 pr-6">
@@ -232,13 +300,23 @@ function Results({ result, name }: { result: DraftBoard; name: (id: string) => s
                             : "—"}
                       </td>
                     </tr>
+                    {isOpen && (
+                      <tr>
+                        <td colSpan={5} className="pb-4 pt-2">
+                          <ChampionCardView champion={p.champion} player={player} name={name} />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
             </table>
           </div>
         )}
-        <p className="mt-3 text-[13px] text-ink3">Most played first. This isn't a ranking: the pick is yours.</p>
+        <p className="mt-3 text-[13px] text-ink3">
+          Most played first. This isn't a ranking: the pick is yours. Open a champion for your stats on it.
+        </p>
       </section>
 
     </>
@@ -311,7 +389,8 @@ export function Draft() {
       </div>
       {error && <p className="mt-4 text-[14px] text-ink2">{error}</p>}
 
-      {result && <Results result={result} name={name} />}
+      {result && <Results result={result} name={name} player={puuid} />}
+      {result && result.pool.some((p) => !p.unavailable) && <DraftOptions board={board} player={puuid} />}
 
       <div className="mt-10">
         <a

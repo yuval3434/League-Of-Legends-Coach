@@ -137,6 +137,24 @@ class Champion(Base):
     defense: Mapped[int]
 
 
+class ChampionDetail(Base):
+    """One champion's abilities and Riot's tips, from its own Data Dragon file.
+
+    `abilities` is the passive, then Q, W, E and R, each with its name and its
+    description as plain text. The tips are Riot's, and Riot doesn't always
+    rewrite them when a champion changes, so they can be older than the abilities.
+    """
+
+    __tablename__ = "champion_details"
+
+    version: Mapped[str] = mapped_column(Text, primary_key=True)
+    champion: Mapped[str] = mapped_column(Text, primary_key=True)
+    title: Mapped[str] = mapped_column(Text)
+    abilities: Mapped[list[dict[str, str]]] = mapped_column(JSONB)
+    ally_tips: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    enemy_tips: Mapped[list[str]] = mapped_column(ARRAY(Text))
+
+
 class TimelineFrame(Base):
     """One player's state at one timeline frame (about one per minute).
 

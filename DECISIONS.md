@@ -579,3 +579,78 @@ two magic champions on it.
 
 **Matchups:** the page says "No matchup data" once, under the enemy picks,
 instead of on every enemy champion.
+
+## The matchup rule covers outcomes, not how to play
+
+**Decision:** the coach still never says who wins a matchup, who is favoured, or
+that a champion is a good pick into another, in numbers or in words, even as
+general advice. It may now say how to play with or against a champion, such as
+what an ability does or when to engage, when that comes from Riot's own text
+(`riot_notes`) and is labelled as general knowledge, not the player's data.
+
+**Why:** in v4 the rule banned anything about one champion against another,
+which also banned "stay spread out against Lee Sin's ultimate". That's Riot's
+own advice, not a guess and not a claim about who comes out ahead. The line now
+sits at outcomes: those need matchup data, which doesn't exist here (see "No
+matchup data, and none is estimated").
+
+**The edge case:** Riot's text says Lee Sin "is still vulnerable to magic
+damage". Quoting that passes. "So your magic damage champions do well against
+him" fails: it turns Riot's tip into a claim about who wins. Both are calibration
+examples.
+
+**Checked by:** the coach prompt, the `no_matchup_claim` grader check (narrowed
+to outcomes), 7 new calibration examples on a saved options board, and the
+`draft_options` eval case.
+
+## Riot's text comes from Data Dragon, and its tips can be stale
+
+**Decision:** each champion's own Data Dragon file is stored at startup, raw
+next to the parsed abilities and tips, for all 173 champions. The Draft page
+shows Riot's tips for free: for playing each of your champions on its card, and
+against each enemy pick. The coach gets the same text through `riot_notes`.
+
+**Why Data Dragon, not the model's memory:** a model's memory of champion kits
+can be out of date, and a new champion like Zaahen may not be in it at all.
+Riot's text is versioned with the game.
+
+**Cost:** Riot doesn't always rewrite tips when a champion changes. Dr. Mundo's
+tips still name "Sadism" and "Cleavers", which his current abilities don't have.
+So abilities come first, every tip is labelled as possibly older than the
+abilities, and the coach is told to use a tip only if it agrees with them. Some
+champions, such as Zaahen, have no tips at all.
+
+## Options for this draft: one capped call, with its ceiling shown first
+
+**Decision:** the "Options for this draft" button doesn't let the coach call
+tools. The server runs `draft_board` and `riot_notes` itself and puts their
+results in the question, and the model gets one call with no tools and at most
+6,000 output tokens. The number check's one retry is the only second call.
+
+**Why:** with tools, the coach decides how many turns to take, so the cost isn't
+known until it's spent. This way it has a ceiling before anything is sent: the
+input is counted exactly by Anthropic's token count, which is free, and the
+output is capped. The ceiling prices every input token at the dearer of the
+input and cache-write rates, and covers the retry. The page shows it, and the
+person clicks a second time to send.
+
+**On the README's board (2026-11-04):** 15,277 input tokens, so at most $0.21 on
+Sonnet 5.5 (the default) or $0.42 on Opus 5.5; $0.10 and $0.20 without the
+retry. The local model is free.
+
+## The champion card: side by side, and benchmarks per champion
+
+**Decision:** a pool champion's card shows the player's CS per minute, gold at
+15, deaths in each phase and kill participation on it, next to the same stats
+over all their jungle games, each with its margin and games. Under 10 games a
+value is greyed and says "too early to tell". The two sides are never
+subtracted: the champion's games are part of the overall average, so a
+difference between them isn't a fair comparison.
+
+**Benchmarks:** a rank's benchmark on one champion needs 30 games from 10
+players, the same floors as everywhere else. Emerald's win rate on a champion
+isn't shown, for the same reason as Emerald's overall win rate: Emerald players
+face Emerald opponents. On 2026-11-04, only Viego and Nunu reach the floors in
+both ranks; Dr. Mundo, the most played, has 19 Silver games and 10 Emerald. A
+longer pull for him was started but stopped at once: the Riot development key
+had expired.

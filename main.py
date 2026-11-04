@@ -18,9 +18,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from agent.coach import ask_coach
 from agent.llm import LocalModelError, ModelClient, create_model, local_model_ready
 from agent.models import BY_ID, CHOICES, estimated_cost
+from agent.options import DEFAULT_MODEL as OPTIONS_MODEL
+from agent.options import OPTIONS_MAX_TOKENS, cost_ceiling, messages, prepare
 from agent.pricing import answer_cost
 from agent.samples import summarize
 from agent.tools import TOOLS, ToolContext, run_tool
+from analytics.champion_card import champion_card, riot_notes
 from analytics.matches import match_detail, recent_matches
 from benchmarks.cohorts import COHORTS, why_no_benchmark
 from benchmarks.compare import compare
@@ -28,7 +31,14 @@ from benchmarks.models import create_benchmark_engine
 from benchmarks.pull import pull_cohort, target_champions, tracked_puuids
 from benchmarks.stretches import farm_by_stretch
 from ingestion.config import Settings
-from ingestion.ddragon import GetJson, get_json, load_champions, refresh_champions
+from ingestion.ddragon import (
+    GetJson,
+    get_json,
+    load_champions,
+    load_details,
+    refresh_champion_details,
+    refresh_champions,
+)
 from ingestion.keys import KEYS, describe, key_value, save_key
 from ingestion.rate_limiter import RateLimiter
 from ingestion.players import SelectedPlayer, list_players, load_player
@@ -58,6 +68,11 @@ class DraftRequest(BaseModel):
     allies: list[str] = Field(default_factory=list, max_length=4)
     enemies: list[str] = Field(default_factory=list, max_length=5)
     bans: list[str] = Field(default_factory=list, max_length=10)
+
+
+class OptionsRequest(DraftRequest):
+    # One of GET /coach/models' ids; Sonnet unless the picker says otherwise.
+    model: str = OPTIONS_MODEL
 
 
 class KeyRequest(BaseModel):
@@ -290,7 +305,11 @@ def create_app(
         key = body.key.strip()
         try:
             await testers[name](key)
-        except (RiotError, anthropic.AuthenticationError, anthropic.PermissionDeniedError):
+        except (RiotError, anthropic.AuthenticationError, anthropic.PermissionDeniedError) as error:
+            # RiotError's messages are our own, with Riot's status code and never the
+            # key; for Anthropic, only the error's type, as below.
+            detail = error if isinstance(error, RiotError) else type(error).__name__
+            logger.warning("The %s key was refused on its test call: %s", name, detail)
             raise HTTPException(400, f"The {name.capitalize()} key was refused, so it wasn't saved.")
         except (anthropic.APIError, OSError) as error:
             # Don't log the error itself: some libraries put the request in it.
@@ -434,6 +453,45 @@ def create_app(
             ),
         }
 
+    @app.get("/draft/riot")
+    async def draft_riot(
+        request: Request, champions: str = Query(min_length=1, max_length=400)
+    ) -> dict[str, Any]:
+        """Riot's abilities and tips for comma-separated champions. Free."""
+        names = [name.strip() for name in champions.split(",") if name.strip()][:20]
+        async with request.app.state.sessions() as session:
+            try:
+                return await riot_notes(session, names)
+            except ValueError as error:
+                raise HTTPException(422, str(error)) from error
+
+    @app.get("/draft/champion/{champion}")
+    async def draft_champion(
+        request: Request, champion: str, player: str | None = Query(default=None)
+    ) -> dict[str, Any]:
+        """One champion's card: the player's stats on it next to their overall
+        average, each fitting cohort's benchmark on it, and Riot's text about it."""
+        chosen = await selected(request, player)
+        async with request.app.state.sessions() as my_session:
+            version, champions = await load_champions(my_session)
+            ids = {key.lower(): key for key in champions}
+            detail = None
+            if version and champion.lower() in ids:
+                found = await load_details(my_session, version, [ids[champion.lower()]])
+                detail = next(iter(found.values()), None)
+            async with request.app.state.benchmark_sessions() as benchmark_session:
+                card = await champion_card(
+                    my_session,
+                    benchmark_session,
+                    (chosen.puuid,),
+                    champion,
+                    benchmarks_for(chosen.rank_tier, chosen.main_role, chosen.rank_checked),
+                    detail,
+                )
+        if card is None:
+            raise HTTPException(404, f"No games on {champion}")
+        return card
+
     @app.post("/draft")
     async def draft(request: Request, body: DraftRequest) -> dict[str, Any]:
         """The champion-select board for what's on screen. Free: no model call."""
@@ -446,6 +504,58 @@ def create_app(
         if result.is_error:
             raise HTTPException(422, result.content)
         return json.loads(result.content)
+
+    async def prepared_options(request: Request, body: OptionsRequest) -> Any:
+        if body.model not in BY_ID:
+            raise HTTPException(422, f"Unknown model: {body.model}")
+        context = context_for(request, await selected(request, body.player))
+        board = {"allies": body.allies, "enemies": body.enemies, "bans": body.bans}
+        try:
+            return context, await prepare(context, board)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+
+    @app.post("/draft/options/estimate")
+    async def options_estimate(request: Request, body: OptionsRequest) -> dict[str, Any]:
+        """The most "Options for this draft" can cost on this board. Free: Anthropic
+        doesn't charge for counting tokens."""
+        _, prepared = await prepared_options(request, body)
+        model = model_for(request, body.model)
+        try:
+            ceiling = await cost_ceiling(model, body.model, prepared)
+        except anthropic.APIError:
+            logger.exception("Counting tokens failed")
+            raise HTTPException(502, "Couldn't count the tokens; see the server log.")
+        return {"model": body.model, "champions": prepared.champions} | ceiling
+
+    @app.post("/draft/options")
+    async def options(request: Request, body: OptionsRequest) -> dict[str, Any]:
+        """The coach's general notes on each available pool champion against this
+        enemy team, from Riot's text. Paid, unless the local model answers."""
+        context, prepared = await prepared_options(request, body)
+        model = model_for(request, body.model)
+        try:
+            answer = await ask_coach(
+                model,
+                context,
+                messages(prepared)[0]["content"],
+                preloaded=prepared.preloaded,
+                offer_tools=False,
+                max_tokens=OPTIONS_MAX_TOKENS,
+            )
+        except anthropic.APIError:
+            logger.exception("The model API call failed")
+            raise HTTPException(502, "The model API call failed; see the server log.")
+        except LocalModelError as error:
+            raise HTTPException(502, f"The local model didn't answer. {error}")
+        logger.info("Draft options: %s, caught %s, %s", answer.status, answer.caught_numbers, answer.usage)
+        cost_usd, upper_bound = answer_cost(answer.usage, answer.models)
+        return {k: v for k, v in asdict(answer).items() if k != "tool_log"} | {
+            "champions": prepared.champions,
+            "tools": [summarize(log) for log in answer.tool_log],
+            "cost_usd": cost_usd,
+            "cost_is_upper_bound": upper_bound,
+        }
 
     @app.get("/coach/status")
     async def coach_status(request: Request) -> dict[str, Any]:
@@ -565,7 +675,8 @@ async def store_champions(sessions: async_sessionmaker, fetch: GetJson) -> None:
     try:
         async with sessions() as session:
             version = await refresh_champions(session, fetch)
-        logger.info("Data Dragon champions: version %s", version)
+            added = await refresh_champion_details(session, version, fetch)
+        logger.info("Data Dragon champions: version %s, %d champion files added", version, added)
     except Exception:
         logger.exception("Couldn't refresh Data Dragon's champions")
 

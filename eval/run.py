@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from agent.coach import CoachAnswer, ask_coach
 from agent.llm import LOCAL_PREFIX, LocalModelError, ModelClient, Usage, create_model
+from agent.options import OPTIONS_MAX_TOKENS, prepare
 from agent.tools import ToolContext
 from benchmarks.models import create_benchmark_engine
 from ingestion.players import load_player
@@ -81,6 +82,21 @@ async def _judge_checks(
     return checks, used
 
 
+async def _ask(model: ModelClient, context: ToolContext, case: Case) -> CoachAnswer:
+    """A plain question, or an options board the way the Draft page's button asks it."""
+    if case.options_board is None:
+        return await ask_coach(model, context, case.question, case.hidden_tools)
+    prepared = await prepare(context, case.options_board)
+    return await ask_coach(
+        model,
+        context,
+        prepared.question,
+        preloaded=prepared.preloaded,
+        offer_tools=False,
+        max_tokens=OPTIONS_MAX_TOKENS,
+    )
+
+
 async def run_case(
     model: ModelClient,
     model_id: str,
@@ -94,7 +110,7 @@ async def run_case(
     started = time.monotonic()
     limit = LOCAL_CASE_TIMEOUT_S if model_id == "local" else CASE_TIMEOUT_S
     try:
-        answer = await asyncio.wait_for(ask_coach(model, context, case.question, case.hidden_tools), limit)
+        answer = await asyncio.wait_for(_ask(model, context, case), limit)
     except TimeoutError:
         return None, _error(case.id, rep, "timeout", f"over {limit} s")
     except (anthropic.APIError, LocalModelError) as error:
