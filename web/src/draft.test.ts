@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { PoolEntry } from "./api";
-import { add, cantAdd, coachQuestion, EMPTY, remove, winRateCell } from "./draft";
+import type { EnemyComposition, PoolEntry } from "./api";
+import { add, cantAdd, coachQuestion, damageWords, EMPTY, frontlineWords, remove, winRateCell } from "./draft";
 
 const entry = (over: Partial<PoolEntry> = {}): PoolEntry => ({
   champion: "DrMundo",
@@ -50,5 +50,38 @@ describe("the coach question", () => {
         "What does my team lack, and which of my champions fill it?",
     );
     expect(q).not.toMatch(/should I pick|best/i);
+  });
+});
+
+const comp = (over: Partial<EnemyComposition> = {}): EnemyComposition => ({
+  picked: 4,
+  damage: { physical: 4, magic: 0, mixed: 0 },
+  mix: "mostly_physical",
+  tanks: ["Malphite"],
+  fighters: [],
+  has_frontline: true,
+  ...over,
+});
+
+describe("the enemy composition", () => {
+  it("words the damage mix with its counts", () => {
+    expect(damageWords(comp()).main).toBe("Mostly physical: 4 of 4");
+    const mixed = comp({ damage: { physical: 2, magic: 1, mixed: 1 }, mix: "mixed" });
+    expect(damageWords(mixed)).toEqual({ main: "Mixed", detail: "2 physical, 1 magic, 1 both, of 4 picked" });
+    expect(damageWords(comp({ picked: 2, damage: { physical: 2, magic: 0, mixed: 0 }, mix: null })).main).toBe(
+      "Too few picks to say",
+    );
+  });
+
+  it("names the frontline", () => {
+    const name = (id: string) => id;
+    expect(frontlineWords(comp(), name)).toBe("One tank: Malphite");
+    expect(frontlineWords(comp({ tanks: [], fighters: ["Darius", "Garen"] }), name)).toBe(
+      "No tank, but two fighters: Darius, Garen",
+    );
+    expect(frontlineWords(comp({ tanks: [], fighters: ["Viego"], has_frontline: false }), name)).toBe(
+      "No frontline. One fighter: Viego",
+    );
+    expect(frontlineWords(comp({ tanks: [], has_frontline: false }), name)).toBe("No frontline: no tank or fighter");
   });
 });

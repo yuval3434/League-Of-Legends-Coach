@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from analytics.draft import (
     GAPS,
+    enemy_composition,
     NO_MATCHUP_DATA,
     damage_type,
     draft_board,
@@ -84,6 +85,34 @@ def test_a_champion_adds_a_piece_only_if_the_rule_then_holds():
     assert not frontline.added_by([CHAMPIONS["Garen"]], CHAMPIONS["Nunu"])
 
 
+def enemy(*names):
+    return enemy_composition([CHAMPIONS[n] for n in names])
+
+
+def test_the_enemy_damage_mix_and_frontline_follow_the_same_rules():
+    found = enemy("Darius", "Jinx", "Garen", "Viego")
+    assert found["damage"] == {"physical": 4, "magic": 0, "mixed": 0}
+    assert found["mix"] == "mostly_physical"
+    # Tanks first; Fighters that aren't also Tanks second.
+    assert (found["tanks"], found["fighters"], found["has_frontline"]) == (
+        ["Darius", "Garen"], ["Viego"], True,
+    )
+    assert found["general_advice"]["text"].startswith("Against mostly physical damage")
+    assert "not from the player's games" in found["general_advice"]["source"]
+
+
+def test_the_mix_needs_three_picks_and_three_quarters():
+    assert enemy("Ahri", "Nunu", "Diana")["mix"] == "mostly_magic"
+    two = enemy("Ahri", "Nunu")
+    assert two["mix"] is None and "general_advice" not in two
+    # 2 of 4 physical, with one champion rated equal for both: no single type.
+    split = enemy("Jinx", "Viego", "Ahri", "Ezreal")
+    assert split["damage"] == {"physical": 2, "magic": 1, "mixed": 1}
+    assert split["mix"] == "mixed" and "general_advice" not in split
+    assert enemy("Ahri")["has_frontline"] is False
+    assert enemy_composition([]) is None
+
+
 def test_names_resolve_by_id_or_display_name():
     found = resolve(["wukong", "MonkeyKing", "nunu & willump", "Nunu"], CHAMPIONS)
     assert [c.champion for c in found] == ["MonkeyKing", "MonkeyKing", "Nunu", "Nunu"]
@@ -138,7 +167,7 @@ async def test_board_shows_gaps_from_the_pool_without_ranking(session):
         }
     ]
     assert board["enemy_team"][0]["champion"] == "MonkeyKing"
-    assert board["enemy_team"][0]["matchup"] == "no_matchup_data"
+    assert "matchup" not in board["enemy_team"][0]  # said once, in "matchups"
     assert board["matchups"] == NO_MATCHUP_DATA
     # Shown, never chosen: no field ranks or names a best champion.
     assert not {"best", "recommended", "score", "rank"} & (set(board) | set(viego))
@@ -229,7 +258,7 @@ async def test_the_api_stores_data_dragon_at_startup_and_serves_the_board(test_s
     }
     board = mine.json()
     assert [p["champion"] for p in board["pool"]] == ["Viego"]
-    assert board["enemy_team"][0]["matchup"] == "no_matchup_data"
+    assert board["enemy_composition"]["picked"] == 1
     # The friend's 2 Ornn games are under the pool's 3, and their games aren't mine.
     assert friend.json()["pool"] == []
     assert refused.status_code == 422 and refused.json()["detail"] == "Unknown champions: Teemo."

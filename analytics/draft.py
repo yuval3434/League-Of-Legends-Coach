@@ -14,7 +14,6 @@ champion_stats. Matchups are never estimated: see NO_MATCHUP_DATA.
 
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,6 +88,45 @@ GAPS = (
         "or equal for both.",
     ),
 )
+
+
+# The enemy's damage mix gets a label from this many picks, when one damage type
+# is at least this share of them. Below that it's "mixed", or not said at all.
+MIN_PICKS_FOR_MIX = 3
+MOSTLY = 0.75
+
+# General game knowledge, keyed by the damage mix. Not from the player's games:
+# no item stats and no win rates, and it's labelled as general advice.
+GENERAL_ADVICE = {
+    "mostly_physical": "Against mostly physical damage, armour items are worth more.",
+    "mostly_magic": "Against mostly magic damage, magic resistance items are worth more.",
+}
+GENERAL_ADVICE_SOURCE = "General game knowledge, not from the player's games."
+
+
+def enemy_composition(enemy: list[Champion]) -> Row | None:
+    """The enemy's damage mix and frontline, by the same rules as the gaps."""
+    if not enemy:
+        return None
+    kinds = [damage_type(c) for c in enemy]
+    counts = {kind: kinds.count(kind) for kind in ("physical", "magic", "mixed")}
+    mix = None
+    if len(enemy) >= MIN_PICKS_FOR_MIX:
+        mix = "mixed"
+        for kind in ("physical", "magic"):
+            if counts[kind] >= MOSTLY * len(enemy):
+                mix = f"mostly_{kind}"
+    result = {
+        "picked": len(enemy),
+        "damage": counts,
+        "mix": mix,
+        "tanks": [c.champion for c in enemy if "Tank" in c.tags],
+        "fighters": [c.champion for c in enemy if "Tank" not in c.tags and "Fighter" in c.tags],
+        "has_frontline": _has_frontline(enemy),
+    }
+    if mix in GENERAL_ADVICE:
+        result["general_advice"] = {"text": GENERAL_ADVICE[mix], "source": GENERAL_ADVICE_SOURCE}
+    return result
 
 
 def _key(name: str) -> str:
@@ -187,7 +225,8 @@ async def draft_board(
         notes.append("Nothing is picked on the player's team yet, so no gaps are checked.")
     return {
         "your_team": [_describe(c) for c in team],
-        "enemy_team": [_describe(c) | {"matchup": "no_matchup_data"} for c in enemy],
+        "enemy_team": [_describe(c) for c in enemy],
+        "enemy_composition": enemy_composition(enemy),
         "bans": [c.champion for c in banned],
         "rules_checked": [gap.description for gap in GAPS],
         "gaps": [
@@ -205,7 +244,3 @@ async def draft_board(
         "notes": notes,
     }
 
-
-def draft_board_inputs(arguments: dict[str, Any]) -> tuple[list[str], list[str], list[str]]:
-    """The three champion lists from a request or tool call, missing ones empty."""
-    return tuple(list(arguments.get(key) or []) for key in ("allies", "enemies", "bans"))

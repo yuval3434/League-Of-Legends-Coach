@@ -559,3 +559,23 @@ So a review would mostly say "inside the margin", about a gap I already fill.
 margin to come down to about 3 points. Win rates by composition need only the
 match call, not the timeline, so this is cheaper than a full pull, but still
 hours of rate-limited calls.
+
+## The enemy's composition: same rules, and advice labelled as general
+
+**Decision:** the Draft page describes the enemy team with the same rules as
+mine: each champion's damage type from Riot's attack and magic ratings, and
+its tags for the frontline. The damage mix gets a label from 3 picks, when one
+type is at least 3 of every 4 picked ("mostly physical: 3 of 4"); otherwise
+it's "mixed". Under 3 picks, it says there are too few to call.
+
+**General advice:** a mostly physical team gets "armour items are worth more",
+and a mostly magic one "magic resistance items are worth more". It's general
+game knowledge, not from my games, and it's labelled that way on the page and
+in the coach's tool result. It has no item stats and no win rates, and a mixed
+team gets none.
+
+**Why 3 of 4:** it means all 3 of 3 picks, 3 of 4, or 4 of 5. A lower share would call a team "mostly physical" with
+two magic champions on it.
+
+**Matchups:** the page says "No matchup data" once, under the enemy picks,
+instead of on every enemy champion.

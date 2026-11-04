@@ -313,9 +313,24 @@ export type PoolEntry = Partial<Described> & {
   unavailable?: "picked" | "banned";
 };
 
+/** The enemy's damage mix and frontline, by the same rules as the gaps. */
+export type EnemyComposition = {
+  picked: number;
+  damage: Record<"physical" | "magic" | "mixed", number>;
+  // null under 3 picks.
+  mix: "mostly_physical" | "mostly_magic" | "mixed" | null;
+  tanks: string[];
+  // Fighters that aren't also tanks.
+  fighters: string[];
+  has_frontline: boolean;
+  // General game knowledge, not from the player's games.
+  general_advice?: { text: string; source: string };
+};
+
 export type DraftBoard = {
   your_team: Described[];
-  enemy_team: (Described & { matchup: "no_matchup_data" })[];
+  enemy_team: Described[];
+  enemy_composition: EnemyComposition | null;
   bans: string[];
   rules_checked: string[];
   gaps: { gap: GapId; description: string; filled_by: string[] }[];

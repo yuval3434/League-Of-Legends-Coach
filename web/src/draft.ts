@@ -2,7 +2,7 @@
 // It shows options; it never picks one. Riot's League policy lists apps that
 // dictate player decisions as unapproved, so nothing here ranks champions.
 
-import type { Board, GapId, PoolEntry } from "./api";
+import type { Board, EnemyComposition, GapId, PoolEntry } from "./api";
 
 export type Side = keyof Board;
 
@@ -57,4 +57,39 @@ export function coachQuestion(board: Board, name: (id: string) => string): strin
     board.bans.length ? `${list(board.bans.map(name))} ${board.bans.length === 1 ? "is" : "are"} banned` : null,
   ].filter(Boolean);
   return `Champion select: ${parts.join(", ")}. What does my team lack, and which of my champions fill it?`;
+}
+
+const COUNT = ["no", "one", "two", "three", "four", "five"];
+
+function plural(n: number, word: string): string {
+  return `${COUNT[n] ?? n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+/** "Mostly physical: 4 of 4". The label is the API's; this only words it. */
+export function damageWords(c: EnemyComposition): { main: string; detail: string } {
+  const { physical, magic, mixed } = c.damage;
+  const parts = [
+    physical ? `${physical} physical` : null,
+    magic ? `${magic} magic` : null,
+    mixed ? `${mixed} both` : null,
+  ].filter(Boolean);
+  const detail = `${parts.join(", ")}, of ${c.picked} picked`;
+  if (c.mix === "mostly_physical") return { main: `Mostly physical: ${physical} of ${c.picked}`, detail };
+  if (c.mix === "mostly_magic") return { main: `Mostly magic: ${magic} of ${c.picked}`, detail };
+  if (c.mix === "mixed") return { main: "Mixed", detail };
+  return { main: "Too few picks to say", detail: `${detail}; the mix is called from 3 picks` };
+}
+
+/** "One tank: Malphite", or what stands in for a frontline. */
+export function frontlineWords(c: EnemyComposition, name: (id: string) => string): string {
+  const names = (ids: string[]) => ids.map(name).join(", ");
+  const tanks = c.tanks.length ? `${plural(c.tanks.length, "tank")}: ${names(c.tanks)}` : null;
+  const fighters = c.fighters.length ? `${plural(c.fighters.length, "fighter")}: ${names(c.fighters)}` : null;
+  const said = [tanks, fighters].filter(Boolean).join("; ");
+  if (!c.has_frontline) return said ? `No frontline. ${capital(said)}` : "No frontline: no tank or fighter";
+  return capital(tanks ? said : `No tank, but ${said}`);
+}
+
+function capital(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }

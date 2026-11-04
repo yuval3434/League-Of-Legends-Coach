@@ -5,10 +5,22 @@
 
 import { useEffect, useId, useState } from "react";
 
-import { api, type Board, type DraftBoard, type DraftChampion } from "../api";
+import { api, type Board, type DraftBoard, type DraftChampion, type EnemyComposition } from "../api";
 import { ChampionIcon } from "../components/ChampionIcon";
 import { Layout } from "../components/Layout";
-import { add, cantAdd, coachQuestion, EMPTY, GAP_NAMES, remove, SIDES, type Side, winRateCell } from "../draft";
+import {
+  add,
+  cantAdd,
+  coachQuestion,
+  damageWords,
+  EMPTY,
+  frontlineWords,
+  GAP_NAMES,
+  remove,
+  SIDES,
+  type Side,
+  winRateCell,
+} from "../draft";
 import { usePlayer } from "../player";
 import { askCoach } from "../router";
 import { subjectOf } from "../subject";
@@ -20,6 +32,7 @@ function Picker({
   board,
   champions,
   onChange,
+  note,
 }: {
   side: Side;
   label: string;
@@ -27,6 +40,7 @@ function Picker({
   board: Board;
   champions: DraftChampion[];
   onChange: (board: Board) => void;
+  note?: string | null;
 }) {
   const [text, setText] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
@@ -92,9 +106,41 @@ function Picker({
         ))}
       </datalist>
       {problem && <p className="mt-1 text-[12px] text-ink2">{problem}</p>}
+      {note && <p className="mt-2 text-[12px] text-ink3">{note}</p>}
     </div>
   );
 }
+
+function EnemyTeam({ composition, name }: { composition: EnemyComposition; name: (id: string) => string }) {
+  const damage = damageWords(composition);
+  return (
+    <section className="mt-14">
+      <div className="smallcaps text-ink3">Enemy team</div>
+      <h2 className="display mt-1.5 text-[30px] leading-[1.1]">Their composition</h2>
+      <dl className="mt-5 grid max-w-[720px] grid-cols-[110px_1fr] gap-x-6 gap-y-3 text-[14px]">
+        <dt className="smallcaps pt-0.5 text-ink3">Damage</dt>
+        <dd>
+          <div className="text-ink">{damage.main}</div>
+          <div className="font-mono text-[11px] text-ink3">{damage.detail}</div>
+        </dd>
+        <dt className="smallcaps pt-0.5 text-ink3">Frontline</dt>
+        <dd className="text-ink">{frontlineWords(composition, name)}</dd>
+      </dl>
+      {composition.general_advice && (
+        <div className="mt-5 max-w-[720px] border-l-2 border-rule pl-4">
+          <div className="smallcaps text-ink3">General advice, not from your games</div>
+          <p className="mt-1 text-[14px] text-ink2">{composition.general_advice.text}</p>
+        </div>
+      )}
+      <p className="mt-4 text-[13px] text-ink3">
+        By the same rules as your team: Data Dragon's tags and Riot's attack and magic ratings.
+      </p>
+    </section>
+  );
+}
+
+// One line under the enemy picks, instead of the same words on every champion.
+const NO_MATCHUPS = "No matchup data: no champion pair has anywhere near the games a reliable win rate needs.";
 
 function Results({ result, name }: { result: DraftBoard; name: (id: string) => string }) {
   const noTeam = result.your_team.length === 0;
@@ -136,6 +182,8 @@ function Results({ result, name }: { result: DraftBoard; name: (id: string) => s
           </p>
         </details>
       </section>
+
+      {result.enemy_composition && <EnemyTeam composition={result.enemy_composition} name={name} />}
 
       <section className="mt-14">
         <div className="smallcaps text-ink3">Your pool</div>
@@ -193,22 +241,6 @@ function Results({ result, name }: { result: DraftBoard; name: (id: string) => s
         <p className="mt-3 text-[13px] text-ink3">Most played first. This isn't a ranking: the pick is yours.</p>
       </section>
 
-      {result.enemy_team.length > 0 && (
-        <section className="mt-14">
-          <div className="smallcaps text-ink3">Enemy team</div>
-          <h2 className="display mt-1.5 text-[30px] leading-[1.1]">Matchups</h2>
-          <ul className="mt-5 space-y-2">
-            {result.enemy_team.map((e) => (
-              <li key={e.champion} className="flex items-center gap-3 text-[14px]">
-                <ChampionIcon champion={e.champion} size={28} />
-                <span className="text-ink">{e.name}</span>
-                <span className="text-ink3">No matchup data</span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-3 max-w-[720px] text-[13px] text-ink3">{result.matchups}</p>
-        </section>
-      )}
     </>
   );
 }
@@ -265,7 +297,16 @@ export function Draft() {
 
       <div className="mt-10 grid gap-x-10 gap-y-6 md:grid-cols-3">
         {SIDES.map(({ side, label, max }) => (
-          <Picker key={side} side={side} label={label} max={max} board={board} champions={champions} onChange={setBoard} />
+          <Picker
+            key={side}
+            side={side}
+            label={label}
+            max={max}
+            board={board}
+            champions={champions}
+            onChange={setBoard}
+            note={side === "enemies" && board.enemies.length > 0 ? NO_MATCHUPS : null}
+          />
         ))}
       </div>
       {error && <p className="mt-4 text-[14px] text-ink2">{error}</p>}
