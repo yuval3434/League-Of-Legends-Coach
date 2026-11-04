@@ -356,3 +356,118 @@ async def first_lane_kill(session: AsyncSession, puuids: Players) -> list[Row]:
     game with a timeline.
     """
     return await fetch(session, FIRST_LANE_KILL, puuids=puuids)
+
+
+# Each stretch runs from one timeline frame to another. Minute 0 is the start of
+# the game, with the starting gold.
+STRETCHES = """
+stretches(stretch, start_minute, end_minute) AS (
+    VALUES ('0-10', 0, 10), ('10-15', 10, 15), ('15-20', 15, 20)
+)
+"""
+
+FARM_GAINED_BY_STRETCH = (
+    JUNGLE_GAMES
+    + ","
+    + STRETCHES
+    + """,
+gains AS (
+    SELECT s.stretch, s.start_minute, s.end_minute,
+           e.total_gold - b.total_gold AS gold,
+           (e.lane_cs + e.jungle_cs) - (b.lane_cs + b.jungle_cs) AS cs
+    FROM jungle_games j
+    CROSS JOIN stretches s
+    JOIN timeline_frames b
+      ON b.match_id = j.match_id AND b.participant_id = j.participant_id
+     AND b.minute = s.start_minute
+    JOIN timeline_frames e
+      ON e.match_id = j.match_id AND e.participant_id = j.participant_id
+     AND e.minute = s.end_minute
+    -- `minute` is a frame's position; see lane_diff.
+    WHERE j.duration_s >= s.end_minute * 60
+)
+SELECT stretch, start_minute, end_minute,
+       count(*) AS games,
+       round(avg(gold)) AS avg_gold_gained,
+       round((1.96 * stddev(gold) / sqrt(count(*)))::numeric, 0) AS margin_gold_gained,
+       round(avg(cs), 1) AS avg_cs_gained,
+       round((1.96 * stddev(cs) / sqrt(count(*)))::numeric, 1) AS margin_cs_gained
+FROM gains
+GROUP BY stretch, start_minute, end_minute
+ORDER BY start_minute
+"""
+)
+
+
+async def farm_gained_by_stretch(session: AsyncSession, puuids: Players) -> list[Row]:
+    """Gold and CS the player gained in each stretch: 0-10, 10-15 and 15-20 min.
+
+    Each game's gain is its value at the stretch's end minus its value at the
+    start. A game counts only if it lasted to the stretch's end, so `games` can
+    fall from one stretch to the next. These don't depend on the opponent, so
+    they compare with any rank.
+    """
+    return await fetch(session, FARM_GAINED_BY_STRETCH, puuids=puuids)
+
+
+FARM_VS_JUNGLER_BY_STRETCH = (
+    JUNGLE_GAMES
+    + ","
+    + STRETCHES
+    + """,
+matchups AS (
+    SELECT j.match_id, j.participant_id, j.duration_s, o.participant_id AS opp_id
+    FROM jungle_games j
+    JOIN match_participants o
+      ON o.match_id = j.match_id AND o.team_position = 'JUNGLE' AND o.team_id <> j.team_id
+),
+diffs AS (
+    SELECT s.stretch, s.start_minute, s.end_minute,
+           (me_e.total_gold - me_b.total_gold) - (op_e.total_gold - op_b.total_gold) AS gold,
+           ((me_e.lane_cs + me_e.jungle_cs) - (me_b.lane_cs + me_b.jungle_cs))
+             - ((op_e.lane_cs + op_e.jungle_cs) - (op_b.lane_cs + op_b.jungle_cs)) AS cs
+    FROM matchups x
+    CROSS JOIN stretches s
+    JOIN timeline_frames me_b
+      ON me_b.match_id = x.match_id AND me_b.participant_id = x.participant_id
+     AND me_b.minute = s.start_minute
+    JOIN timeline_frames me_e
+      ON me_e.match_id = x.match_id AND me_e.participant_id = x.participant_id
+     AND me_e.minute = s.end_minute
+    JOIN timeline_frames op_b
+      ON op_b.match_id = x.match_id AND op_b.participant_id = x.opp_id
+     AND op_b.minute = s.start_minute
+    JOIN timeline_frames op_e
+      ON op_e.match_id = x.match_id AND op_e.participant_id = x.opp_id
+     AND op_e.minute = s.end_minute
+    WHERE x.duration_s >= s.end_minute * 60
+),
+summary AS (
+    SELECT stretch, start_minute, end_minute,
+           count(*) AS games,
+           round(avg(gold)) AS avg_gold_diff,
+           round((1.96 * stddev(gold) / sqrt(count(*)))::numeric, 0) AS margin_gold_diff,
+           round(avg(cs), 1) AS avg_cs_diff,
+           round((1.96 * stddev(cs) / sqrt(count(*)))::numeric, 1) AS margin_cs_diff
+    FROM diffs
+    GROUP BY stretch, start_minute, end_minute
+)
+SELECT *,
+       -- Further from zero than the noise: a real gain or loss, not chance.
+       abs(avg_gold_diff) > margin_gold_diff AS clear_gold_diff,
+       abs(avg_cs_diff) > margin_cs_diff AS clear_cs_diff
+FROM summary
+ORDER BY start_minute
+"""
+)
+
+
+async def farm_vs_jungler_by_stretch(session: AsyncSession, puuids: Players) -> list[Row]:
+    """Gold and CS gained minus the enemy jungler's, in each stretch.
+
+    Negative means the player fell further behind the enemy jungler in that
+    stretch: what they lost to them. `clear_gold_diff` and `clear_cs_diff` are
+    true when the average is further from zero than its margin, and empty with
+    one game. Games with no enemy jungler are left out.
+    """
+    return await fetch(session, FARM_VS_JUNGLER_BY_STRETCH, puuids=puuids)

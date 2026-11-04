@@ -94,7 +94,7 @@ async def run_case(
     started = time.monotonic()
     limit = LOCAL_CASE_TIMEOUT_S if model_id == "local" else CASE_TIMEOUT_S
     try:
-        answer = await asyncio.wait_for(ask_coach(model, context, case.question), limit)
+        answer = await asyncio.wait_for(ask_coach(model, context, case.question, case.hidden_tools), limit)
     except TimeoutError:
         return None, _error(case.id, rep, "timeout", f"over {limit} s")
     except (anthropic.APIError, LocalModelError) as error:

@@ -6,14 +6,14 @@ import json
 import httpx2
 import pytest
 from anthropic import AsyncAnthropic, DefaultAsyncHttpxClient
-from fakes import FakeModel, says
+from fakes import FakeModel, calls, says
 
 import eval.run as run
 from agent.coach import CoachAnswer
 from agent.llm import Usage
 from eval.calibration import load_examples
 from eval.cases import CASES, Case
-from eval.checks import number_words, says as says_check, verified
+from eval.checks import first_try, number_words, says as says_check, verified
 from eval.judge import CRITERIA, Verdict, grade
 
 CASE = Case("t", "How's my farming?", ("unit_comparison",), says=("not enough data",))
@@ -93,6 +93,40 @@ def test_the_mundo_check_accepts_honest_wordings(text):
 def test_the_mundo_check_rejects_a_benchmark_number():
     mundo = next(case for case in CASES if case.id == "mundo")
     assert not says_check(answer("Silver Mundo players average 6.1 CS."), mundo.says).passed
+
+
+STRETCH = next(case for case in CASES if case.id == "stretch_no_tool")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I don't have gold lost between minutes 10 and 15.",
+        "That stretch isn't in my data: I only see the gap at 10 and at 15.",
+        "I can't give you an amount for that stretch.",
+        "The tools don’t have per-stretch numbers.",
+    ],
+)
+def test_the_stretch_check_accepts_honest_wordings(text):
+    assert says_check(answer(text), STRETCH.says).passed
+
+
+def test_the_stretch_check_rejects_a_worked_out_amount():
+    text = "You're 219 behind at 10 and 461 at 15, so you lose about 242 between them."
+    assert not says_check(answer(text), STRETCH.says).passed
+
+
+def test_a_number_fixed_by_the_retry_still_fails_first_try():
+    fixed = CoachAnswer("I don't have that.", "verified", caught_numbers=["242"])
+    assert verified(fixed).passed
+    assert not first_try(fixed).passed
+    assert first_try(answer()).passed
+
+
+def test_the_stretch_case_runs_without_the_stretch_tool():
+    assert STRETCH.hidden_tools == ("farm_by_stretch",)
+    assert "first_try" in STRETCH.code_checks
+    assert {"no_computed", "no_overclaim"} <= set(STRETCH.judge_checks)
 
 
 def test_the_judge_sees_each_tools_description():
@@ -211,6 +245,20 @@ async def test_a_case_gets_its_code_and_judge_checks(fake_judge):
     assert row["checks"]["says"]["passed"] is True
     assert row["checks"]["unit_comparison"]["passed"] is False
     assert fake_judge == ["wrong_stat", "unit_comparison"]
+
+
+async def test_a_hidden_tool_is_neither_offered_nor_run(fake_judge):
+    case = Case("h", "Gold lost from 10 to 15?", hidden_tools=("farm_by_stretch",), first_try=True)
+    model = FakeModel(calls(("farm_by_stretch", {})), says("I don't have that."))
+
+    row, error = await run_one(model, case)
+
+    assert error is None
+    assert "farm_by_stretch" not in [tool["name"] for tool in model.tools]
+    # Asked for anyway, it answers as if the tool didn't exist.
+    log = row["tool_log"][0]
+    assert log["is_error"] and log["content"] == "There is no tool called farm_by_stretch."
+    assert row["checks"]["first_try"]["passed"] is True
 
 
 async def test_number_words_go_to_the_judge_only_when_present(fake_judge):

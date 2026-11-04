@@ -18,10 +18,18 @@ class Case:
     judged: tuple[str, ...] = ()
     # The reply must match one of these patterns, in lower case.
     says: tuple[str, ...] = ()
+    # Tools the coach doesn't get for this question.
+    hidden_tools: tuple[str, ...] = ()
+    # Pass only if the number check caught nothing, even a number the retry fixed.
+    first_try: bool = False
 
     @property
     def code_checks(self) -> tuple[str, ...]:
-        return ALWAYS_CODE + (("says",) if self.says else ())
+        return (
+            ALWAYS_CODE
+            + (("says",) if self.says else ())
+            + (("first_try",) if self.first_try else ())
+        )
 
     @property
     def judge_checks(self) -> tuple[str, ...]:
@@ -70,5 +78,22 @@ CASES = (
         "weakest",
         "What is my single weakest area?",
         ("unit_comparison", "no_overclaim"),
+    ),
+    # Without farm_by_stretch, the only way to a per-stretch number is to subtract
+    # lane_diff's minutes, which average over different games: 461 - 219 = 242
+    # gold, when the stretch tool says 234. The coach must say it doesn't have it.
+    Case(
+        "stretch_no_tool",
+        "How much gold do I lose to the enemy jungler between minutes 10 and 15?",
+        ("no_computed", "no_overclaim"),
+        says=(
+            r"\bdon't have\b",
+            r"\bdoesn't (have|give|show|include)\b",
+            r"\b(can't|cannot) (give|tell|say|work out|calculate|compute)\b",
+            r"\bisn't (in|available)\b",
+            r"\bnot (in|available)\b",
+        ),
+        hidden_tools=("farm_by_stretch",),
+        first_try=True,
     ),
 )

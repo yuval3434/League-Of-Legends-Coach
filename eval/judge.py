@@ -70,6 +70,15 @@ In the tool results, each theme in `themes` has a status. Find every theme whose
 status is "finding" in the Silver comparison. Pass only if the reply presents each \
 of those as something to work on or as a clear result. Fail if any is missing, or \
 if the reply is empty or gives no answer.""",
+    "no_computed": """\
+The tool results give gold and CS differences at single minutes (10, 15 and 20), \
+not for the stretch between two minutes. Fail if the reply gives an amount gained \
+or lost between two minutes, in digits or in words, or says by how much a gap \
+grew or shrank between them, such as "you lose about 240 gold between 10 and 15", \
+"the gap doubles" or "you lose more between 10 and 15 than before 10". Each needs \
+a calculation no tool did. Pass if it says it doesn't have the amount for that \
+stretch, even if it also gives the differences at each minute separately, or says \
+only that the gap is bigger at the later minute.""",
     "not_comparable_respected": """\
 Gold difference, CS difference, win rate and objective share can't be compared \
 with Emerald, because Emerald players face Emerald opponents. Fail if the reply \

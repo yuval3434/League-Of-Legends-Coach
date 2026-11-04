@@ -25,6 +25,7 @@ from benchmarks.cohorts import COHORTS, why_no_benchmark
 from benchmarks.compare import compare
 from benchmarks.models import create_benchmark_engine
 from benchmarks.pull import pull_cohort, target_champions, tracked_puuids
+from benchmarks.stretches import farm_by_stretch
 from ingestion.config import Settings
 from ingestion.keys import KEYS, describe, key_value, save_key
 from ingestion.rate_limiter import RateLimiter
@@ -344,6 +345,19 @@ def create_app(
             async with request.app.state.benchmark_sessions() as benchmark_session:
                 return await compare(
                     my_session, benchmark_session, [chosen.puuid], cohort, champion, reason
+                )
+
+    @app.get("/benchmarks/stretches")
+    async def stretches(request: Request, player: str | None = Query(default=None)) -> dict[str, Any]:
+        """Gold and CS per stretch, against the enemy jungler and each cohort that fits."""
+        chosen = await selected(request, player)
+        async with request.app.state.sessions() as my_session:
+            async with request.app.state.benchmark_sessions() as benchmark_session:
+                return await farm_by_stretch(
+                    my_session,
+                    benchmark_session,
+                    [chosen.puuid],
+                    benchmarks_for(chosen.rank_tier, chosen.main_role, chosen.rank_checked),
                 )
 
     def has_anthropic_key() -> bool:

@@ -7,6 +7,8 @@ import pytest
 from sqlalchemy import insert
 
 from analytics.jungle import (
+    farm_gained_by_stretch,
+    farm_vs_jungler_by_stretch,
     deaths_before_objective,
     first_lane_kill,
     kill_participation,
@@ -50,6 +52,8 @@ ALL_STATS = [
     first_lane_kill,
     gold_cs_at_minute,
     overall_cs_per_minute,
+    farm_gained_by_stretch,
+    farm_vs_jungler_by_stretch,
 ]
 _event_ids = count(1000)
 

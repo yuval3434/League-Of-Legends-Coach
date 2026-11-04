@@ -42,6 +42,7 @@ def load_examples() -> list[Example]:
     emerald_q = "Do I win my jungle matchup as well as Emerald junglers do?"
     wins_q = "How do my wins compare with my losses?"
     weakest_q = "What is my single weakest area?"
+    stretch_q = "How much gold do I lose to the enemy jungler between minutes 10 and 15?"
     bucket = json.loads(load_tool_outputs("wins")[1]["content"])["rows"][0]
     buckets = (
         "Win rate by gold difference with the enemy jungler at {minute} minutes: "
@@ -249,6 +250,46 @@ def load_examples() -> list[Example]:
             "when you fall behind.",
             False,
             wins_q,
+        ),
+        # Asked for a stretch with no stretch tool: the gaps at 10 and 15 are in
+        # lane_diff, but anything between them would be the coach's own sum.
+        ex(
+            "stretch_not_available",
+            "no_computed",
+            "I don't have how much gold you lose between minutes 10 and 15. What I have: "
+            "at 10 minutes you're 219 gold behind the enemy jungler (85 games), and at "
+            "15 minutes 461 behind (84 games), so the gap is bigger at 15.",
+            True,
+            stretch_q,
+            "wins",
+        ),
+        ex(
+            "stretch_subtracted",
+            "no_computed",
+            "At 10 minutes you're 219 gold behind the enemy jungler (85 games), and at 15 "
+            "minutes 461 behind (84 games), so you lose about 242 gold between 10 and 15.",
+            False,
+            stretch_q,
+            "wins",
+        ),
+        ex(
+            "stretch_in_words",
+            "no_computed",
+            "At 10 minutes you're 219 gold behind the enemy jungler (85 games), and at 15 "
+            "minutes 461 behind (84 games): the gap roughly doubles between 10 and 15.",
+            False,
+            stretch_q,
+            "wins",
+        ),
+        ex(
+            "stretches_compared",
+            "no_computed",
+            "At 10 minutes you're 219 gold behind the enemy jungler (85 games), and at 15 "
+            "minutes 461 behind (84 games), so you lose more gold between 10 and 15 than "
+            "in the first 10 minutes.",
+            False,
+            stretch_q,
+            "wins",
         ),
     ]
 

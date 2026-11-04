@@ -5,9 +5,10 @@
 
 import { useEffect, useState } from "react";
 
-import { api, type Comparison, type Theme } from "../api";
+import { api, type Comparison, type Stretches, type Theme } from "../api";
 import { Layout } from "../components/Layout";
 import { MinuteChart, SeriesKey, seriesFor } from "../components/MinuteChart";
+import { StretchTable } from "../components/StretchTable";
 import { Marker, type State } from "../components/Verdict";
 import { compareHeadline, MINUTES, minutePoints, minuteRow } from "../compare";
 import { gapWords, THEME_NAMES } from "../metrics";
@@ -104,13 +105,20 @@ export function Compare() {
   const { puuid, player, error: playerError } = usePlayer();
   const [data, setData] = useState<{ silver: Comparison; emerald: Comparison } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Loaded on its own, so the rest of the page doesn't wait for it or fail with it.
+  const [stretches, setStretches] = useState<Stretches | null>(null);
 
   useEffect(() => {
     setData(null);
     setError(null);
+    setStretches(null);
     Promise.all([api.compare("silver", puuid), api.compare("emerald", puuid)])
       .then(([silver, emerald]) => setData({ silver, emerald }))
       .catch((e: Error) => setError(e.message));
+    api
+      .stretches(puuid)
+      .then(setStretches)
+      .catch(() => setStretches(null));
   }, [puuid]);
 
   const failed = playerError ?? error;
@@ -169,6 +177,30 @@ export function Compare() {
           <div className="mt-5">
             <AskLink question={`Where in the game ${does} fall behind on farm, and what should ${me} change?`}>
               {s.you ? "Ask the coach where you lose farm" : `Ask the coach where ${s.name} loses farm`}
+            </AskLink>
+          </div>
+        </section>
+      )}
+
+      {stretches && (
+        <section className="mt-16">
+          <div className="smallcaps text-ink3">Stretch by stretch</div>
+          <h2 className="display mt-1.5 text-[30px] leading-[1.1]">Where farm is lost</h2>
+          <p className="mt-3 max-w-[720px] text-[15px] text-ink2">
+            What {s.you ? "you gain" : `${s.name} gains`} in each stretch of the game, against the enemy jungler in the
+            same games, and against what each rank gains in the same stretch.
+          </p>
+          <div className="mt-6">
+            <StretchTable data={stretches} />
+          </div>
+          <ul className="mt-4 max-w-[760px] space-y-1.5 text-[13px] text-ink3">
+            {stretches.notes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+          <div className="mt-5">
+            <AskLink question={`In which stretch of the game ${does} lose the most farm to the enemy jungler?`}>
+              {s.you ? "Ask the coach when you lose farm" : `Ask the coach when ${s.name} loses farm`}
             </AskLink>
           </div>
         </section>

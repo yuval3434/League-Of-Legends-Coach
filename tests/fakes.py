@@ -42,10 +42,12 @@ class FakeModel:
         self.replies = list(replies)
         self.sent: list[list[dict[str, Any]]] = []
         self.system = ""
+        self.tools: list[dict[str, Any]] = []
 
     async def send(
         self, system: str, tools: list[dict[str, Any]], messages: list[dict[str, Any]]
     ) -> ModelReply:
         self.system = system
+        self.tools = tools
         self.sent.append(list(messages))
         return self.replies.pop(0)

@@ -34,6 +34,7 @@ from analytics.stats import (
 )
 from benchmarks.cohorts import COHORTS, why_no_benchmark
 from benchmarks.compare import compare, coverage
+from benchmarks.stretches import farm_by_stretch
 from benchmarks.themes import THEMES
 from ingestion.players import SelectedPlayer
 
@@ -141,6 +142,16 @@ async def _compare(context: ToolContext, arguments: dict[str, Any]) -> Row:
     return result
 
 
+async def _farm_by_stretch(context: ToolContext, arguments: dict[str, Any]) -> Row:
+    async with context.sessions() as mine, context.benchmark_sessions() as bench:
+        return await farm_by_stretch(
+            mine,
+            bench,
+            list(context.puuids),
+            {cohort: _not_for_player(context, cohort) for cohort in COHORTS},
+        )
+
+
 TOOLS = (
     Tool(
         "data_coverage",
@@ -168,6 +179,17 @@ TOOLS = (
             },
         },
         _compare,
+    ),
+    Tool(
+        "farm_by_stretch",
+        "Gold and CS in each stretch of the game (0-10, 10-15 and 15-20 minutes), "
+        "in jungle games. `vs_enemy_jungler` is the player's gain minus the enemy "
+        "jungler's per stretch: negative is what they lost to them, with a margin "
+        "and `clear_gold_diff`/`clear_cs_diff`. `benchmarks` compares the gold and "
+        "CS gained per stretch with each cohort, with both sample sizes. Use this "
+        "for any question about when in the game farm or gold is lost.",
+        {},
+        _farm_by_stretch,
     ),
     _stat_tool(
         "champion_stats",

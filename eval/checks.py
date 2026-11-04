@@ -38,6 +38,12 @@ def used_tools(answer: CoachAnswer) -> Check:
     return Check(bool(answer.tools_called), f"tools {answer.tools_called}")
 
 
+def first_try(answer: CoachAnswer) -> Check:
+    """No number was caught, so the coach never tried a number of its own."""
+    caught = answer.caught_numbers
+    return Check(not caught, f"caught {caught}" if caught else "nothing caught")
+
+
 def says(answer: CoachAnswer, phrases: tuple[str, ...]) -> Check:
     """The reply matches one of the patterns, ignoring case and curly quotes."""
     text = _normal(answer.text)
@@ -50,6 +56,8 @@ def run_code_check(name: str, answer: CoachAnswer, phrases: tuple[str, ...]) -> 
         return verified(answer)
     if name == "used_tools":
         return used_tools(answer)
+    if name == "first_try":
+        return first_try(answer)
     if name == "says":
         return says(answer, phrases)
     raise ValueError(f"Unknown code check: {name}")

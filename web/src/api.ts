@@ -77,6 +77,40 @@ export type Comparison = {
   not_comparable?: string[];
 };
 
+/** Gold and CS gained minus the enemy jungler's, in one stretch of the game. */
+export type JunglerStretch = {
+  stretch: string;
+  start_minute: number;
+  end_minute: number;
+  games: number;
+  low_sample: boolean;
+  avg_gold_diff: number | null;
+  margin_gold_diff: number | null;
+  avg_cs_diff: number | null;
+  margin_cs_diff: number | null;
+  clear_gold_diff: boolean | null;
+  clear_cs_diff: boolean | null;
+};
+
+/** A cohort row for one stretch: like a comparison row, but never part of a theme. */
+export type CohortStretch = Omit<CompareRow, "theme"> & { stretch: string };
+
+export type StretchCohort = {
+  cohort: string;
+  tier: string;
+  status: "ok" | "no_benchmark";
+  benchmark_games: number;
+  benchmark_players: number;
+  rows: CohortStretch[];
+  note?: string;
+};
+
+export type Stretches = {
+  vs_enemy_jungler: JunglerStretch[];
+  benchmarks: Record<"silver" | "emerald", StretchCohort>;
+  notes: string[];
+};
+
 export class ApiError extends Error {
   readonly status: number;
 
@@ -226,6 +260,7 @@ export const api = {
     get<{ rows: ChampionRow[] }>(`/stats/champion_stats${query({ role, player })}`).then((r) => r.rows),
   compare: (cohort: "silver" | "emerald", player: string | null) =>
     get<Comparison>(`/benchmarks/compare${query({ cohort, player })}`),
+  stretches: (player: string | null) => get<Stretches>(`/benchmarks/stretches${query({ player })}`),
   /** Starts a sync: free, but it uses the Riot call budget for a few minutes. */
   sync: (game_name: string, tag_line: string) =>
     get<SyncStatus>("/sync", { ...JSON_POST, body: JSON.stringify({ game_name, tag_line }) }),
