@@ -205,7 +205,7 @@ export function Champions() {
         <p className="mt-10 text-ink2">No ranked games{where} yet.</p>
       )}
       {rows !== null && rows.length > 0 && (
-        <div className="mt-6">
+        <div className="relative mt-6 overflow-x-auto">
           <table className="w-full min-w-[760px] border-collapse text-[14px]">
             <colgroup>
               <col className="w-[30%]" />

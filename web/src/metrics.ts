@@ -118,7 +118,7 @@ export function gapWords(row: CompareRow, cohort: string): string {
 }
 
 /** Decimals for a row: whatever its values were given with. */
-export function rowDecimals(row: CompareRow): number {
+export function rowDecimals(row: Pick<CompareRow, "my_value" | "benchmark_value">): number {
   return Math.max(decimalsOf(row.my_value), decimalsOf(row.benchmark_value));
 }
 

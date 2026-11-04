@@ -53,11 +53,14 @@ class CoachAnswer:
 
 
 async def _run_calls(
-    context: ToolContext, calls: list[ToolCall]
+    context: ToolContext, calls: list[ToolCall], hidden: tuple[str, ...] = ()
 ) -> list[ToolResult]:
-    return list(
-        await asyncio.gather(*(run_tool(context, c.name, c.arguments) for c in calls))
-    )
+    async def run(call: ToolCall) -> ToolResult:
+        if call.name in hidden:
+            return ToolResult(f"There is no tool called {call.name}.", is_error=True)
+        return await run_tool(context, call.name, call.arguments)
+
+    return list(await asyncio.gather(*(run(c) for c in calls)))
 
 
 def _results_message(calls: list[ToolCall], results: list[ToolResult]) -> dict[str, Any]:
@@ -81,13 +84,17 @@ def riot_id(player: SelectedPlayer) -> str:
 
 
 async def ask_coach(
-    model: ModelClient, context: ToolContext, question: str
+    model: ModelClient,
+    context: ToolContext,
+    question: str,
+    hidden_tools: tuple[str, ...] = (),
 ) -> CoachAnswer:
     """Answer one question. A reply with unsupported numbers gets one retry.
 
     When the context's player isn't the owner, the question says whose games
     these are, so the reply names them instead of saying "you". The system
-    prompt stays the same, so its cache still works.
+    prompt stays the same, so its cache still works. `hidden_tools` are left out,
+    for eval cases that test what the coach does without them.
     """
     player = context.player if context else None
     if player and not player.is_owner:
@@ -96,7 +103,7 @@ async def ask_coach(
             'asking. Refer to them by name, not as "you".]\n\n' + question
         )
     messages: list[dict[str, Any]] = [{"role": "user", "content": question}]
-    tools = tool_definitions()
+    tools = [t for t in tool_definitions() if t["name"] not in hidden_tools]
     answer = CoachAnswer("", "gave_up")
 
     for _ in range(MAX_STEPS):
@@ -112,7 +119,7 @@ async def ask_coach(
         messages.append({"role": "assistant", "content": reply.assistant_content})
 
         if reply.tool_calls:
-            results = await _run_calls(context, reply.tool_calls)
+            results = await _run_calls(context, reply.tool_calls, hidden_tools)
             answer.tools_called += [call.name for call in reply.tool_calls]
             answer.tool_log += [
                 ToolLog(c.name, c.arguments, r.content, r.is_error)
