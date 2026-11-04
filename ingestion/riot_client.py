@@ -119,6 +119,12 @@ class RiotClient:
         except (KeyError, ValueError):
             return None
 
+    async def get_platform_status(self) -> dict[str, Any]:
+        """The platform's status: the cheapest call there is, used to test a key."""
+        return await self._request(
+            self._platform_region, "platform-status", "/lol/status/v4/platform-data"
+        )
+
     async def get_account(self, game_name: str, tag_line: str) -> dict[str, Any]:
         name, tag = quote(game_name, safe=""), quote(tag_line, safe="")
         return await self._request(

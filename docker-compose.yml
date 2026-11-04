@@ -18,9 +18,15 @@ services:
   api:
     build: .
     env_file: .env
+    volumes:
+      # The settings page saves keys here, so they last past a restart. .env stays
+      # the only place secrets are kept.
+      - ./.env:/app/.env
     environment:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+      # Ollama runs on this computer, outside Docker.
+      OLLAMA_URL: http://host.docker.internal:11434
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:

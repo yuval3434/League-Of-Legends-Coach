@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr = SecretStr("")
     coach_model: str = "claude-opus-5-5"
     coach_effort: str = "medium"
+    # The local model, through Ollama. Inside Docker, Ollama on this computer is
+    # at host.docker.internal; docker-compose.yml sets that.
+    ollama_url: str = "http://localhost:11434"
+    local_model: str = "qwen3:4b"
 
     postgres_user: str = "lolcoach"
     postgres_password: SecretStr = SecretStr("")

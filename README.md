@@ -158,8 +158,51 @@ curl -X POST localhost:8000/coach -H "Content-Type: application/json" \
 
 The response has the answer, its `status` (`verified` when every number passed
 the check), the tools called and the token usage. `COACH_MODEL` in `.env` picks
-the model. `DECISIONS.md` explains what counts as a
+the default model. `DECISIONS.md` explains what counts as a
 finding and what the number check can't catch.
+
+### Picking a model
+
+The web app's Coach page has a model picker under the chat box: Opus 5.5,
+Sonnet 5.5, Haiku 5.5 and a local model. Each shows an estimated cost per
+question: the average token use of a real Opus answer in the last eval, priced
+for that model (about $0.10, $0.05 and under $0.01). The choice is remembered in
+the browser. `POST /coach` takes it as `"model"`, and `GET /coach/models` lists
+the choices. Every model gets the same prompt, tools, benchmark rules and number
+check.
+
+### The local model
+
+`"model": "local"` runs `qwen3:4b` in [Ollama](https://ollama.com) on this
+computer: free, but several minutes per answer and less reliable. It was picked for a 4 GB GPU as the largest
+model that fits there and supports tool calls.
+
+```sh
+ollama pull qwen3:4b
+```
+
+The context is set to 32,768 tokens, because a full comparison is about 12,000
+and Ollama's default would silently cut tool results short. On a 4 GB GPU that
+context doesn't fit in video memory, so most of the work runs on the CPU and an
+answer takes several minutes. qwen3 also reasons in its answer even with
+thinking off; only the text after its reasoning is kept, so the number check
+never sees made-up numbers from it.
+
+## API keys
+
+The web app's Settings page replaces the Riot and Anthropic keys without a
+restart. Each new key is tested with one cheap call first (Riot's server
+status, through the rate limiter; listing Anthropic's models, which uses no
+tokens) and saved to `.env` only if it works. `.env` stays the only place keys
+live: Compose mounts it into the API container, which rewrites just the key's
+line. No endpoint returns a key; the page sees only the last 4 characters, when
+it was set and, for Riot, when it expires.
+
+The settings endpoints only answer this computer's web app: the API port is
+bound to `127.0.0.1`, the request must name `localhost` as its host, and it must
+carry a header that only the app's own page sends. After changing `.env` by
+hand, recreate the container (`docker compose up -d --force-recreate api`): a
+restart keeps the old environment.
 
 ## Eval
 
@@ -219,6 +262,33 @@ before. Its one Emerald failure is a grader mistake: the reply refused gold
 difference against Emerald and compared only gold and CS at each minute, which
 are allowed. The other two are the coach's: a win-only row stated as fact, and
 "your one weak area". It cost $0.91.
+
+### Results on a local model
+
+The same 8 questions on `qwen3:4b` (`uv run python -m eval.run live --model local
+--confirm`, $0 for the coach, $0.02 for the grader), against the last Opus run:
+
+| | Opus 5.5 | qwen3:4b |
+|---|---|---|
+| Answered | 8 / 8 | 5 / 8 |
+| Checks passed | 48 / 51 | 28 / 33 |
+| Checks failed on the 5 cases both answered | 1 | 5 |
+| The number check passed | 8 / 8 | 5 / 5 |
+| Time per answer | 8 to 35 s | 4½ to 16 min |
+
+Three questions never got an answer: two reached the 600-second limit on one
+Ollama call, and one the 30-minute limit per case. They're in `errors.jsonl`, not
+counted as failures.
+
+Every local answer passed the number check, including three that were wrong:
+- It said the player destroys fewer wards than Silver; the data says more.
+- It gave Silver's game count, 19, as the player's.
+- It called gold at minute 10 "gold per minute".
+
+All three numbers exist in the tool results, so the code check can't object. The
+Haiku grader caught all three. The fourth failure was two champions called
+weaknesses from 3 and 4 games. The code check and the model grader catch
+different failures, so both are needed (see DECISIONS.md).
 
 **Limits:**
 - **The sample is small.** With 8 cases run once, a difference in pass rate under

@@ -408,3 +408,32 @@ every number in the demo would be flagged.
 **Limit:** stats and champions are kept, so someone who already knows my Riot ID
 could match these games by their stats. The benchmark stays out because it is
 1,271 other players' games.
+
+## The number check and the model grader are both needed
+
+**Decision:** the eval keeps both kinds of check: code for what can be checked
+exactly (every number comes from a tool, a tool was called, a required phrase is
+there), and a model grader for what a sentence claims about those numbers.
+Neither replaces the other.
+
+**Why:** the local model, `qwen3:4b`, made this concrete. All 5 of its answers
+passed the number check, and three of them were wrong:
+- "you destroy fewer wards", when the data says more;
+- Silver's 19 games given as the player's;
+- gold at minute 10 called "gold per minute".
+
+Every number was real, so the number check passed them. What was false was the
+direction, the owner or the unit around the number. The Haiku grader failed all
+three. Opus rarely makes these mistakes, so its runs never showed the gap. A weaker
+model did.
+
+**Trade-off:** the grader is a model and can be wrong too, which is why it's
+calibrated against replies with known verdicts before a run is trusted. The number
+check is exact but narrow. It proves a number exists in the tool results, not that
+the sentence around it is true.
+
+**The local model itself:** it stays as a free option, labelled "several minutes
+per answer and less reliable". On a 4 GB GPU, the 32,768-token context a full
+comparison needs runs mostly on the CPU: answers took 4½ to 16 minutes, and 3 of 8
+questions didn't finish. The 600-second limit per call stays, so a stuck call fails
+instead of hanging the page.

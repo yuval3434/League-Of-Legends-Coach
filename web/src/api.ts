@@ -168,6 +168,17 @@ export type CoachTool = {
   low_sample_rows?: number;
 };
 
+/** A coach model the picker offers, with its estimated cost per question. */
+export type CoachModel = {
+  id: string;
+  label: string;
+  estimated_cost_usd: number;
+  available: boolean;
+  // Why it can't answer right now, such as a missing key or Ollama not running.
+  reason: string | null;
+  default: boolean;
+};
+
 export type CoachStatus = "verified" | "unverified" | "refused" | "truncated" | "gave_up";
 
 export type CoachAnswer = {
@@ -180,6 +191,19 @@ export type CoachAnswer = {
   cost_is_upper_bound: boolean;
 };
 
+/** What the settings page may know about a key. The key itself never leaves the server. */
+export type KeyInfo = {
+  set: boolean;
+  last4: string | null;
+  set_at: string | null;
+  // Riot only: development keys expire 24 hours after they're made.
+  expires_at?: string | null;
+};
+export type KeyName = "riot" | "anthropic";
+
+// Only our own page sends this header; the API refuses settings requests without it.
+const SETTINGS = { "X-LoLCoach-Settings": "1" };
+
 /** A query string; parameters left null or undefined are left out. */
 function query(params: Record<string, string | null | undefined>): string {
   const kept = Object.entries(params).filter((e): e is [string, string] => e[1] != null);
@@ -191,9 +215,10 @@ const JSON_POST = { method: "POST", headers: { "Content-Type": "application/json
 // `player` is a PUUID from api.players(); null asks about the owner.
 export const api = {
   coachStatus: () => get<{ available: boolean }>("/coach/status"),
-  /** A paid call: one question to the coach, about one player. */
-  ask: (question: string, player: string | null) =>
-    get<CoachAnswer>("/coach", { ...JSON_POST, body: JSON.stringify({ question, player }) }),
+  coachModels: () => get<CoachModel[]>("/coach/models"),
+  /** One question to the coach, about one player. Paid, unless `model` is the local one. */
+  ask: (question: string, player: string | null, model: string | null) =>
+    get<CoachAnswer>("/coach", { ...JSON_POST, body: JSON.stringify({ question, player, model }) }),
   players: () => get<PlayerRow[]>("/players"),
   player: (player: string | null) => get<Player>(`/player${query({ player })}`),
   coverage: (player: string | null) => get<Coverage>(`/stats/data_coverage${query({ player })}`),
@@ -205,4 +230,12 @@ export const api = {
   sync: (game_name: string, tag_line: string) =>
     get<SyncStatus>("/sync", { ...JSON_POST, body: JSON.stringify({ game_name, tag_line }) }),
   syncStatus: () => get<SyncStatus>("/sync/status"),
+  keys: () => get<Record<KeyName, KeyInfo>>("/settings/keys", { headers: SETTINGS }),
+  /** Tests the key with one cheap call; it's only saved if that works. */
+  setKey: (name: KeyName, key: string) =>
+    get<KeyInfo>(`/settings/keys/${name}`, {
+      method: "PUT",
+      headers: { ...SETTINGS, "Content-Type": "application/json" },
+      body: JSON.stringify({ key }),
+    }),
 };

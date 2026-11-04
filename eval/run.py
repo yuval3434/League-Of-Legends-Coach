@@ -27,19 +27,21 @@ from anthropic import AsyncAnthropic
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from agent.coach import CoachAnswer, ask_coach
-from agent.llm import AnthropicModel, ModelClient, Usage
+from agent.llm import LOCAL_PREFIX, LocalModelError, ModelClient, Usage, create_model
 from agent.tools import ToolContext
 from benchmarks.models import create_benchmark_engine
 from ingestion.players import load_player
 from eval.calibration import load_examples, load_tool_outputs
 from eval.cases import CASES, Case
 from eval.checks import number_words, run_code_check
-from agent.pricing import PRICES, cost
+from agent.pricing import PRICES, cost, price_of
 from eval.judge import JUDGE_MODEL, format_tool_outputs, grade
 from ingestion.config import Settings
 
 RESULTS = Path(__file__).parent / "results"
 CASE_TIMEOUT_S = 300
+# A small local model on a 4 GB GPU re-reads every tool result each step, slowly.
+LOCAL_CASE_TIMEOUT_S = 1800
 
 # For the estimate: what the first two real questions cost on Opus 5.5.
 MEASURED_OPUS_COST = {"narrow": 0.084, "broad": 0.142}
@@ -90,11 +92,12 @@ async def run_case(
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Return (row, None) for a graded answer, or (None, error) for a failed attempt."""
     started = time.monotonic()
+    limit = LOCAL_CASE_TIMEOUT_S if model_id == "local" else CASE_TIMEOUT_S
     try:
-        answer = await asyncio.wait_for(ask_coach(model, context, case.question), CASE_TIMEOUT_S)
+        answer = await asyncio.wait_for(ask_coach(model, context, case.question), limit)
     except TimeoutError:
-        return None, _error(case.id, rep, "timeout", f"over {CASE_TIMEOUT_S} s")
-    except anthropic.APIError as error:
+        return None, _error(case.id, rep, "timeout", f"over {limit} s")
+    except (anthropic.APIError, LocalModelError) as error:
         return None, _error(case.id, rep, "api_error", repr(error))
 
     row: dict[str, Any] = {
@@ -113,7 +116,12 @@ async def run_case(
         "seconds": round(time.monotonic() - started, 1),
         "checks": {},
     }
-    if set(answer.models) - {model_id}:
+    # A local model answers as "ollama:<name>"; any other model must be the one asked for.
+    if model_id == "local":
+        mismatch = not all(m.startswith(LOCAL_PREFIX) for m in answer.models)
+    else:
+        mismatch = bool(set(answer.models) - {model_id})
+    if mismatch:
         return None, _error(case.id, rep, "served_model_mismatch", str(answer.models), row=row)
     if answer.status not in ("verified", "unverified"):
         # Refused, cut off or abandoned: counted as its own outcome, not graded.
@@ -269,7 +277,7 @@ def estimate(models: list[str], cases: list[Case], reps: int, calibration_reps: 
         return (read + write + calls * JUDGE_OUTPUT_TOKENS[bound] * haiku["output"]) / 1e6
 
     for model in models:
-        ratio = PRICES[model]["output"] / PRICES["claude-opus-5-5"]["output"]
+        ratio = price_of(model)["output"] / PRICES["claude-opus-5-5"]["output"]
         base = sum(
             MEASURED_OPUS_COST["broad" if case.id in BROAD_CASES else "narrow"] for case in cases
         ) * reps * ratio
@@ -329,8 +337,10 @@ async def main() -> int:
             print("No owner synced yet: run POST /sync first.")
             return 1
         context = ToolContext(sessions, benchmark, (owner.puuid,), owner)
-        model = AnthropicModel(client, model_id, settings.coach_effort)
-        out = RESULTS / f"{stamp}-live-{model_id}"
+        model = create_model(settings, model_id)
+        # Windows paths can't hold the ":" in a local model's name, such as qwen3:4b.
+        name = f"local-{settings.local_model}" if model_id == "local" else model_id
+        out = RESULTS / f"{stamp}-live-{name.replace(':', '-')}"
         out.mkdir(parents=True)
         summary = await live(model, model_id, context, client, args.judge_model, cases, args.reps, out)
     (out / "summary.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")

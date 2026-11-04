@@ -7,12 +7,15 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { api, type CoachAnswer } from "../api";
+import { api, type CoachAnswer, type CoachModel } from "../api";
 import { CHECK, costWords, restsOnFewGames, sampleWords, toolLabel } from "../coach";
 import { Layout } from "../components/Layout";
+import { ModelPicker } from "../components/ModelPicker";
 import { Marker } from "../components/Verdict";
 import { useChampionNames } from "../ddragon";
+import { costWords as estimateWords, MODEL_STORE, pickModel } from "../models";
 import { usePlayer } from "../player";
+import { href } from "../router";
 import { type Subject, subjectOf, YOU, whose } from "../subject";
 
 type Exchange = {
@@ -189,8 +192,25 @@ function Waiting({ question }: { question: string }) {
   );
 }
 
+function remembered(): string | null {
+  try {
+    return localStorage.getItem(MODEL_STORE);
+  } catch {
+    return null;
+  }
+}
+
+function remember(id: string) {
+  try {
+    localStorage.setItem(MODEL_STORE, id);
+  } catch {
+    /* storage blocked: the choice lasts for this visit */
+  }
+}
+
 export function Coach({ question: carried }: { question: string }) {
-  const [available, setAvailable] = useState<boolean | null>(null);
+  const [models, setModels] = useState<CoachModel[] | null>(null);
+  const [modelId, setModelId] = useState<string | null>(null);
   const [draft, setDraft] = useState(carried);
   const [thread, setThread] = useState<Exchange[]>(loadThread);
   const [pending, setPending] = useState<string | null>(null);
@@ -200,8 +220,23 @@ export function Coach({ question: carried }: { question: string }) {
   const about = player && !player.is_owner ? `${player.game_name}#${player.tag_line}` : undefined;
 
   useEffect(() => {
-    api.coachStatus().then((s) => setAvailable(s.available)).catch(() => setAvailable(false));
+    api
+      .coachModels()
+      .then((list) => {
+        setModels(list);
+        setModelId(pickModel(list, remembered()));
+      })
+      .catch(() => setModels([]));
   }, []);
+
+  const chosen = models?.find((m) => m.id === modelId) ?? null;
+  const available = models === null ? null : Boolean(chosen?.available);
+  const anyReady = models?.some((m) => m.available) ?? true;
+
+  function choose(id: string) {
+    setModelId(id);
+    remember(id);
+  }
 
   // A question carried from another page fills the box; it's never sent for you.
   useEffect(() => {
@@ -221,7 +256,7 @@ export function Coach({ question: carried }: { question: string }) {
     const started = performance.now();
     try {
       // The server picks the player from this PUUID; the model never sees one.
-      const answer = await api.ask(question, puuid);
+      const answer = await api.ask(question, puuid, modelId);
       const seconds = Math.round((performance.now() - started) / 1000);
       setThread((t) => [...t, { question, about, answer, seconds }]);
     } catch (e) {
@@ -245,13 +280,15 @@ export function Coach({ question: carried }: { question: string }) {
         </p>
       </div>
 
-      {available === false && (
+      {!anyReady && (
         <div className="mt-8 max-w-[720px] border-l-2 border-accent pl-4 text-[15px] text-ink2">
-          <p className="text-ink">Asking the coach needs an Anthropic API key.</p>
+          <p className="text-ink">No model can answer right now.</p>
           <p className="mt-1">
-            Set <code className="font-mono text-[13px] text-ink">ANTHROPIC_API_KEY</code> in{" "}
-            <code className="font-mono text-[13px] text-ink">.env</code> and restart the API. The other pages work
-            without one.
+            Claude models need an Anthropic API key, which you can add in{" "}
+            <a href={href("settings")} className="text-ink underline decoration-rule underline-offset-4">
+              Settings
+            </a>
+            . The local model needs Ollama running on this computer. The other pages work without either.
           </p>
         </div>
       )}
@@ -285,7 +322,11 @@ export function Coach({ question: carried }: { question: string }) {
         />
         <div className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
           <p className="text-[13px] text-ink3">
-            Each question is a paid call, usually a few cents to about $0.30. Ctrl+Enter sends.
+            {chosen?.estimated_cost_usd === 0
+              ? "Runs on this computer: free, but several minutes per answer and less reliable. Ctrl+Enter sends."
+              : chosen
+                ? `A paid call, ${estimateWords(chosen)}. Ctrl+Enter sends.`
+                : "Ctrl+Enter sends."}
           </p>
           <button
             onClick={ask}
@@ -295,6 +336,9 @@ export function Coach({ question: carried }: { question: string }) {
             {pending ? "Asking…" : "Ask the coach"}
           </button>
         </div>
+        {models && models.length > 0 && (
+          <ModelPicker models={models} value={modelId} onChange={choose} disabled={pending !== null} />
+        )}
         {thread.length === 0 && !pending && (
           <div className="mt-8">
             <div className="smallcaps text-ink3">Or start from one of these</div>
