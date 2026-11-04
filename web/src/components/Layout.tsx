@@ -18,14 +18,14 @@ export function Layout({ active, children }: { active: Page; children: ReactNode
   return (
     <div className="min-h-screen">
       <HatchDefs />
-      <div className="mx-auto max-w-[1200px] px-8 lg:px-12">
-        <header className="flex items-baseline justify-between border-b border-rule py-5">
+      <div className="mx-auto max-w-[1200px] px-4 sm:px-8 lg:px-12">
+        <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-3 border-b border-rule py-5">
           <div className="flex items-baseline gap-3">
             <a href={href("overview")} className="display text-[22px] leading-none">LoL Coach</a>
             <span className="smallcaps text-ink3">Scouting report</span>
           </div>
-          <div className="flex items-baseline gap-7">
-            <nav className="flex gap-7 text-[14px]">
+          <div className="flex flex-wrap items-baseline gap-x-5 gap-y-3 sm:gap-x-7">
+            <nav className="flex gap-5 text-[14px] sm:gap-7">
               {PAGES.map((page) => (
                 <a
                   key={page.id}
