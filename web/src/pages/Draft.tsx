@@ -113,7 +113,7 @@ function Results({ result, name }: { result: DraftBoard; name: (id: string) => s
               <li key={gap.gap} className="border-t border-rule pt-3">
                 <div className="text-[16px] text-ink">{GAP_NAMES[gap.gap]}</div>
                 {/* The description repeats the gap's name before a colon; show only the rule. */}
-                <p className="mt-1 text-[13px] text-ink3">{gap.description.replace(/^[^:]*:\s*/, "")}</p>
+                <p className="mt-1 text-[13px] text-ink3">{gap.description.replace(/^[^:]*:\s*(\w)/, (_, first: string) => first.toUpperCase())}</p>
                 <p className="mt-2 text-[14px] text-ink2">
                   {gap.filled_by.length
                     ? `Your champions that add it: ${gap.filled_by.map(name).join(", ")}.`

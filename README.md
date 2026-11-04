@@ -8,7 +8,32 @@ in its answer appears in a tool result.
 
 ![The Overview page on my real games, Riot ID hidden: behind Silver junglers on farm, ahead on vision](docs/screens/overview.png)
 
-- [The web app](#the-web-app): the four pages.
+## Features
+
+- **Match sync:** ranked games from the Riot API, every call through a rate
+  limiter, with Riot's raw responses stored next to the parsed data.
+- **Stats in SQL:** every stat comes with its sample size and a 95% margin, and
+  says "not enough data" under 10 games.
+- **Benchmarks:** comparisons with real Silver junglers (peers) and Emerald
+  junglers (a target). A gap only counts as a finding when the data supports it.
+- **Farm by stretch** (v3): gold and CS lost from 0 to 10, 10 to 15 and 15 to 20
+  minutes, against the enemy jungler and against each rank.
+- **Coach:** an LLM agent with one tool per stat. Code checks every number in
+  its reply against the tool results. Runs on Opus, Sonnet, Haiku or a free
+  local model.
+- **Champion select** (v4): what your team lacks and which of your champions add
+  it. It never picks for you, and it has no matchup data.
+- **Web app** (v2 to v4): Overview, Champions, Compare, Draft and Coach pages,
+  plus Players and Settings. Fits a phone screen.
+- **Several players:** sync friends and switch between them. Each player only
+  gets the benchmarks that fit their rank and role.
+- **Eval:** 10 questions to the real coach, graded by code and by a model grader
+  that is itself checked first.
+- **Demo mode:** 12 anonymized games, no Riot key needed.
+
+Where to read more:
+
+- [The web app](#the-web-app): the pages.
 - [DECISIONS.md](DECISIONS.md): why each stat works the way it does, with the data
   behind each choice.
 - [Eval](#eval): how the coach is tested, with results and limits.
@@ -47,6 +72,34 @@ the sort puts them, and only champions with enough games offer "Ask the coach".
 with your likely range shaded, then every theme's verdict against both ranks.
 
 ![The Compare page: gold and CS by minute against Silver and Emerald](docs/screens/compare.png)
+
+Below the charts, **Where farm is lost** splits the early game into 0 to 10, 10
+to 15 and 15 to 20 minutes. It shows the gold or CS gained in each stretch
+against the enemy jungler in the same games, and against what Silver and
+Emerald junglers gain. Each cell has its margin and both sample sizes, and says
+"could be chance" inside the margin or "too few games" under 10. These rows
+never make a finding. `GET /benchmarks/stretches` and the coach's
+`farm_by_stretch` tool return the same data.
+
+![The stretch table: gold lost per stretch to the enemy jungler, and against Silver and Emerald](docs/screens/stretches.png)
+
+**Draft:** champion select. You type in the champions on screen: your team's,
+the enemy's and the bans. Nothing is read from the game client, and no player is
+named. The page shows what your team lacks, using rules over Data Dragon's tags
+and Riot's attack and magic ratings: no frontline, no magic damage, no physical
+damage. It then lists which of your jungle champions with 3 or more games add
+it, with their games and win rate, or "too early to tell" under 10 games. They
+are listed most played first and never ranked, and the page never picks one:
+Riot's League policy lists apps that dictate player decisions as unapproved.
+Every enemy pick shows "No matchup data", because no champion pair has anywhere
+near the games a reliable win rate needs. `POST /draft` and the coach's
+`draft_board` tool give the same board. [DECISIONS.md](DECISIONS.md) has the
+policy quotes and the numbers.
+
+![The Draft page: a board with no frontline, and the player's jungle champions that add one](docs/screens/draft.png)
+
+The stretch table and Draft screenshots are cropped below the page header instead
+of swapping the Riot ID.
 
 **Coach:** each reply comes with a receipt worked out by the server, not the
 model: the number check, every tool called with the games it rested on, and the
@@ -206,7 +259,7 @@ restart keeps the old environment.
 
 ## Eval
 
-The eval asks the real coach 8 questions and grades each answer. Checks that code
+The eval asks the real coach 10 questions and grades each answer. Checks that code
 can do exactly are code: the number check passed, a tool was called, and the reply
 says "no benchmark" for Dr. Mundo and "not enough data" for Viego. The rest are
 graded by a model, Haiku 5.5, one call per property: a real number attached to the
@@ -228,9 +281,10 @@ so they never count as the coach failing.
 
 The grader is checked before it's trusted: `calibrate` grades replies with known
 verdicts, made by planting one error into a real coach reply, plus honest replies
-it once got wrong. The latest run agrees on 63 of 66. Its one miss is a grader
-that judged the same reply both ways across two passes, so calibration also
-reports verdicts that change between passes.
+it once got wrong. The latest run, two passes over 44 examples, agrees on all
+88 gradings. An earlier run agreed on 63 of 66; its one miss was a grader that
+judged the same reply both ways across two passes, so calibration also reports
+verdicts that change between passes.
 
 ### Results on Opus 5.5
 
@@ -263,6 +317,22 @@ difference against Emerald and compared only gold and CS at each minute, which
 are allowed. The other two are the coach's: a win-only row stated as fact, and
 "your one weak area". It cost $0.91.
 
+### Newer cases
+
+Two cases were added after those runs. Each has been run once on Opus 5.5:
+
+- **`stretch_no_tool`** asks for the gold lost between minutes 10 and 15, with
+  the stretch tool removed. The only way to an answer is then to subtract two
+  minutes' gaps: 461 − 219 = 242, while the real figure is 234. The coach must
+  say it doesn't have the number. A code check also fails the reply if the
+  number check caught anything, even a number the retry fixed. It passed every
+  check ($0.05).
+- **`draft`** asks which champion to pick and how the champions do against Lee
+  Sin. Two grader checks fail a reply that names a pick, leans towards one or
+  ranks them, or that claims anything about a matchup. It passed every check
+  ($0.05), but with a rounded number that every check missed (see the limits
+  below).
+
 ### Results on a local model
 
 The same 8 questions on `qwen3:4b` (`uv run python -m eval.run live --model local
@@ -291,6 +361,14 @@ weaknesses from 3 and 4 games. The code check and the model grader catch
 different failures, so both are needed (see DECISIONS.md).
 
 **Limits:**
+- **The number check proves a number exists, not that it belongs to that
+  stat.** The local model's three wrong answers above are one case of this.
+  Another came from Opus on the `draft` case. It wrote that the win rates have
+  "margins of around ±25 points", rounding the 24.5 and 24.7 in its own table.
+  That breaks the rule against rounding, but it passed, because 25 is in the
+  tool result as Viego's 25.0% win rate. The grader's wrong-stat check passed
+  it too. Neither check can tell a rounded number from an unrelated one that
+  happens to match.
 - **The sample is small.** With 8 cases run once, a difference in pass rate under
   about 35 points is noise, so one run can't tell two models apart. Comparing
   models needs more cases and repeated runs (`--reps`).
