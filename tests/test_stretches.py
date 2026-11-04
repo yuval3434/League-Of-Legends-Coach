@@ -1,7 +1,7 @@
 """Gold and CS by stretch: lost to the enemy jungler, and against each cohort."""
 
 from fastapi.testclient import TestClient
-from test_analytics import ME, add_frames, add_game, session  # noqa: F401
+from test_analytics import ME, add_frames, add_game
 from test_benchmarks import SILVER, add_sampled_game, benchmark_sessions, fill_cohort  # noqa: F401
 from test_players import FRIEND, two_players
 

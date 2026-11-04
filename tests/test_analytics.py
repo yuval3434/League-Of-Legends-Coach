@@ -212,12 +212,6 @@ def find(rows, **fields):
     return matches[0]
 
 
-@pytest.fixture
-async def session(sessions):
-    async with sessions() as session:
-        yield session
-
-
 @pytest.mark.parametrize(
     "stat", ALL_STATS
 )

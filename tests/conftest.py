@@ -53,3 +53,9 @@ async def sessions(test_settings):
         await connection.run_sync(Base.metadata.create_all)
     yield async_sessionmaker(engine, expire_on_commit=False)
     await engine.dispose()
+
+
+@pytest.fixture
+async def session(sessions):
+    async with sessions() as session:
+        yield session
