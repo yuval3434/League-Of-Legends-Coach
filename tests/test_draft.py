@@ -72,6 +72,18 @@ def test_gap_rules():
     assert missing("Ezreal", "Garen") == []
 
 
+def test_a_champion_adds_a_piece_only_if_the_rule_then_holds():
+    frontline = GAPS[0]
+    no_fighters = [CHAMPIONS["Jinx"], CHAMPIONS["Ahri"]]
+    # A lone Fighter is still no frontline; a Tank is one.
+    assert not frontline.added_by(no_fighters, CHAMPIONS["Viego"])
+    assert frontline.added_by(no_fighters, CHAMPIONS["Nunu"])
+    # A second Fighter makes one.
+    assert frontline.added_by([CHAMPIONS["Jinx"], CHAMPIONS["Diana"]], CHAMPIONS["Viego"])
+    # Nothing adds what the team already has.
+    assert not frontline.added_by([CHAMPIONS["Garen"]], CHAMPIONS["Nunu"])
+
+
 def test_names_resolve_by_id_or_display_name():
     found = resolve(["wukong", "MonkeyKing", "nunu & willump", "Nunu"], CHAMPIONS)
     assert [c.champion for c in found] == ["MonkeyKing", "MonkeyKing", "Nunu", "Nunu"]
@@ -114,14 +126,15 @@ async def test_board_shows_gaps_from_the_pool_without_ranking(session):
     assert [p["champion"] for p in board["pool"]] == ["Viego", "Garen", "Nunu"]
     viego = board["pool"][0]
     assert (viego["games"], viego["wins"], viego["low_sample"]) == (4, 2, True)
-    assert viego["fills"] == ["no_frontline"]
+    # Jinx and Ahri have no Fighter, so Viego alone isn't a frontline.
+    assert viego["fills"] == []
     assert board["pool"][1]["unavailable"] == "banned"
     assert "fills" not in board["pool"][1]
     assert board["gaps"] == [
         {
             "gap": "no_frontline",
             "description": GAPS[0].description,
-            "filled_by": ["Viego", "Nunu"],
+            "filled_by": ["Nunu"],
         }
     ]
     assert board["enemy_team"][0]["champion"] == "MonkeyKing"
@@ -129,6 +142,18 @@ async def test_board_shows_gaps_from_the_pool_without_ranking(session):
     assert board["matchups"] == NO_MATCHUP_DATA
     # Shown, never chosen: no field ranks or names a best champion.
     assert not {"best", "recommended", "score", "rank"} & (set(board) | set(viego))
+
+
+async def test_match_data_names_match_data_dragon_whatever_the_case(session):
+    champions = CHAMPIONS | {"Fiddlesticks": champ("Fiddlesticks", ["Mage", "Support"], 2, 9)}
+    await play(session, "FiddleSticks", 3)  # how match data spells it
+    board = await draft_board(session, [ME], champions, ["Jinx"], [], [])
+    entry = board["pool"][0]
+    assert (entry["champion"], entry["tags"], entry["fills"]) == (
+        "Fiddlesticks", ["Mage", "Support"], ["no_magic_damage"],
+    )
+    banned = await draft_board(session, [ME], champions, ["Jinx"], [], ["Fiddlesticks"])
+    assert banned["pool"][0]["unavailable"] == "banned"
 
 
 async def test_no_gaps_before_the_team_picks(session):

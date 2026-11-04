@@ -50,10 +50,12 @@ class Gap:
     description: str
 
     def missing(self, team: list[Champion]) -> bool:
-        return not RULES[self.id][0](team)
+        return not RULES[self.id](team)
 
-    def filled_by(self, champion: Champion) -> bool:
-        return RULES[self.id][1](champion)
+    def added_by(self, team: list[Champion], champion: Champion) -> bool:
+        """The team lacks it, and has it with this champion: the rule decides, so a
+        lone Fighter only adds a frontline to a team that already has a Fighter."""
+        return self.missing(team) and not self.missing([*team, champion])
 
 
 def _has_frontline(team: list[Champion]) -> bool:
@@ -68,14 +70,11 @@ def _deals(kind: str):
     return check
 
 
-# Each rule: (does the team have it?, does this champion add it?).
+# Each rule: does the team have it?
 RULES = {
-    "no_frontline": (_has_frontline, lambda c: "Tank" in c.tags or "Fighter" in c.tags),
-    "no_magic_damage": (_deals("magic"), lambda c: damage_type(c) in ("magic", "mixed")),
-    "no_physical_damage": (
-        _deals("physical"),
-        lambda c: damage_type(c) in ("physical", "mixed"),
-    ),
+    "no_frontline": _has_frontline,
+    "no_magic_damage": _deals("magic"),
+    "no_physical_damage": _deals("physical"),
 }
 GAPS = (
     Gap("no_frontline", "No frontline: no Tank, and fewer than two Fighters."),
@@ -155,12 +154,14 @@ async def draft_board(
         c.champion: "banned" for c in banned
     }
 
+    by_id = {key.lower(): champion for key, champion in champions.items()}
     rows = await champion_stats(session, Scope(puuids=tuple(puuids), role="JUNGLE"))
     pool = []
     for row in rows:
         if row["games"] < MIN_POOL_GAMES:
             continue
-        static = champions.get(row["champion"])
+        # Match data and Data Dragon don't always agree on case (FiddleSticks).
+        static = by_id.get(row["champion"].lower())
         entry = {
             "champion": row["champion"],
             "games": row["games"],
@@ -170,11 +171,12 @@ async def draft_board(
             "low_sample": row["low_sample"],
         }
         if static:
+            # Data Dragon's id from here on: picks and bans use it, and so do icons.
             entry |= _describe(static)
-        if row["champion"] in taken:
-            entry["unavailable"] = taken[row["champion"]]
+        if entry["champion"] in taken:
+            entry["unavailable"] = taken[entry["champion"]]
         elif static:
-            entry["fills"] = [gap.id for gap in gaps if gap.filled_by(static)]
+            entry["fills"] = [gap.id for gap in gaps if gap.added_by(team, static)]
         pool.append(entry)
 
     notes = [

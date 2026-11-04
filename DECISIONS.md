@@ -506,7 +506,9 @@ mostly measures team compositions, not a matchup.
 are rules in `analytics/draft.py` over Data Dragon's tags and Riot's 0-10
 attack and magic ratings, not stats from games. Damage type is the higher of
 the two ratings, and a tie counts as both. A frontline is a Tank, or two
-Fighters.
+Fighters. A champion adds a missing piece only if the team has it once the
+champion is added, so a lone Fighter doesn't add a frontline to a team with no
+other Fighter. (v4 listed any Fighter, which was a bug.)
 
 **Why ratings:** tags alone can't say which damage a champion deals, and a
 table of our own would be our judgement, updated by hand. **Cost:** some
