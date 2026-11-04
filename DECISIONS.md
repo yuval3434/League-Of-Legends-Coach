@@ -522,3 +522,40 @@ played first. Under 10 games the win rate reads "too early to tell".
 rate limit, so its requests don't go through the rate limiter. The app stores
 the latest champion.json at startup, raw next to the parsed rows, once per
 version. The coach's tool only reads what's stored.
+
+## No post-game draft review
+
+**Decision:** the Matches page shows each game's champions and stats, but no
+review of the draft. A review would have shown, for each game, what the team
+lacked by the Draft page's rules, whether my pick added it, and the evidence
+across many games. It wasn't built because the evidence shows no clear effect,
+and my own record leaves almost nothing to review.
+
+**The evidence, counted on 2026-11-04:** the same rules over all 1,271
+benchmark games, so 2,542 teams, each judged on its final five champions:
+
+| Missing piece | Teams missing it | Teams that had it |
+|---|---|---|
+| No frontline | won 48.4% ± 6.2 of 252 | won 50.2% ± 2.0 of 2,290 |
+| No magic damage | 30 teams, with margins of about ±25 points | the rest |
+| No physical damage | none | all |
+
+Teams without a frontline won 1.8 points less, well inside a margin of about
+6.5 on the difference, so this sample can't tell whether lacking a frontline
+matters. Seeing a 3-point difference would need about 1,100 teams without a
+frontline, about 5,800 matches: 4½ times what's stored. Magic damage has too
+few teams for any comparison, and no team ever lacked physical damage. Even
+with enough games it would be a correlation, since teams without a frontline
+differ in other ways too.
+
+**My own record:** in 23 of my 85 jungle games, my four teammates had no
+frontline. My pick added it in 20 of them (8 wins) and didn't in 3 (1 win).
+Three games is too early to tell anything, so there's no comparison to make.
+My teammates lacked magic damage in 2 games, and I added it both times.
+
+So a review would mostly say "inside the margin", about a gap I already fill.
+
+**What would change this:** a benchmark pull large enough for the frontline
+margin to come down to about 3 points. Win rates by composition need only the
+match call, not the timeline, so this is cheaper than a full pull, but still
+hours of rate-limited calls.

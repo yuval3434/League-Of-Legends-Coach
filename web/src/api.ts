@@ -246,6 +246,44 @@ function query(params: Record<string, string | null | undefined>): string {
 
 const JSON_POST = { method: "POST", headers: { "Content-Type": "application/json" } };
 
+/** One of the player's games, for the Matches list. */
+export type MatchRow = {
+  match_id: string;
+  game_start_at: string;
+  duration_s: number;
+  patch: string;
+  queue_id: number;
+  is_remake: boolean;
+  champion: string;
+  role: string;
+  win: boolean;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+};
+
+/** One player in a game: champion, role and stats, never a name. */
+export type MatchPlayer = {
+  side: "ally" | "enemy";
+  is_me: boolean;
+  role: string;
+  champion: string;
+  win: boolean;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  cs_per_min: number;
+  gold_earned: number;
+  damage_to_champions: number;
+  vision_score: number;
+};
+
+export type MatchDetail = Omit<MatchRow, "champion" | "role" | "win" | "kills" | "deaths" | "assists" | "cs"> & {
+  players: MatchPlayer[];
+};
+
 /** A champion from Data Dragon, for the champion-select picker. */
 export type DraftChampion = { champion: string; name: string; tags: string[] };
 
@@ -302,6 +340,10 @@ export const api = {
   compare: (cohort: "silver" | "emerald", player: string | null) =>
     get<Comparison>(`/benchmarks/compare${query({ cohort, player })}`),
   stretches: (player: string | null) => get<Stretches>(`/benchmarks/stretches${query({ player })}`),
+  matches: (player: string | null, offset = 0) =>
+    get<{ matches: MatchRow[]; total: number }>(`/matches${query({ player, offset: String(offset) })}`),
+  match: (id: string, player: string | null) =>
+    get<MatchDetail>(`/matches/${encodeURIComponent(id)}${query({ player })}`),
   draftChampions: () => get<{ version: string; champions: DraftChampion[] }>("/draft/champions"),
   /** The champion-select board for what's on screen. Free: no model call. */
   draft: (board: Board, player: string | null) =>

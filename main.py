@@ -21,6 +21,7 @@ from agent.models import BY_ID, CHOICES, estimated_cost
 from agent.pricing import answer_cost
 from agent.samples import summarize
 from agent.tools import TOOLS, ToolContext, run_tool
+from analytics.matches import match_detail, recent_matches
 from benchmarks.cohorts import COHORTS, why_no_benchmark
 from benchmarks.compare import compare
 from benchmarks.models import create_benchmark_engine
@@ -390,6 +391,30 @@ def create_app(
         if choice not in models:
             models[choice] = create_model(settings, choice)
         return models[choice]
+
+    @app.get("/matches")
+    async def matches(
+        request: Request,
+        player: str | None = Query(default=None),
+        limit: int = Query(default=20, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        """A player's games, newest first."""
+        chosen = await selected(request, player)
+        async with request.app.state.sessions() as session:
+            return await recent_matches(session, chosen.puuid, limit, offset)
+
+    @app.get("/matches/{match_id}")
+    async def match(
+        request: Request, match_id: str, player: str | None = Query(default=None)
+    ) -> dict[str, Any]:
+        """One of the player's games, with both teams' champions and stats."""
+        chosen = await selected(request, player)
+        async with request.app.state.sessions() as session:
+            found = await match_detail(session, chosen.puuid, match_id)
+        if found is None:
+            raise HTTPException(404, "This player has no game with that ID")
+        return found
 
     @app.get("/draft/champions")
     async def draft_champions(request: Request) -> dict[str, Any]:
