@@ -27,7 +27,10 @@ jobs:
       # tsc -b, then vite build: the real type check.
       - run: npm run build
       # The summary line becomes a notice on the run page, readable without signing in.
-      - run: |
+      - env:
+          # Vitest colours its output on Actions, which splits the summary line.
+          NO_COLOR: "1"
+        run: |
           set -o pipefail
           npm test 2>&1 | tee vitest.log
           echo "::notice title=Frontend tests::$(grep -E 'Tests +[0-9]' vitest.log)"
