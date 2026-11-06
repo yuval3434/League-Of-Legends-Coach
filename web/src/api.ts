@@ -184,6 +184,29 @@ export type PullStatus = {
 
 export type Offers = { roles: RoleOffer[]; pull: PullStatus };
 
+export type OwnSide = { value: number | null; margin: number | null; sample: number; low_sample: boolean };
+
+/** One measure over all the player's games in a role, and over wins and losses apart. */
+export type OwnRow = {
+  metric: string;
+  theme: string | null;
+  higher_is_better: boolean;
+  value: string;
+  minute?: number;
+  phase?: string;
+  objective?: string;
+  sample_unit: string;
+  all: OwnSide;
+  wins: OwnSide;
+  losses: OwnSide;
+  difference: number | null;
+  difference_margin: number | null;
+  clear_gap: boolean | null;
+  context_only?: boolean;
+};
+
+export type OwnNumbers = { role: Role; games: number; rows: OwnRow[]; notes: string[] };
+
 /** A row of the player switcher. */
 export type PlayerRow = Omit<Player, "rank_checked"> & {
   games: number;
@@ -494,6 +517,8 @@ export const api = {
   pull: (cohort: string, player: string | null, more: boolean) =>
     get<PullStatus>("/benchmarks/pull", { ...JSON_POST, body: JSON.stringify({ cohort, player, more }) }),
   pullStatus: () => get<PullStatus>("/benchmarks/status"),
+  /** A player's own numbers in one role, for when no benchmark fits. Free. */
+  own: (role: Role, player: string | null) => get<OwnNumbers>(`/own${query({ role, player })}`),
   keys: () => get<Record<KeyName, KeyInfo>>("/settings/keys", { headers: SETTINGS }),
   /** Tests the key with one cheap call; it's only saved if that works. */
   setKey: (name: KeyName, key: string) =>

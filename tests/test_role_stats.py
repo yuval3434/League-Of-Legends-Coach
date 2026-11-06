@@ -131,3 +131,60 @@ async def test_a_supports_farm_is_context_only(sessions, benchmark_sessions):  #
     economy = next(t for t in result["themes"] if t["theme"] == "economy")
     assert economy["status"] == "context_only"
     assert any("support item" in note for note in result["notes"])
+
+
+# A player's own numbers, when no benchmark fits
+
+
+async def test_a_scope_can_keep_only_wins_or_losses(session):
+    from analytics.stats import Scope, overall_cs_per_minute
+
+    await add_game(session, "EUW1_1", role="MIDDLE", win=True, lane_cs=300)
+    await add_game(session, "EUW1_2", role="MIDDLE", win=False, lane_cs=150)
+
+    wins = await overall_cs_per_minute(session, Scope(puuids=(ME,), role="MIDDLE", win=True))
+    losses = await overall_cs_per_minute(session, Scope(puuids=(ME,), role="MIDDLE", win=False))
+
+    assert (wins[0]["avg_cs_per_min"], losses[0]["avg_cs_per_min"]) == (10, 5)
+
+
+async def test_own_numbers_split_wins_and_losses_and_judge_only_10_a_side(session):
+    from benchmarks.own import own_numbers
+
+    for n in range(20):
+        await add_game(session, f"EUW1_{n}", role="MIDDLE", win=n < 10, lane_cs=300 if n < 10 else 150 + n)
+
+    result = await own_numbers(session, [ME], "MIDDLE")
+    cs = next(r for r in result["rows"] if r["value"] == "avg_cs_per_min")
+
+    assert (cs["all"]["sample"], cs["wins"]["sample"], cs["losses"]["sample"]) == (20, 10, 10)
+    assert cs["wins"]["value"] == 10 and cs["clear_gap"] is True
+    assert "win_rate" not in {r["metric"] for r in result["rows"]}
+
+
+async def test_nine_games_a_side_gets_no_verdict(session):
+    from benchmarks.own import own_numbers
+
+    for n in range(19):
+        await add_game(session, f"EUW1_{n}", role="MIDDLE", win=n < 10, lane_cs=300 if n < 10 else 150 + n)
+
+    cs = next(r for r in (await own_numbers(session, [ME], "MIDDLE"))["rows"] if r["value"] == "avg_cs_per_min")
+
+    assert cs["losses"]["low_sample"] is True and cs["clear_gap"] is None
+
+
+async def test_own_numbers_default_to_the_main_role(sessions, test_settings):
+    from fastapi.testclient import TestClient
+    from test_benchmarks import gold_mid_owner
+
+    from main import create_app
+
+    await gold_mid_owner(sessions)
+    with TestClient(create_app(test_settings)) as client:
+        main_role = client.get("/own").json()
+        jungle = client.get("/own", params={"role": "JUNGLE"}).json()
+        wrong = client.get("/own", params={"role": "SUPPORT"})
+
+    assert (main_role["role"], main_role["games"]) == ("MIDDLE", 12)
+    assert (jungle["role"], jungle["games"]) == ("JUNGLE", 10)
+    assert wrong.status_code == 422

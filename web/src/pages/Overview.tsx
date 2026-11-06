@@ -7,6 +7,7 @@ import {
   type Comparison,
   type Coverage,
   type Offers,
+  type OwnNumbers,
   type PullStatus,
   type Role,
   type RoleOffer,
@@ -15,6 +16,7 @@ import {
 import { Layout } from "../components/Layout";
 import { MeasureCard } from "../components/MeasureCard";
 import { ProfileHeader } from "../components/ProfileHeader";
+import { OwnNumbersView } from "../components/OwnNumbersView";
 import { PullOffer, RoleTabs } from "../components/PullOffer";
 import { Marker, type State } from "../components/Verdict";
 import { headline } from "../headline";
@@ -346,6 +348,7 @@ export function Overview() {
   // undefined while loading; null when no cohort can be compared with.
   const [comparison, setComparison] = useState<Comparison | null | undefined>(undefined);
   const [status, setStatus] = useState<PullStatus>({ state: "idle" });
+  const [own, setOwn] = useState<OwnNumbers | null>(null);
   const [pullError, setPullError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -374,6 +377,15 @@ export function Overview() {
     }
     api.compare(cohort, puuid).then(setComparison).catch((e: Error) => setError(e.message));
   }, [base, cohort, puuid]);
+
+  // With no benchmark, the player's own numbers in the role take the page.
+  const noBenchmark = comparison === null || comparison?.status === "no_benchmark";
+  const ownRole = noBenchmark && offer ? offer.role : null;
+  useEffect(() => {
+    setOwn(null);
+    if (!ownRole) return;
+    api.own(ownRole, puuid).then(setOwn).catch((e: Error) => setError(e.message));
+  }, [ownRole, puuid]);
 
   // While a pull runs, check on it; when it ends, reload what can be compared.
   useEffect(() => {
@@ -425,6 +437,7 @@ export function Overview() {
         {tabs}
         <NoBenchmark offer={offer} s={s} />
         {pullOffer}
+        {own && own.role === offer?.role && <OwnNumbersView data={own} s={s} />}
       </Layout>
     );
   }

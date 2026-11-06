@@ -30,6 +30,7 @@ from benchmarks.cohorts import (
     MIN_BENCHMARK_GAMES,
     MIN_BENCHMARK_PLAYERS,
     PULLABLE_TIERS,
+    ROLES,
     TARGET_OVERALL,
     cohorts_for,
     get_cohort,
@@ -37,6 +38,7 @@ from benchmarks.cohorts import (
     why_no_benchmark,
 )
 from benchmarks.compare import compare
+from benchmarks.own import own_numbers
 from benchmarks.estimate import PULL_MORE_MATCHES, SAFETY_MULTIPLE, pull_more, to_500
 from benchmarks.models import create_benchmark_engine
 from benchmarks.pull import BATCH, pull_cohort, target_champions, tracked_puuids
@@ -516,6 +518,23 @@ def create_app(
             return status
         size = (await cohort_sizes(request)).get(status["cohort"], {})
         return status | {"checked": size.get("checked", 0), "games": size.get("games", 0)}
+
+    @app.get("/own")
+    async def own(
+        request: Request,
+        role: str | None = Query(default=None),
+        player: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        """A player's own numbers in one role, all games and wins against losses.
+        For when no benchmark fits them yet. Free: no model call."""
+        chosen = await selected(request, player)
+        role = role or chosen.main_role
+        if role not in ROLES:
+            raise HTTPException(422, "Give a role: TOP, JUNGLE, MIDDLE, BOTTOM or UTILITY")
+        async with request.app.state.sessions() as session:
+            return await own_numbers(session, [chosen.puuid], role) | {
+                "games": chosen.role_games.get(role, 0)
+            }
 
     @app.get("/benchmarks/offers")
     async def offers(request: Request, player: str | None = Query(default=None)) -> dict[str, Any]:

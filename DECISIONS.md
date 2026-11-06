@@ -764,3 +764,19 @@ verdict yet", which would suggest a verdict was coming.
 **Checked against the jungle:** every row and theme of four jungle comparisons
 (Silver and Emerald, all champions and one champion) is identical to before.
 Only the vision note's wording changed, from "a jungler" to "a player".
+
+## With no benchmark, the Overview shows the player's own numbers
+
+**Decision:** when no cohort fits a player in a role, the Overview says why,
+offers the pull, and shows the role's measures from the player's own games:
+over all games, and over wins and losses apart, each with its margin and sample
+size. Win rate isn't split, because split by result it says nothing.
+
+**Why wins against losses:** it's the only comparison that needs no one else's
+games, so it can't stand in for a benchmark or borrow another rank's. It goes
+through the same gap and margin code as a benchmark comparison, and a
+difference is only called clear with 10+ games on each side. It shows how a
+measure moves with the result, not what caused it, and the page says so.
+
+**Never a number from memory.** The page doesn't say what "a typical Gold mid
+laner" does: without a pulled cohort, there's no such number to show.

@@ -43,6 +43,8 @@ class Scope:
     role: str | None = None
     champion: str | None = None
     patches: tuple[str, ...] | None = None
+    # Only wins (True) or only losses (False).
+    win: bool | None = None
 
     def apply(self, query: str) -> tuple[str, dict[str, Any]]:
         """Swap the query's player filter for this scope's conditions."""
@@ -72,6 +74,9 @@ class Scope:
             if self.patches is not None:
                 parts.append("m.patch = ANY(:scope_patches)")
                 params["scope_patches"] = list(self.patches)
+            if self.win is not None:
+                parts.append(f"{alias}.win = :scope_win")
+                params["scope_win"] = self.win
             return " AND ".join(parts)
 
         return PLAYER_FILTER.sub(conditions, query), params
