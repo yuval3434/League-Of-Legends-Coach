@@ -7,6 +7,10 @@ import pytest
 from sqlalchemy import insert
 
 from analytics.timeline_stats import (
+    damage_share,
+    lane_plates,
+    roams,
+    solo_kills,
     farm_gained_by_stretch,
     farm_vs_opponent_by_stretch,
     deaths_before_objective,
@@ -54,6 +58,10 @@ ALL_STATS = [
     overall_cs_per_minute,
     farm_gained_by_stretch,
     farm_vs_opponent_by_stretch,
+    solo_kills,
+    lane_plates,
+    damage_share,
+    roams,
 ]
 _event_ids = count(1000)
 
@@ -87,7 +95,7 @@ def _participant(match_id, participant_id, puuid, role, win, **stats):
         "lane_cs": stats.pop("lane_cs", 0),
         "jungle_cs": stats.pop("jungle_cs", 0),
         "gold_earned": 0,
-        "damage_to_champions": 0,
+        "damage_to_champions": stats.pop("damage", 0),
         "vision_score": stats.pop("vision_score", 0),
     }
 

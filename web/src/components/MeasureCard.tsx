@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { CompareRow } from "../api";
+import type { CompareRow, Role } from "../api";
 import { barLengths } from "../bars";
 import { fmt, gapWords, metricLabel, rowDecimals, signed, unit } from "../metrics";
 import { type Subject, YOU, who, whoLower } from "../subject";
@@ -85,11 +85,13 @@ export function MeasureCard({
   state,
   cohort,
   subject = YOU,
+  role = "JUNGLE",
 }: {
   row: CompareRow;
   state: State;
   cohort: string;
   subject?: Subject;
+  role?: Role;
 }) {
   const d = rowDecimals(row);
   const suffix = unit(row.value);
@@ -100,7 +102,7 @@ export function MeasureCard({
   const bars = barLengths(row, Math.max(width - 52 - labelRoom, 0));
   return (
     <div tabIndex={0} className="group relative border-t border-rule pt-4 pb-3 outline-none">
-      <div className="text-[15px] text-ink">{metricLabel(row)}</div>
+      <div className="text-[15px] text-ink">{metricLabel(row, role)}</div>
       {bars ? (
         <div ref={ref} className="mt-3 grid grid-cols-[52px_1fr] items-center gap-y-1.5 text-[12px]">
           <span className="truncate text-ink" title={who(subject)}>
@@ -116,7 +118,11 @@ export function MeasureCard({
         </div>
       )}
       <div className="mt-3">
-        <VerdictLine state={state} words={state === "low" ? "" : gapWords(row, cohort)} />
+        {row.context_only ? (
+          <div className="text-[14px] text-ink3">Context, not judged{state === "low" ? "" : ` · ${gapWords(row, cohort)}`}</div>
+        ) : (
+          <VerdictLine state={state} words={state === "low" ? "" : gapWords(row, cohort)} />
+        )}
       </div>
       <Margins row={row} cohort={cohort} subject={subject} />
     </div>

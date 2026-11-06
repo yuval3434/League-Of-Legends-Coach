@@ -7,13 +7,21 @@ out. A sample below the floors returns no benchmark rather than a substitute.
 
 import math
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from analytics.timeline_stats import kill_participation, objective_control, wards_per_minute
+from analytics.timeline_stats import (
+    damage_share,
+    kill_participation,
+    lane_plates,
+    objective_control,
+    roams,
+    solo_kills,
+    wards_per_minute,
+)
 from analytics.stats import (
     MIN_GAMES,
     Row,
@@ -57,7 +65,7 @@ class Metric:
     context: tuple[str, ...] = ()
 
 
-ABSOLUTE_METRICS = (
+JUNGLE_ABSOLUTE = (
     Metric(
         "gold_cs_at_minute",
         gold_cs_at_minute,
@@ -108,7 +116,7 @@ ABSOLUTE_METRICS = (
 )
 
 # Measured against the opponent, so they only compare at the same opponent level.
-RELATIVE_METRICS = (
+JUNGLE_RELATIVE = (
     Metric(
         "lane_diff",
         lane_diff,
@@ -127,6 +135,78 @@ RELATIVE_METRICS = (
     ),
 )
 
+# The other roles. A metric whose values are all context is shown, never judged.
+GOLD_CS, CS_PER_MINUTE, DEATHS, KILL_PARTICIPATION, WARDS = JUNGLE_ABSOLUTE
+LANE_DIFF, WIN_RATE, _OBJECTIVE_SHARE = JUNGLE_RELATIVE
+
+
+def _context(metric: Metric) -> Metric:
+    return replace(metric, context=metric.values)
+
+
+SOLO_KILLS = Metric(
+    "solo_kills", solo_kills, (), ("avg_solo_kills", "avg_solo_kills_before_15"), theme="fights"
+)
+LANE_PLATES = Metric(
+    "lane_plates",
+    lane_plates,
+    (),
+    ("avg_lane_plates", "avg_my_plates"),
+    theme="objectives",
+    # Minions take many plates, so who last hit them is context.
+    context=("avg_my_plates",),
+)
+DAMAGE_SHARE = Metric(
+    "damage_share",
+    damage_share,
+    (),
+    ("avg_damage_share_pct", "median_damage_share_pct"),
+    theme="fights",
+)
+ROAMS = _context(Metric("roams", roams, (), ("avg_roam_takedowns",), theme="fights"))
+# A support's own wards include the support item's, so all placed wards are judged.
+SUPPORT_WARDS = Metric(
+    "wards_per_minute",
+    wards_per_minute,
+    (),
+    (
+        "avg_placed_per_min",
+        "median_placed_per_min",
+        "avg_control_placed_per_min",
+        "median_control_placed_per_min",
+        "avg_destroyed_per_min",
+        "median_destroyed_per_min",
+        "avg_support_item_placed_per_min",
+        "oracle_lens_pct",
+        "avg_vision_score_per_min",
+    ),
+    theme="vision",
+    context=("avg_support_item_placed_per_min", "oracle_lens_pct", "avg_vision_score_per_min"),
+)
+
+# Per role: (absolute metrics, compared with any rank; relative ones, peers only).
+ROLE_METRICS: dict[str, tuple[tuple[Metric, ...], tuple[Metric, ...]]] = {
+    "JUNGLE": (JUNGLE_ABSOLUTE, JUNGLE_RELATIVE),
+    "TOP": (
+        (GOLD_CS, CS_PER_MINUTE, DEATHS, KILL_PARTICIPATION, WARDS, SOLO_KILLS, LANE_PLATES,
+         _context(DAMAGE_SHARE)),
+        (LANE_DIFF, WIN_RATE),
+    ),
+    "MIDDLE": (
+        (GOLD_CS, CS_PER_MINUTE, DEATHS, KILL_PARTICIPATION, WARDS, DAMAGE_SHARE, ROAMS),
+        (LANE_DIFF, WIN_RATE),
+    ),
+    "BOTTOM": (
+        (GOLD_CS, CS_PER_MINUTE, DEATHS, _context(KILL_PARTICIPATION), WARDS, LANE_PLATES),
+        (LANE_DIFF, WIN_RATE),
+    ),
+    # Supports aren't meant to farm, so gold and CS are context.
+    "UTILITY": (
+        (_context(GOLD_CS), _context(CS_PER_MINUTE), DEATHS, KILL_PARTICIPATION, SUPPORT_WARDS),
+        (_context(LANE_DIFF), WIN_RATE),
+    ),
+}
+
 def zero_sum_note(tier: str, role: str) -> str:
     """Why same-rank win rate and gold difference say little across all champions."""
     return (
@@ -137,10 +217,22 @@ def zero_sum_note(tier: str, role: str) -> str:
 
 VISION_NOTE = (
     "Vision is judged on control wards placed and wards destroyed. Trinket wards "
-    "mostly show which trinket a jungler holds: one who swaps to Oracle Lens places "
+    "mostly show which trinket a player holds: one who swaps to Oracle Lens places "
     "few. Vision score is Riot's own number and its formula isn't public. So "
     "trinket wards, the Oracle Lens share and vision score are context only."
 )
+SUPPORT_VISION_NOTE = (
+    "A support's vision is judged on all the wards they place, the support item's "
+    "included, control wards and wards destroyed. Vision score is Riot's own "
+    "number and its formula isn't public, so it's context only."
+)
+ROLE_NOTES = {
+    "TOP": "Damage share is context: a tank top laner deals little by design.",
+    "MIDDLE": "Roams are context: kills and assists away from mid before 14:00, "
+    "which show only the roams that paid off.",
+    "BOTTOM": "Kill participation is context: a bot laner's job is to farm and survive.",
+    "UTILITY": "Gold and CS are context: supports aren't meant to farm.",
+}
 
 SAMPLE_SIZE = """
 SELECT count(*) AS games,
@@ -343,14 +435,17 @@ async def compare(
         return result
 
     result["status"] = "ok"
-    result["notes"].append(VISION_NOTE)
-    metrics = ABSOLUTE_METRICS
+    result["notes"].append(SUPPORT_VISION_NOTE if group.role == "UTILITY" else VISION_NOTE)
+    if group.role in ROLE_NOTES:
+        result["notes"].append(ROLE_NOTES[group.role])
+    absolute, relative = ROLE_METRICS[group.role]
+    metrics = absolute
     if group.relative_stats:
-        metrics += RELATIVE_METRICS
+        metrics += relative
         if champion is None:
             result["notes"].append(zero_sum_note(group.tier, group.role))
     else:
-        result["not_comparable"] = [m.name for m in RELATIVE_METRICS]
+        result["not_comparable"] = [m.name for m in relative]
         result["notes"].append(
             "Gold difference, win rate and objective share aren't compared: "
             "this cohort's opponents are a different level from the player's."

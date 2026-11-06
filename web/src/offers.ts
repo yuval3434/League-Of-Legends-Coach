@@ -57,7 +57,7 @@ export function pullPlan(c: CohortOffer): { button: string; text: string; more: 
       text:
         `It checks about ${c.to_500.matches.toLocaleString("en")} recent ranked matches for ` +
         `${c.to_500.games_needed} games of ${group}: ${duration(c.to_500.minutes)}, at the rate our ` +
-        "Silver pull measured.",
+        "last pull measured.",
       more: false,
     };
   }

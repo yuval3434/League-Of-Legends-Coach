@@ -1,8 +1,10 @@
 """How long a pull will take, from the rates our own pulls measured.
 
 Both rates come from real runs under a development key, 100 calls per 2 minutes:
-- Up to 500 games: the first Silver jungle pull, on 2026-11-01, sampled 500
-  games from 683 checked matches in 91 minutes.
+- Up to 500 games: the Gold mid pull, on 2026-11-06, the first made from the
+  Overview's offer, sampled 500 games from 653 checked matches in 29 minutes.
+  The first Silver jungle pull took 91 minutes for 683 matches, but it shared
+  the call budget with the Emerald pull running beside it.
 - Past 500, only target champions are wanted, so other players are skipped
   without a rank check: the Emerald Dr. Mundo pull, on 2026-11-06, checked
   3,584 matches in 75 minutes.
@@ -14,7 +16,7 @@ be faster, but no pull has measured it yet, so the estimate doesn't count on it.
 from benchmarks.cohorts import TARGET_OVERALL
 
 # (games sampled, matches checked, minutes) up to 500, and (matches, minutes) past it.
-TO_500_SAMPLED, TO_500_CHECKED, TO_500_MINUTES = 500, 683, 91
+TO_500_SAMPLED, TO_500_CHECKED, TO_500_MINUTES = 500, 653, 29
 PAST_500_CHECKED, PAST_500_MINUTES = 3584, 75
 
 # "Pull more" checks this many more matches, for champion benchmarks.

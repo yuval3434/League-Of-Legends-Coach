@@ -962,8 +962,8 @@ async def test_offers_list_each_role_with_its_cohorts_and_the_time_a_pull_takes(
     assert [c["cohort"] for c in jungle["cohorts"]] == ["gold_jungle", "emerald"]
     offer = mid["cohorts"][0]
     assert (offer["games"], offer["has_benchmark"], offer["why_not"], offer["why_no_pull"]) == (0, False, None, None)
-    # The measured Silver rate: 500 games from 683 matches in 91 minutes.
-    assert offer["to_500"] == {"games_needed": 500, "matches": 683, "minutes": 91}
+    # The measured Gold mid rate: 500 games from 653 matches in 29 minutes.
+    assert offer["to_500"] == {"games_needed": 500, "matches": 653, "minutes": 29}
     assert offer["pull_more"] == {"matches": 2000, "minutes": 42}
 
 
@@ -977,9 +977,9 @@ async def test_a_pull_stops_at_500_by_default_with_the_players_champions_as_targ
     assert response.status_code == 202
     assert response.json()["mode"] == "to_500"
     assert finished(client)["state"] == "done"
-    # Up to three times the 683 matches expected, in case Gold mids are rarer.
+    # Up to three times the 653 matches expected, in case a cohort turns up less often.
     assert recorded_pulls == [
-        {"cohort": "gold_middle", "max_matches": 2049, "targets": {"Ahri"}, "until_overall": True}
+        {"cohort": "gold_middle", "max_matches": 1959, "targets": {"Ahri"}, "until_overall": True}
     ]
 
 

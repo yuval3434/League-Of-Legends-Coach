@@ -26,40 +26,72 @@ import { stateOf, themeState } from "../state";
 import { subjectOf, type Subject, verb, who, whoLower, whose, Whose } from "../subject";
 import { PLAIN, PLAIN_TONE } from "../verdict";
 
-/** Who the page is about, and whom they're measured against. */
-type Words = { cohort: string; group: string; s: Subject };
+/** Who the page is about, whom they're measured against, and in which role. */
+type Words = { cohort: string; group: string; s: Subject; role: Role };
 
 type Key = { value: string; minute?: number; phase?: string };
 
-const TOPIC: Record<string, string> = {
+const TOPICS: Record<string, string> = {
   economy: "farm",
   vision: "vision",
   deaths: "deaths",
-  fights: "kill participation",
+  fights: "fights",
   objectives: "objectives",
 };
+
+/** A theme's name in a sentence. A jungler's fights are only kill participation. */
+function topicOf(theme: string, role: Role): string {
+  if (theme === "fights" && role === "JUNGLE") return "kill participation";
+  if (theme === "objectives" && role !== "JUNGLE") return "plates";
+  return TOPICS[theme] ?? theme;
+}
 
 // The few measures that tell a theme's story; the rest wait behind "Show all".
 const TELLING: Record<string, Key[]> = {
   economy: [{ value: "avg_cs_per_min" }, { value: "avg_cs", minute: 15 }, { value: "avg_gold", minute: 15 }],
-  vision: [{ value: "avg_control_placed_per_min" }, { value: "avg_destroyed_per_min" }],
+  vision: [
+    { value: "avg_placed_per_min" },
+    { value: "avg_control_placed_per_min" },
+    { value: "avg_destroyed_per_min" },
+  ],
   deaths: [
     { value: "avg_deaths", phase: "early" },
     { value: "avg_deaths", phase: "mid" },
     { value: "avg_deaths", phase: "late" },
   ],
-  fights: [{ value: "avg_kill_participation_pct" }],
+  fights: [
+    { value: "avg_kill_participation_pct" },
+    { value: "avg_solo_kills" },
+    { value: "avg_damage_share_pct" },
+    { value: "avg_roam_takedowns" },
+  ],
+  objectives: [{ value: "avg_lane_plates" }],
+};
+
+// What each fights measure says, for a finding's headline.
+const FIGHTS: Record<string, (behind: boolean, s: Subject) => string> = {
+  avg_kill_participation_pct: (behind, s) =>
+    `${verb(s, "take")} part in ${behind ? "fewer" : "more"} of ${s.you ? "your" : "their"} team's kills`,
+  avg_solo_kills: (behind, s) => `${verb(s, "get")} ${behind ? "fewer" : "more"} solo kills`,
+  avg_solo_kills_before_15: (behind, s) => `${verb(s, "get")} ${behind ? "fewer" : "more"} solo kills`,
+  avg_damage_share_pct: (behind, s) =>
+    `${verb(s, "deal")} a ${behind ? "smaller" : "bigger"} share of ${s.you ? "your" : "their"} team's damage`,
 };
 
 /** "You farm less than" / "Ana farms more than", for a theme's finding. */
-function lead(theme: string, behind: boolean, s: Subject): string | null {
+function lead(theme: string, behind: boolean, s: Subject, values: string[] = []): string | null {
+  if (theme === "fights") {
+    const parts = [...new Set(values.map((v) => FIGHTS[v]?.(behind, s)).filter((p): p is string => !!p))];
+    if (parts.length) return `${who(s)} ${parts.join(" and ")} than`;
+  }
+  if (theme === "objectives" && values.every((v) => v === "avg_lane_plates")) {
+    return `${who(s)} ${verb(s, "take")} ${behind ? "fewer" : "more"} plates in ${s.you ? "your" : "their"} lane than`;
+  }
   switch (theme) {
     case "economy":
       return `${who(s)} ${verb(s, "farm")} ${behind ? "less" : "more"} than`;
     case "deaths":
       return `${who(s)} ${verb(s, "die")} ${behind ? "more" : "less"} than`;
-    case "fights":
-      return `${who(s)} ${verb(s, "take")} part in ${behind ? "fewer" : "more"} of ${s.you ? "your" : "their"} team's kills than`;
     default:
       return null;
   }
@@ -79,18 +111,24 @@ function capital(text: string): string {
 }
 
 function title(theme: Theme, w: Words): string {
-  const topic = TOPIC[theme.theme] ?? theme.theme;
+  const topic = topicOf(theme.theme, w.role);
   if (theme.status === "finding") {
     const finding = theme.findings?.find((f) => f.direction === "behind") ?? theme.findings![0];
     if (theme.theme === "vision") {
       const control = finding.rows.some((r) => r.value === "avg_control_placed_per_min");
       const destroyed = finding.rows.some((r) => r.value === "avg_destroyed_per_min");
       const more = finding.direction === "ahead" ? "more" : "fewer";
+      if (!control && !destroyed) return `${who(w.s)} ${verb(w.s, "place")} ${more} wards than ${w.group}`;
       const place = `${who(w.s)} ${verb(w.s, "place")} ${more} control wards`;
       if (control && destroyed) return `${place} and ${verb(w.s, "destroy")} ${more} wards than ${w.group}`;
       return control ? `${place} than ${w.group}` : `${who(w.s)} ${verb(w.s, "destroy")} ${more} wards than ${w.group}`;
     }
-    const words = lead(theme.theme, finding.direction === "behind", w.s);
+    const words = lead(
+      theme.theme,
+      finding.direction === "behind",
+      w.s,
+      finding.rows.map((r) => r.value),
+    );
     return words ? `${words} ${w.group}` : capital(topic);
   }
   switch (theme.status) {
@@ -100,6 +138,8 @@ function title(theme: Theme, w: Words): string {
       return `No clear difference in ${topic}`;
     case "no_margin":
       return `${capital(topic)} can't be judged yet`;
+    case "context_only":
+      return `${capital(topic)}: context, not judged`;
     case "not_enough_data":
       return `Too early to tell on ${topic}`;
     case "no_benchmark":
@@ -110,7 +150,7 @@ function title(theme: Theme, w: Words): string {
 }
 
 function explanation(theme: Theme, w: Words): string {
-  const topic = TOPIC[theme.theme] ?? theme.theme;
+  const topic = topicOf(theme.theme, w.role);
   if (theme.status === "finding") {
     const finding = theme.findings?.find((f) => f.direction === "behind") ?? theme.findings![0];
     if (finding.basis === "strong_gap") return "One gap is far bigger than chance would explain.";
@@ -124,6 +164,8 @@ function explanation(theme: Theme, w: Words): string {
       return `${Whose(w.s)} numbers and ${w.cohort}'s overlap, so any gap here could be chance.`;
     case "no_margin":
       return "These stats don't have a margin yet, so no verdict is given.";
+    case "context_only":
+      return `For ${w.group}, these are shown beside the benchmark but never judged.`;
     default:
       return "";
   }
@@ -180,7 +222,7 @@ function VisionContext({ rows, w }: { rows: CompareRow[]; w: Words }) {
           <li>
             Trinket wards placed per minute: {pair(trinket)}.
             {lens && <> Games ending with Oracle Lens: {pair(lens, "%")}, on {lens.my_sample} of {whose(w.s)} games.</>} A
-            jungler who swaps to Oracle Lens places few trinket wards, so this shows trinket choice, not vision.
+            player who swaps to Oracle Lens places few trinket wards, so this shows trinket choice, not vision.
           </li>
         )}
         {score && (
@@ -203,7 +245,7 @@ function ThemeSection({ theme, rows, themes, w }: { theme: Theme; rows: CompareR
     (r) => r.theme === theme.theme && (r.result ?? "all") === "all" && r.clear_gap !== null && !telling.includes(r),
   );
   const shown = open ? [...telling, ...rest] : telling;
-  const topic = TOPIC[theme.theme] ?? theme.theme;
+  const topic = topicOf(theme.theme, w.role);
   const objectives = theme.theme === "objectives" ? rows.filter((r) => r.theme === "objectives" && r.value === "team_share_pct") : [];
 
   return (
@@ -213,12 +255,21 @@ function ThemeSection({ theme, rows, themes, w }: { theme: Theme; rows: CompareR
         heading={title(theme, w)}
         note={explanation(theme, w)}
         state={themeState(theme)}
-        verdict={theme.status === "no_margin" ? "No verdict yet" : undefined}
+        verdict={
+          theme.status === "no_margin" ? "No verdict yet" : theme.status === "context_only" ? "Context only" : undefined
+        }
       />
       {shown.length > 0 && (
         <div className="mt-6 grid gap-x-10 gap-y-2 md:grid-cols-2 xl:grid-cols-3">
           {shown.map((row) => (
-            <MeasureCard key={metricLabel(row)} row={row} state={stateOf(row, themes)} cohort={w.cohort} subject={w.s} />
+            <MeasureCard
+              key={metricLabel(row, w.role)}
+              row={row}
+              state={stateOf(row, themes)}
+              cohort={w.cohort}
+              subject={w.s}
+              role={w.role}
+            />
           ))}
         </div>
       )}
@@ -380,11 +431,14 @@ export function Overview() {
 
   const name = comparison.tier.charAt(0) + comparison.tier.slice(1).toLowerCase();
   const games = `${roleWord(comparison.role)} games`;
-  const w: Words = { cohort: name, group: groupName(comparison.tier, comparison.role), s };
+  const w: Words = { cohort: name, group: groupName(comparison.tier, comparison.role), s, role: comparison.role };
   const { themes, rows } = comparison;
   // Findings first, then the rest in a fixed order.
   const order = (t: Theme) => (t.status === "finding" ? 0 : t.status === "worth_watching" ? 1 : 2);
-  const sorted = [...themes].sort((a, b) => order(a) - order(b));
+  // A theme this role doesn't measure at all is left out; one a target cohort
+  // doesn't compare still says so.
+  const measured = themes.filter((t) => t.status !== "not_comparable" || (comparison.not_comparable ?? []).length > 0);
+  const sorted = [...measured].sort((a, b) => order(a) - order(b));
   const winRate = rows.find((r) => r.value === "win_rate_pct");
   // Objective rows count objectives, not games, so they don't count here.
   const theirGames = Math.max(...rows.filter((r) => r.sample_unit === "games").map((r) => r.my_sample));

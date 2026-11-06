@@ -696,9 +696,11 @@ exists, one player per match per cohort, 28 days, at most 10 games per player
 per champion, nothing substituted. The targets for champion benchmarks are the
 champions the requesting player has 5+ games on in that role.
 
-**The estimate comes from measured pulls.** The first Silver jungle pull
-sampled 500 games from 683 checked matches in 91 minutes, so 500 games are
-offered as about 683 matches and 1 hour 31 minutes. Past 500, only target
+**The estimate comes from measured pulls.** The Gold mid pull, the first made
+from the Overview's offer, sampled 500 games from 653 checked matches in 29
+minutes, so 500 games are offered as about 653 matches and 29 minutes. I first
+used the Silver jungle pull, 683 matches in 91 minutes, but it ran beside the
+Emerald pull and shared its call budget, so it was three times too slow. Past 500, only target
 champions are rank-checked; the Emerald Dr. Mundo pull checked 3,584 matches in
 75 minutes, so "Pull more" is about 42 minutes.
 
@@ -714,4 +716,51 @@ endpoints.
 
 **Tested on a real player:** a random Gold mid laner from the ladder, picked by
 9 of their last 10 ranked games being mid. Their Riot ID stays out of the docs
-and screenshots.
+and screenshots. Their 100 synced games are 38 mid, 28 bot, 22 top and 12
+jungle, so they get four roles. The Gold mid pull reached 500 games from 455
+players. 76% of checked matches gave a game, against 73% for Silver junglers.
+
+## Each role is judged on its own measures
+
+**Decision:** a comparison uses the cohort's role and that role's measures.
+"Judged" measures can make a finding; "context" ones are shown beside the
+benchmark and never judged.
+
+| Role | Judged | Context |
+|---|---|---|
+| Jungle | Unchanged | Unchanged |
+| Top | Gold and CS, lane difference, deaths, kill participation, vision, solo kills, lane plates | Damage share, plates last hit |
+| Mid | Gold and CS, lane difference, deaths, kill participation, vision, damage share | Roams |
+| Bot | Gold and CS, lane difference, deaths, vision, lane plates | Kill participation, plates last hit |
+| Support | Deaths, kill participation, all wards placed, control wards, wards destroyed | Gold, CS and lane difference |
+
+Objective share stays jungle-only: for other roles it measures the team. First
+lane kill stays jungle-only: it measures ganks.
+
+**Counted by us, not taken from Riot.** Match responses carry Riot's own
+"challenges" numbers, such as `soloKills` and `turretPlatesTaken`, but their
+formulas aren't public, like vision score's. Solo kills are counted from the
+timeline as kills with no assisting player. Damage share is the player's share
+of their team's damage to champions, from Riot's end-of-game totals.
+
+**Plates before 14:00 only.** Our stored timelines show plates falling all game:
+up to 15 per lane per team across 203 matches, the latest at 48 minutes. Counted
+over a whole game, they would mostly measure late pushing. Before 14:00 they
+measure the lane. Minions take many plates, so plates the player last-hit are
+context, and the judged number is every enemy plate that fell in their lane.
+
+**Support vision counts every ward.** A support's wards include the support
+item's (`SIGHT_WARD`, 3,975 in our stored games), so all placed wards are judged
+for supports. Other roles still judge only control wards and wards destroyed,
+because trinket wards mostly show trinket choice.
+
+**Deaths before objectives aren't in the support comparison.** I planned them,
+but the stat compares rates against a baseline and has no margin, so it could
+never be judged. The coach can still use it.
+
+**A theme with only context rows says so** ("context_only"), instead of "no
+verdict yet", which would suggest a verdict was coming.
+
+**Checked against the jungle:** every row and theme of four jungle comparisons
+(Silver and Emerald, all champions and one champion) is identical to before.
+Only the vision note's wording changed, from "a jungler" to "a player".

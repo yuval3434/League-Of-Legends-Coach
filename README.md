@@ -223,7 +223,7 @@ curl "localhost:8000/benchmarks/compare?cohort=gold_middle"
 curl "localhost:8000/benchmarks/compare?cohort=emerald&champion=Viego"
 ```
 
-A pull to 500 games takes about 1½ hours on a development key. Scripts can still
+A pull to 500 games took 29 minutes for Gold mid laners on a development key. Scripts can still
 pass `max_matches`, the cohort's running total of matches checked. Master and
 above can't be pulled yet. A pull saves its progress as it goes and can be
 started again after a key expires. It can't

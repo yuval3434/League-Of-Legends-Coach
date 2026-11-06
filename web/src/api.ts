@@ -53,6 +53,7 @@ export type ThemeStatus =
   | "worth_watching"
   | "nothing_clear"
   | "no_margin"
+  | "context_only"
   | "not_enough_data"
   | "no_benchmark"
   | "not_comparable";
