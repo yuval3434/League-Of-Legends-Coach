@@ -780,3 +780,13 @@ measure moves with the result, not what caused it, and the page says so.
 
 **Never a number from memory.** The page doesn't say what "a typical Gold mid
 laner" does: without a pulled cohort, there's no such number to show.
+
+## The Draft pool in any role
+
+**Decision:** the Draft page has a role tab for each role the player gets
+benchmarks in, their main role first and chosen by default. The pool is their
+champions with 3+ games in that role, and a champion's card puts its games
+beside the player's average in that role, with that role's cohorts as
+benchmarks. The gap rules and the enemy composition don't depend on role, so
+they're unchanged. The `draft_board` tool takes an optional `role`; with none,
+it uses the player's main role.

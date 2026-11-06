@@ -376,11 +376,13 @@ export type RiotText = {
 
 export type ChampionCard = {
   champion: string;
+  role: Role;
   games: number;
   low_sample: boolean;
   last_played: string | null;
   rows: CardRow[];
-  benchmarks: Record<"silver" | "emerald", CardBenchmark>;
+  // Each cohort in the card's role that could fit the player.
+  benchmarks: Record<string, CardBenchmark>;
   riot: RiotText | null;
   notes: string[];
 };
@@ -416,7 +418,8 @@ export type AutoSync = {
 export type DraftChampion = { champion: string; name: string; tags: string[] };
 
 /** What champion select shows: champions only, never a player. */
-export type Board = { allies: string[]; enemies: string[]; bans: string[] };
+// `role` is the player's role in this draft; their main role when left out.
+export type Board = { allies: string[]; enemies: string[]; bans: string[]; role?: Role };
 
 export type GapId = "no_frontline" | "no_magic_damage" | "no_physical_damage";
 
@@ -456,6 +459,7 @@ export type EnemyComposition = {
 };
 
 export type DraftBoard = {
+  role: Role;
   your_team: Described[];
   enemy_team: Described[];
   enemy_composition: EnemyComposition | null;
@@ -487,8 +491,8 @@ export const api = {
     get<{ matches: MatchRow[]; total: number }>(`/matches${query({ player, offset: String(offset) })}`),
   match: (id: string, player: string | null) =>
     get<MatchDetail>(`/matches/${encodeURIComponent(id)}${query({ player })}`),
-  championCard: (champion: string, player: string | null) =>
-    get<ChampionCard>(`/draft/champion/${encodeURIComponent(champion)}${query({ player })}`),
+  championCard: (champion: string, player: string | null, role: Role) =>
+    get<ChampionCard>(`/draft/champion/${encodeURIComponent(champion)}${query({ player, role })}`),
   riot: (champions: string[]) => get<RiotNotes>(`/draft/riot${query({ champions: champions.join(",") })}`),
   /** Free: counts the tokens, sends nothing to a model. */
   optionsEstimate: (board: Board, player: string | null, model: string) =>

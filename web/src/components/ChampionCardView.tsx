@@ -1,27 +1,25 @@
 // One pool champion, opened from the Draft page: the player's stats on it next
-// to their overall jungle average, each rank's benchmark on it, and Riot's own
+// to their overall average in the role, each rank's benchmark on it, and Riot's own
 // text about it. Side by side, never subtracted: the champion's games are part
 // of the overall average.
 
 import { useEffect, useState } from "react";
 
-import { api, type ChampionCard } from "../api";
+import { api, type ChampionCard, type Role } from "../api";
 import { benchmarkLines, sideCell } from "../card";
 import { gameDate } from "../matches";
-
-const RANKS = [
-  { key: "silver", name: "Silver" },
-  { key: "emerald", name: "Emerald" },
-] as const;
+import { roleWord } from "../offers";
 
 export function ChampionCardView({
   champion,
   player,
   name,
+  role,
 }: {
   champion: string;
   player: string | null;
   name: (id: string) => string;
+  role: Role;
 }) {
   const [card, setCard] = useState<ChampionCard | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,8 +27,8 @@ export function ChampionCardView({
   useEffect(() => {
     setCard(null);
     setError(null);
-    api.championCard(champion, player).then(setCard).catch((e: Error) => setError(e.message));
-  }, [champion, player]);
+    api.championCard(champion, player, role).then(setCard).catch((e: Error) => setError(e.message));
+  }, [champion, player, role]);
 
   if (error) return <p className="py-3 text-[14px] text-ink2">{error}</p>;
   if (!card) return <p className="py-3 font-mono text-[12px] text-ink3">Loading {name(champion)}…</p>;
@@ -44,7 +42,7 @@ export function ChampionCardView({
           {card.riot && <span className="ml-2 text-[13px] text-ink3">{card.riot.title}</span>}
         </div>
         <span className="font-mono text-[11px] text-ink3">
-          {card.games} jungle games{card.last_played ? ` · last played ${gameDate(card.last_played)}` : ""}
+          {card.games} {roleWord(card.role)} games{card.last_played ? ` · last played ${gameDate(card.last_played)}` : ""}
         </span>
       </div>
 
@@ -52,7 +50,7 @@ export function ChampionCardView({
         <table className="w-full min-w-[480px] border-collapse text-[14px]">
           <thead>
             <tr>
-              {["", `On ${display}`, "All jungle games"].map((h) => (
+              {["", `On ${display}`, `All ${roleWord(card.role)} games`].map((h) => (
                 <th key={h || "stat"} scope="col" className="smallcaps border-b border-rule pb-2 pr-5 text-left font-normal text-ink3">
                   {h}
                 </th>
@@ -83,8 +81,9 @@ export function ChampionCardView({
       <p className="mt-2 text-[12px] text-ink3">{card.notes[0]}</p>
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
-        {RANKS.map(({ key, name: rank }) => {
-          const lines = benchmarkLines(card.benchmarks[key], rank, display);
+        {Object.entries(card.benchmarks).map(([key, benchmark]) => {
+          const rank = benchmark.tier.charAt(0) + benchmark.tier.slice(1).toLowerCase();
+          const lines = benchmarkLines(benchmark, rank, display);
           return (
             <div key={key} className="border-t border-rule pt-2">
               <div className="smallcaps text-ink3">Benchmark: {rank}</div>

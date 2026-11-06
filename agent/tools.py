@@ -58,6 +58,10 @@ ROLE = {
     "anyOf": [{"type": "string", "enum": ROLES}, {"type": "null"}],
     "description": "Keep only games in this role. Null for every role.",
 }
+DRAFT_ROLE = {
+    "anyOf": [{"type": "string", "enum": ROLES}, {"type": "null"}],
+    "description": "The player's role in this champion select. Null for their main role.",
+}
 NO_ROWS_NOTE = "No games match. data_coverage lists the champions and their exact names."
 
 # Absent means false for these, so a result only mentions them when they matter.
@@ -179,6 +183,7 @@ async def _draft_board(context: ToolContext, arguments: dict[str, Any]) -> Row:
         if not champions:
             raise BadArguments("Champion data from Data Dragon isn't loaded yet.")
         try:
+            main_role = context.player.main_role if context.player else None
             board = await draft_board(
                 session,
                 context.puuids,
@@ -186,6 +191,7 @@ async def _draft_board(context: ToolContext, arguments: dict[str, Any]) -> Row:
                 arguments["allies"],
                 arguments["enemies"],
                 arguments["bans"],
+                arguments.get("role") or main_role or "JUNGLE",
             )
         except ValueError as error:
             raise BadArguments(str(error)) from error
@@ -249,8 +255,8 @@ TOOLS = (
         "draft_board",
         "Champion select: what the player's team lacks, from rules over Riot's "
         "Data Dragon tags and attack/magic ratings (no frontline, no magic damage, "
-        "no physical damage), and which of the player's own jungle champions (3+ "
-        "games) fill each gap, with their games and win rate. `enemy_composition` "
+        "no physical damage), and which of the player's own champions in their "
+        "role (3+ games) fill each gap, with their games and win rate. `enemy_composition` "
         "gives the enemy's damage mix and frontline by the same rules; its "
         "`general_advice` is general game knowledge, not from the player's games, "
         "so say so if you use it. Enemy matchups are "
@@ -261,6 +267,7 @@ TOOLS = (
             "allies": _champions(MAX_ALLIES, "picked on the player's team, not the player"),
             "enemies": _champions(MAX_ENEMIES, "picked on the enemy team"),
             "bans": _champions(MAX_BANS, "banned by either team"),
+            "role": DRAFT_ROLE,
         },
         _draft_board,
     ),

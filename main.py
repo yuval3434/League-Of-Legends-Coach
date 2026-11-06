@@ -100,6 +100,8 @@ class DraftRequest(BaseModel):
     allies: list[str] = Field(default_factory=list, max_length=4)
     enemies: list[str] = Field(default_factory=list, max_length=5)
     bans: list[str] = Field(default_factory=list, max_length=10)
+    # The player's role in this draft; their main role when not given.
+    role: str | None = None
 
 
 class OptionsRequest(DraftRequest):
@@ -681,11 +683,17 @@ def create_app(
 
     @app.get("/draft/champion/{champion}")
     async def draft_champion(
-        request: Request, champion: str, player: str | None = Query(default=None)
+        request: Request,
+        champion: str,
+        player: str | None = Query(default=None),
+        role: str | None = Query(default=None),
     ) -> dict[str, Any]:
         """One champion's card: the player's stats on it next to their overall
         average, each fitting cohort's benchmark on it, and Riot's text about it."""
         chosen = await selected(request, player)
+        role = role or chosen.main_role or "JUNGLE"
+        if role not in ROLES:
+            raise HTTPException(422, "Give a role: TOP, JUNGLE, MIDDLE, BOTTOM or UTILITY")
         async with request.app.state.sessions() as my_session:
             version, champions = await load_champions(my_session)
             ids = {key.lower(): key for key in champions}
@@ -701,6 +709,7 @@ def create_app(
                     champion,
                     fits(chosen),
                     detail,
+                    role,
                 )
         if card is None:
             raise HTTPException(404, f"No games on {champion}")
@@ -713,7 +722,7 @@ def create_app(
         result = await run_tool(
             context,
             "draft_board",
-            {"allies": body.allies, "enemies": body.enemies, "bans": body.bans},
+            {"allies": body.allies, "enemies": body.enemies, "bans": body.bans, "role": body.role},
         )
         if result.is_error:
             raise HTTPException(422, result.content)
@@ -723,7 +732,7 @@ def create_app(
         if body.model not in BY_ID:
             raise HTTPException(422, f"Unknown model: {body.model}")
         context = context_for(request, await selected(request, body.player))
-        board = {"allies": body.allies, "enemies": body.enemies, "bans": body.bans}
+        board = {"allies": body.allies, "enemies": body.enemies, "bans": body.bans, "role": body.role}
         try:
             return context, await prepare(context, board)
         except ValueError as error:

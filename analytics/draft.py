@@ -1,5 +1,5 @@
 """The champion-select board: what the player's team lacks, and which of the
-player's own jungle champions fill each gap.
+player's own champions in their role fill each gap.
 
 It shows; it doesn't pick. Riot's League policy lists "Apps that dictate player
 decisions" as unapproved, so nothing here ranks champions or names a best one.
@@ -18,9 +18,10 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from analytics.stats import Row, Scope, champion_stats
+from benchmarks.cohorts import ROLE_NAMES
 from ingestion.models import Champion
 
-# A champion needs this many of the player's jungle games to be in the pool.
+# A champion needs this many of the player's games in the role to be in the pool.
 MIN_POOL_GAMES = 3
 
 MAX_ALLIES = 4  # the player is the fifth
@@ -180,8 +181,10 @@ async def draft_board(
     allies: list[str],
     enemies: list[str],
     bans: list[str],
+    role: str = "JUNGLE",
 ) -> Row:
-    """The board for one moment of champion select. Raises ValueError on bad input."""
+    """The board for one moment of champion select, with the player's pool in
+    `role`. Raises ValueError on bad input."""
     team = resolve(allies, champions)
     enemy = resolve(enemies, champions)
     banned = resolve(bans, champions)
@@ -193,7 +196,7 @@ async def draft_board(
     }
 
     by_id = {key.lower(): champion for key, champion in champions.items()}
-    rows = await champion_stats(session, Scope(puuids=tuple(puuids), role="JUNGLE"))
+    rows = await champion_stats(session, Scope(puuids=tuple(puuids), role=role))
     pool = []
     for row in rows:
         if row["games"] < MIN_POOL_GAMES:
@@ -218,12 +221,13 @@ async def draft_board(
         pool.append(entry)
 
     notes = [
-        f"The pool is the player's jungle champions with {MIN_POOL_GAMES} or more "
-        "games, most played first. It is not a ranking.",
+        f"The pool is the player's {ROLE_NAMES[role]} champions with {MIN_POOL_GAMES} or "
+        "more games, most played first. It is not a ranking.",
     ]
     if not team:
         notes.append("Nothing is picked on the player's team yet, so no gaps are checked.")
     return {
+        "role": role,
         "your_team": [_describe(c) for c in team],
         "enemy_team": [_describe(c) for c in enemy],
         "enemy_composition": enemy_composition(enemy),

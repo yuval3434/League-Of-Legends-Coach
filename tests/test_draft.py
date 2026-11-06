@@ -264,3 +264,15 @@ async def test_the_api_stores_data_dragon_at_startup_and_serves_the_board(test_s
     assert refused.status_code == 422 and refused.json()["detail"] == "Unknown champions: Teemo."
     assert too_many.status_code == 422
     assert "puuid" not in mine.text.lower() and "Me" not in str(board)
+
+
+async def test_the_pool_can_be_any_role(session):
+    await play(session, "Ahri", 3, role="MIDDLE")
+    await play(session, "Viego", 3)
+
+    mid = await draft_board(session, [ME], CHAMPIONS, [], [], [], role="MIDDLE")
+    jungle = await draft_board(session, [ME], CHAMPIONS, [], [], [])
+
+    assert (mid["role"], [p["champion"] for p in mid["pool"]]) == ("MIDDLE", ["Ahri"])
+    assert "mid champions" in mid["notes"][0]
+    assert [p["champion"] for p in jungle["pool"]] == ["Viego"]
