@@ -62,7 +62,11 @@ class ModelReply:
 
 class ModelClient(Protocol):
     async def send(
-        self, system: str, tools: list[dict[str, Any]], messages: list[dict[str, Any]]
+        self,
+        system: str,
+        tools: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        max_tokens: int = MAX_TOKENS,
     ) -> ModelReply: ...
 
 
@@ -73,14 +77,18 @@ class AnthropicModel:
         self._effort = effort
 
     async def send(
-        self, system: str, tools: list[dict[str, Any]], messages: list[dict[str, Any]]
+        self,
+        system: str,
+        tools: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        max_tokens: int = MAX_TOKENS,
     ) -> ModelReply:
         options: dict[str, Any] = {}
         if self._model in FALLBACK_MODELS:
             options = {"betas": [FALLBACK_BETA], "fallbacks": "default"}
         response = await self._client.beta.messages.create(
             model=self._model,
-            max_tokens=MAX_TOKENS,
+            max_tokens=max_tokens,
             system=system,
             tools=tools,
             messages=messages,
@@ -89,6 +97,15 @@ class AnthropicModel:
             **options,
         )
         return _to_reply(response)
+
+    async def count_input_tokens(
+        self, system: str, tools: list[dict[str, Any]], messages: list[dict[str, Any]]
+    ) -> int:
+        """The input tokens this request would send. Anthropic doesn't charge for it."""
+        counted = await self._client.beta.messages.count_tokens(
+            model=self._model, system=system, tools=tools, messages=messages
+        )
+        return counted.input_tokens
 
 
 def _to_reply(response: BetaMessage) -> ModelReply:
@@ -198,8 +215,13 @@ class OllamaModel:
         self._http = http or httpx.AsyncClient(timeout=LOCAL_TIMEOUT_S)
 
     async def send(
-        self, system: str, tools: list[dict[str, Any]], messages: list[dict[str, Any]]
+        self,
+        system: str,
+        tools: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        max_tokens: int = MAX_TOKENS,
     ) -> ModelReply:
+        # The local model is free, so its output isn't capped below its context.
         try:
             response = await self._post(system, tools, messages)
         except httpx.HTTPStatusError as error:

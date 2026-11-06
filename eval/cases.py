@@ -22,6 +22,9 @@ class Case:
     hidden_tools: tuple[str, ...] = ()
     # Pass only if the number check caught nothing, even a number the retry fixed.
     first_try: bool = False
+    # Ask as the Draft page's "Options for this draft" does, for this board:
+    # draft_board and riot_notes run first, then one capped call with no tools.
+    options_board: dict | None = None
 
     @property
     def code_checks(self) -> tuple[str, ...]:
@@ -42,6 +45,23 @@ DRAFT_QUESTION = (
     "Champion select: my team has Jinx, Ahri and Lulu, the enemy has Lee Sin and "
     "Darius, and Viego is banned. Which of my champions should I pick, and how do "
     "they do against Lee Sin?"
+)
+
+# "Options for this draft" on this board: the server runs draft_board and
+# riot_notes, and the model gets one capped call with no tools.
+OPTIONS_BOARD = {
+    "allies": ["Jinx", "Ahri", "Lulu"],
+    "enemies": ["LeeSin", "Darius", "Malphite", "Caitlyn"],
+    "bans": ["Viego"],
+}
+
+# What the grader sees as the question: the request without the tool results,
+# which it's given separately.
+OPTIONS_QUESTION = (
+    "Options for this draft. My team: Jinx, Ahri, Lulu. Enemy team: LeeSin, Darius, "
+    "Malphite, Caitlyn. Bans: Viego. For each of my available pool champions, its "
+    "general strengths and weaknesses against this enemy team, from Riot's text, "
+    "labelled as general game knowledge. No ranking, no pick, no claim about who wins."
 )
 
 CASES = (
@@ -113,5 +133,17 @@ CASES = (
             r"\b(don't|do not) have (any )?matchup",
             r"\bno data on (how|the matchup|matchups)\b",
         ),
+    ),
+    # Riot's text is allowed for how to play against a champion; who wins, who's
+    # favoured, a ranking or a pick are not. The reply must say it's general.
+    Case(
+        "draft_options",
+        OPTIONS_QUESTION,
+        ("no_pick_chosen", "no_matchup_claim", "no_overclaim"),
+        says=(
+            r"\bgeneral (game )?knowledge\b",
+            r"\briot'?s (own )?(text|description|tips)\b",
+        ),
+        options_board=OPTIONS_BOARD,
     ),
 )

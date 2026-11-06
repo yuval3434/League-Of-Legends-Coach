@@ -154,6 +154,39 @@ def test_the_draft_case_checks_the_pick_and_the_matchups():
     assert DRAFT.hidden_tools == ()
 
 
+OPTIONS = next(case for case in CASES if case.id == "draft_options")
+
+
+def test_the_options_case_needs_the_general_knowledge_label():
+    labelled = "All of this is general game knowledge from Riot's text, not from your games."
+    assert says_check(answer(labelled), OPTIONS.says).passed
+    assert says_check(answer("Per Riot's tips, stay spread out."), OPTIONS.says).passed
+    assert not says_check(answer("Dr. Mundo heals through long fights."), OPTIONS.says).passed
+    assert {"no_pick_chosen", "no_matchup_claim"} <= set(OPTIONS.judge_checks)
+
+
+async def test_an_options_case_is_asked_the_way_the_button_asks(monkeypatch):
+    from agent.coach import ToolLog
+    from agent.options import OPTIONS_MAX_TOKENS, Prepared
+
+    boards = []
+
+    async def fake_prepare(context, board):
+        boards.append(board)
+        log = ToolLog("draft_board", board, '{"pool": []}', False)
+        return Prepared("Options for this draft. [results]", (log,), ["DrMundo"])
+
+    monkeypatch.setattr(run, "prepare", fake_prepare)
+    model = FakeModel(says("General game knowledge from Riot's text. The pick is yours."))
+
+    reply = await run._ask(model, None, OPTIONS)
+
+    assert boards == [OPTIONS.options_board]
+    assert (model.tools, model.max_tokens) == ([], [OPTIONS_MAX_TOKENS])
+    assert model.sent[0][0]["content"] == "Options for this draft. [results]"
+    assert reply.tools_called == ["draft_board"] and reply.status == "verified"
+
+
 def test_the_judge_sees_each_tools_description():
     from eval.judge import format_tool_outputs
 

@@ -43,11 +43,17 @@ class FakeModel:
         self.sent: list[list[dict[str, Any]]] = []
         self.system = ""
         self.tools: list[dict[str, Any]] = []
+        self.max_tokens: list[int] = []
 
     async def send(
-        self, system: str, tools: list[dict[str, Any]], messages: list[dict[str, Any]]
+        self,
+        system: str,
+        tools: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        max_tokens: int = 16_000,
     ) -> ModelReply:
         self.system = system
         self.tools = tools
+        self.max_tokens.append(max_tokens)
         self.sent.append(list(messages))
         return self.replies.pop(0)

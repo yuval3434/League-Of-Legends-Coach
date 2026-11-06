@@ -91,6 +91,7 @@ async def test_every_tool_runs(context, sessions, name):
     arguments = {
         "compare_to_benchmark": {"cohort": "silver"},
         "draft_board": {"allies": [], "enemies": [], "bans": []},
+        "riot_notes": {"champions": ["Wukong"]},
     }.get(name, {})
     await call(context, name, **arguments)
 

@@ -25,6 +25,12 @@ in its answer appears in a tool result.
   it. It never picks for you, and it has no matchup data.
 - **Enemy composition** (v5): the enemy's damage mix and frontline, by the same
   rules, with one line of general build advice labelled as general advice.
+- **Champion cards:** open a pool champion on the Draft page for your stats
+  on it next to your overall average, each rank's benchmark on it, and Riot's
+  own tips and ability text.
+- **Options for this draft:** the coach's general notes on each of your
+  champions against the enemy team, from Riot's text. Paid, so it shows the most
+  it can cost first. No ranking, no pick, no claim about who wins.
 - **Matches** (v5): your recent games, and each game's two teams with every
   champion's stats. Champions only, no player names.
 - **Web app** (v2 to v5): Overview, Matches, Champions, Compare, Draft and Coach
@@ -99,7 +105,20 @@ The enemy team gets the same rules: its damage mix ("mostly physical: 3 of 4")
 and its frontline, with one line of general build advice, labelled as general
 advice and not from your games. One line under the enemy picks says there's no
 matchup data, because no champion pair has anywhere near the games a reliable
-win rate needs. `POST /draft` and the coach's
+win rate needs. Riot's own tips against each enemy pick follow, from Data
+Dragon, labelled as general text that can be older than a champion's abilities.
+
+Clicking a pool champion opens its card: your CS per minute, gold at 15,
+deaths by phase and kill participation on it, next to your overall jungle
+average, greyed with "too early to tell" under 10 games. Below that, each rank's
+benchmark on that champion where it has 30 games from 10 players, and Riot's
+tips and ability text.
+
+**Options for this draft** asks the coach for each available champion's general
+strengths and weaknesses against the enemy team, from Riot's text. It's one
+capped model call with no tools, so the first click only counts the tokens, for
+free, and shows the most it can cost; the second sends it. Sonnet 5.5 is the
+default. `POST /draft` and the coach's
 `draft_board` tool give the same board. [DECISIONS.md](DECISIONS.md) has the
 policy quotes and the numbers.
 

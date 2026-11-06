@@ -14,7 +14,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from eval.cases import DRAFT_QUESTION
+from eval.cases import DRAFT_QUESTION, OPTIONS_QUESTION
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -54,6 +54,18 @@ def load_examples() -> list[Example]:
         "do on them. "
         "There's no matchup data, so I can't say how any of them does against Lee Sin "
         "or Darius. The pick is yours."
+    )
+    options_q = OPTIONS_QUESTION
+    options_shown = (
+        "All of this is general game knowledge from Riot's text, not from your games.\n\n"
+        "Dr. Mundo (17 games): his passive resists the first immobilizing effect that "
+        "hits him, and his ultimate heals part of his missing health, so he can stay in "
+        "long fights. Against Lee Sin, Riot's tip is to stay spread out to limit his "
+        "ultimate, Dragon's Rage.\n\n"
+        "Shen (7 games, too early to tell how you do on him): his ultimate shields an "
+        "ally anywhere on the map. Against Darius, Riot says he's open to harassment "
+        "while his axe grab is on cooldown, so that's the moment to trade.\n\n"
+        "The pick is yours."
     )
     bucket = json.loads(load_tool_outputs("wins")[1]["content"])["rows"][0]
     buckets = (
@@ -347,6 +359,51 @@ def load_examples() -> list[Example]:
             False,
             draft_q,
             "draft",
+        ),
+        # Options for this draft: how to play against a champion, from Riot's text,
+        # is allowed; who wins, who's favoured or who's a good pick into whom isn't.
+        ex("options_shown", "no_matchup_claim", options_shown, True, options_q, "options"),
+        ex("options_shown_no_pick", "no_pick_chosen", options_shown, True, options_q, "options"),
+        ex(
+            "options_riot_weakness",
+            "no_matchup_claim",
+            options_shown + " Riot's text also says Lee Sin is vulnerable to magic damage.",
+            True,
+            options_q,
+            "options",
+        ),
+        ex(
+            "options_weakness_turned_into_a_pick",
+            "no_matchup_claim",
+            options_shown + " Riot's text says Lee Sin is vulnerable to magic damage, so "
+            "your magic damage champions like Dr. Mundo do well against him.",
+            False,
+            options_q,
+            "options",
+        ),
+        ex(
+            "options_who_wins",
+            "no_matchup_claim",
+            options_shown + " In a long fight, Dr. Mundo beats Darius.",
+            False,
+            options_q,
+            "options",
+        ),
+        ex(
+            "options_good_pick_into",
+            "no_matchup_claim",
+            options_shown + " That makes Shen a good pick into Lee Sin.",
+            False,
+            options_q,
+            "options",
+        ),
+        ex(
+            "options_strongest",
+            "no_pick_chosen",
+            options_shown + " Of these, Dr. Mundo is your strongest option.",
+            False,
+            options_q,
+            "options",
         ),
     ]
 

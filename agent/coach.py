@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent.llm import ModelClient, ModelReply, ToolCall, Usage
+from agent.llm import MAX_TOKENS, ModelClient, ModelReply, ToolCall, Usage
 from agent.numbers import check_numbers
 from agent.prompt import SYSTEM_PROMPT
 from agent.tools import ToolContext, ToolResult, run_tool, tool_definitions
@@ -88,6 +88,9 @@ async def ask_coach(
     context: ToolContext,
     question: str,
     hidden_tools: tuple[str, ...] = (),
+    preloaded: tuple[ToolLog, ...] = (),
+    offer_tools: bool = True,
+    max_tokens: int = MAX_TOKENS,
 ) -> CoachAnswer:
     """Answer one question. A reply with unsupported numbers gets one retry.
 
@@ -95,6 +98,11 @@ async def ask_coach(
     these are, so the reply names them instead of saying "you". The system
     prompt stays the same, so its cache still works. `hidden_tools` are left out,
     for eval cases that test what the coach does without them.
+
+    `preloaded` are tool calls the server already ran, with their results in the
+    question: they count for the number check like the model's own calls. With
+    `offer_tools` off and `max_tokens` set, an answer is one call (two with the
+    retry) of a known size, so its cost has a ceiling before it's sent.
     """
     player = context.player if context else None
     if player and not player.is_owner:
@@ -103,11 +111,13 @@ async def ask_coach(
             'asking. Refer to them by name, not as "you".]\n\n' + question
         )
     messages: list[dict[str, Any]] = [{"role": "user", "content": question}]
-    tools = [t for t in tool_definitions() if t["name"] not in hidden_tools]
+    tools = [t for t in tool_definitions() if t["name"] not in hidden_tools] if offer_tools else []
     answer = CoachAnswer("", "gave_up")
+    answer.tool_log += list(preloaded)
+    answer.tools_called += [log.name for log in preloaded]
 
     for _ in range(MAX_STEPS):
-        reply: ModelReply = await model.send(SYSTEM_PROMPT, tools, messages)
+        reply: ModelReply = await model.send(SYSTEM_PROMPT, tools, messages, max_tokens)
         answer.usage += reply.usage
         answer.models.append(reply.model)
 
@@ -130,7 +140,11 @@ async def ask_coach(
 
         # Tool descriptions count too: they hold fixed facts, such as phase boundaries.
         outputs = [log.content for log in answer.tool_log if not log.is_error]
-        outputs += [tool["description"] for tool in tools]
+        # Even with no tools offered, their descriptions hold the same fixed facts;
+        # a hidden tool's don't count.
+        outputs += [
+            tool["description"] for tool in tool_definitions() if tool["name"] not in hidden_tools
+        ]
         # A Riot ID can hold digits, and the reply may name the player.
         outputs += [riot_id(player)] if player else []
         unsupported = check_numbers(reply.text, outputs)
