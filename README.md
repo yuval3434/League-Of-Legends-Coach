@@ -190,6 +190,11 @@ curl localhost:8000/sync/status
 is 100 calls per 2 minutes. A sync can be run again safely: it fetches only what's
 missing.
 
+While the API runs, every synced player is also synced automatically every 30
+minutes (`AUTO_SYNC_MINUTES` in `.env`; 0 turns it off), starting a minute after
+the API starts. `GET /sync/auto` and the Players page show the last round. When
+Riot refuses the key, every page shows a warning that links to Settings.
+
 The first player synced is the owner: the default on every page and the one the
 eval runs on. Other players can be added from the web app's Players page, and
 their games stay in the same local database. Every stat, comparison and coach

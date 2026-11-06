@@ -30,6 +30,8 @@ from benchmarks.compare import compare
 from benchmarks.models import create_benchmark_engine
 from benchmarks.pull import pull_cohort, target_champions, tracked_puuids
 from benchmarks.stretches import farm_by_stretch
+from ingestion.auto_sync import SyncSettings, sync_round
+from ingestion.auto_sync import now as utc_now
 from ingestion.config import Settings
 from ingestion.ddragon import (
     GetJson,
@@ -49,6 +51,9 @@ logging.basicConfig(level=logging.INFO)
 # httpx logs every request at INFO, which would drown out sync progress.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
+
+# Auto-sync's first round waits this long after startup.
+AUTO_SYNC_FIRST_DELAY_S = 60
 
 
 class SyncRequest(BaseModel):
@@ -113,6 +118,7 @@ def create_app(
     env_path: Path | None = None,
     key_testers: dict[str, KeyTester] | None = None,
     fetch_ddragon: GetJson | None = None,
+    auto_sync: bool = False,
 ) -> FastAPI:
     """`coach_model` replaces the model named in settings, so tests can pass a fake.
 
@@ -120,7 +126,8 @@ def create_app(
     tests) leaves the keys in `settings` and turns the key settings off. `key_testers`
     replace the real key checks, so tests make no calls to Riot or Anthropic.
     `fetch_ddragon` stores Data Dragon's latest champions at startup; None (as in
-    tests) fetches nothing.
+    tests) fetches nothing. `auto_sync` syncs every player every
+    `auto_sync_minutes`; off by default, so tests never call Riot.
     """
     settings = settings or Settings()
     # A key saved from the settings page is in .env, but a container keeps the
@@ -142,6 +149,13 @@ def create_app(
         )
         app.state.sync_status = {"state": "idle"}
         app.state.sync_task = None
+        # Held by any sync, manual or automatic, so two never run at once.
+        app.state.sync_lock = asyncio.Lock()
+        every = settings.auto_sync_minutes if auto_sync else 0
+        app.state.auto_sync = {"state": "waiting" if every else "off", "every_minutes": every}
+        app.state.auto_sync_task = asyncio.create_task(auto_sync_loop()) if every else None
+        # One round on demand, for tests; the loop above is the only caller otherwise.
+        app.state.auto_sync_once = auto_sync_once
         app.state.pull_status = {"state": "idle"}
         app.state.pull_task = None
         # Models are built when first asked for, one per choice, and dropped when
@@ -153,7 +167,12 @@ def create_app(
             else None
         )
         yield
-        for task in (app.state.sync_task, app.state.pull_task, app.state.ddragon_task):
+        for task in (
+            app.state.sync_task,
+            app.state.pull_task,
+            app.state.ddragon_task,
+            app.state.auto_sync_task,
+        ):
             if task:
                 task.cancel()
         await app.state.riot.aclose()
@@ -190,7 +209,44 @@ def create_app(
             raise HTTPException(503, "Key settings are off: the API wasn't given a .env file")
         return env_path
 
+    async def auto_sync_once() -> None:
+        """One round of auto-sync, unless a manual sync holds the lock."""
+        every = app.state.auto_sync["every_minutes"]
+        base = {"every_minutes": every, "last_run_at": utc_now()}
+        if not settings.riot_api_key.get_secret_value():
+            app.state.auto_sync = base | {"state": "no_key", "error": "RIOT_API_KEY is not set."}
+            return
+        if app.state.sync_lock.locked():
+            app.state.auto_sync = base | {"state": "skipped", "error": "A manual sync was running."}
+            return
+        async with app.state.sync_lock:
+            app.state.auto_sync = {**app.state.auto_sync, "state": "running"}
+            try:
+                outcome = await sync_round(
+                    app.state.sessions,
+                    app.state.riot,
+                    SyncSettings(
+                        settings.riot_match_region, settings.sync_queues, settings.sync_match_count
+                    ),
+                )
+            except Exception:
+                logger.exception("Auto-sync crashed")
+                outcome = {"state": "failed", "error": "Unexpected error; see the server log."}
+        app.state.auto_sync = base | outcome
+        logger.info("Auto-sync: %s", {k: v for k, v in outcome.items() if k != "failed"})
+
+    async def auto_sync_loop() -> None:
+        # The first round soon after startup, so a restart picks up new games.
+        await asyncio.sleep(AUTO_SYNC_FIRST_DELAY_S)
+        while True:
+            await auto_sync_once()
+            await asyncio.sleep(app.state.auto_sync["every_minutes"] * 60)
+
     async def run_sync(request: SyncRequest) -> None:
+        async with app.state.sync_lock:
+            await sync_one(request)
+
+    async def sync_one(request: SyncRequest) -> None:
         riot_id = f"{request.game_name}#{request.tag_line}"
 
         def progress(event: dict[str, Any]) -> None:
@@ -342,8 +398,15 @@ def create_app(
             "riot_id": f"{body.game_name}#{body.tag_line}",
             "stage": "starting",
         }
+        if request.app.state.sync_lock.locked():
+            raise HTTPException(409, "An automatic sync is running; try again in a minute")
         request.app.state.sync_task = asyncio.create_task(run_sync(body))
         return request.app.state.sync_status
+
+    @app.get("/sync/auto")
+    async def auto_sync_status(request: Request) -> dict[str, Any]:
+        """Auto-sync's last round: when, how many new games, or why it stopped."""
+        return request.app.state.auto_sync
 
     @app.get("/sync/status")
     async def sync_status(request: Request) -> dict[str, Any]:
@@ -681,4 +744,4 @@ async def store_champions(sessions: async_sessionmaker, fetch: GetJson) -> None:
         logger.exception("Couldn't refresh Data Dragon's champions")
 
 
-app = create_app(env_path=Path(".env"), fetch_ddragon=get_json)
+app = create_app(env_path=Path(".env"), fetch_ddragon=get_json, auto_sync=True)

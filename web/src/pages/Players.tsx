@@ -3,11 +3,11 @@
 
 import { useEffect, useState } from "react";
 
-import { api, type PlayerRow, type SyncStatus } from "../api";
+import { api, type AutoSync, type PlayerRow, type SyncStatus } from "../api";
 import { Layout } from "../components/Layout";
 import { PLAYERS_CHANGED } from "../components/PlayerSwitcher";
 import { href } from "../router";
-import { parseRiotId, progressOf, timeLeft } from "../sync";
+import { autoSyncWords, parseRiotId, progressOf, timeLeft } from "../sync";
 
 const ROLES: Record<string, string> = { TOP: "Top", JUNGLE: "Jungle", MIDDLE: "Mid", BOTTOM: "Bot", UTILITY: "Support" };
 
@@ -75,6 +75,7 @@ export function Players() {
   const [problem, setProblem] = useState<string | null>(null);
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [players, setPlayers] = useState<PlayerRow[] | null>(null);
+  const [auto, setAuto] = useState<AutoSync | null>(null);
   const running = status?.state === "running";
 
   const loadPlayers = () => api.players().then(setPlayers).catch(() => setPlayers([]));
@@ -83,6 +84,7 @@ export function Players() {
     loadPlayers();
     // A sync started earlier, or from elsewhere, still shows its progress.
     api.syncStatus().then(setStatus).catch(() => setStatus(null));
+    api.autoSync().then(setAuto).catch(() => setAuto(null));
   }, []);
 
   // While a sync runs, ask the server how far it is every second and a half.
@@ -126,6 +128,11 @@ export function Players() {
           allows 100 calls every 2 minutes and each match needs 2. Their games stay in this computer's database, like
           yours. They get the same verdicts as you, and a benchmark only where their rank and role have one.
         </p>
+        {auto && !autoSyncWords(auto).warn && (
+          <p className="mt-3 max-w-[720px] text-[14px] text-ink3">
+            {autoSyncWords(auto).text} Every synced player is checked for new games while the API runs.
+          </p>
+        )}
       </div>
 
       <form onSubmit={submit} className="mt-10 flex max-w-[620px] flex-wrap items-start gap-3">

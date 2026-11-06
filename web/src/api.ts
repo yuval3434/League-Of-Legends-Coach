@@ -341,6 +341,17 @@ export type OptionsEstimate = {
   one_call_max_usd?: number;
 };
 
+/** Auto-sync's last round, or why it isn't running. */
+export type AutoSync = {
+  state: "off" | "waiting" | "running" | "ok" | "partly_failed" | "skipped" | "key_refused" | "no_key" | "failed";
+  every_minutes: number;
+  last_run_at?: string;
+  players?: number;
+  new_games?: number;
+  failed?: string[];
+  error?: string;
+};
+
 /** A champion from Data Dragon, for the champion-select picker. */
 export type DraftChampion = { champion: string; name: string; tags: string[] };
 
@@ -439,6 +450,7 @@ export const api = {
   sync: (game_name: string, tag_line: string) =>
     get<SyncStatus>("/sync", { ...JSON_POST, body: JSON.stringify({ game_name, tag_line }) }),
   syncStatus: () => get<SyncStatus>("/sync/status"),
+  autoSync: () => get<AutoSync>("/sync/auto"),
   keys: () => get<Record<KeyName, KeyInfo>>("/settings/keys", { headers: SETTINGS }),
   /** Tests the key with one cheap call; it's only saved if that works. */
   setKey: (name: KeyName, key: string) =>

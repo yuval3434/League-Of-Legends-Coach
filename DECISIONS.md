@@ -657,6 +657,25 @@ in both ranks; Dr. Mundo, the most played, had 19 Silver games and 10 Emerald.
 more random cohort matches, and he turns up in about 0.6% of Silver matches and
 0.3% of Emerald ones. Overnight on 2026-11-04, Silver went from 3,000 to 5,000
 checked matches, and Dr. Mundo from 19 games to 32 from 29 players: his Silver
-benchmark now exists. The Emerald pull started but checked no matches before
-the machine's Docker stopped, so Emerald is still 10 games and says "No
-benchmark". Reaching 30 there needs about 6,000 more matches, roughly 5 hours.
+benchmark now exists. The Emerald pull stopped overnight when Docker did, and
+finished on 2026-11-06: 3,000 to 9,000 checked matches, and Dr. Mundo from 10
+games to 37 from 35 players, so his Emerald benchmark exists too.
+
+## Auto-sync every 30 minutes, even during a benchmark pull
+
+**Decision:** while the API runs, every tracked player is synced every 30
+minutes through the same `sync_player` as a manual sync, the first round a
+minute after startup. A round skips while a manual sync runs, and stops at a
+refused key; every page then warns that the key needs replacing.
+
+**Why it may run during a pull:** a manual sync and a pull still can't run
+together, because a full sync takes minutes of the shared call budget. An
+auto-sync round is small: about 4 calls for a player with no new games, plus 2
+per new game. The rate limiter is shared and reserves each call's slot with no
+wait between checking and reserving, so concurrent callers can't overrun Riot's
+limits; the pull only slows by those few calls. Skipping rounds during a pull
+would have meant no new games for the 5 or more hours a pull can take.
+
+**Limits:** nothing syncs while the computer sleeps or Docker is closed, and a
+development key still expires every 24 hours, after which auto-sync waits for
+a new one.
