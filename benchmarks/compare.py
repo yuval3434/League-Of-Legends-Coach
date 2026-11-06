@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from analytics.jungle import kill_participation, objective_control, wards_per_minute
+from analytics.timeline_stats import kill_participation, objective_control, wards_per_minute
 from analytics.stats import (
     MIN_GAMES,
     Row,

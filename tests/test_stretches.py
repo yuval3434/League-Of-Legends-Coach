@@ -1,11 +1,11 @@
-"""Gold and CS by stretch: lost to the enemy jungler, and against each cohort."""
+"""Gold and CS by stretch: lost to the lane opponent, and against each cohort."""
 
 from fastapi.testclient import TestClient
 from test_analytics import ME, add_frames, add_game
 from test_benchmarks import SILVER, add_sampled_game, benchmark_sessions, fill_cohort  # noqa: F401
 from test_players import FRIEND, two_players
 
-from analytics.jungle import farm_gained_by_stretch, farm_vs_jungler_by_stretch
+from analytics.timeline_stats import farm_gained_by_stretch, farm_vs_opponent_by_stretch
 from benchmarks.stretches import farm_by_stretch
 from main import create_app
 
@@ -36,7 +36,7 @@ async def test_a_stretch_is_what_was_gained_between_its_two_minutes(session):
     )
 
     gained = by_stretch(await farm_gained_by_stretch(session, [ME]))
-    lost = by_stretch(await farm_vs_jungler_by_stretch(session, [ME]))
+    lost = by_stretch(await farm_vs_opponent_by_stretch(session, [ME]))
 
     assert [gained[s]["avg_gold_gained"] for s in ("0-10", "10-15", "15-20")] == [3000, 2000, 2100]
     assert [gained[s]["avg_cs_gained"] for s in ("0-10", "10-15", "15-20")] == [60, 30, 28]
@@ -60,7 +60,7 @@ async def test_every_stretch_has_its_sample_and_margin(session):
     for n, enemy in enumerate((3600, 3700, 3800)):
         await add_stretch_game(session, f"EUW1_{n}", {0: (500, 500), 10: (3500, enemy)})
 
-    row = by_stretch(await farm_vs_jungler_by_stretch(session, [ME]))["0-10"]
+    row = by_stretch(await farm_vs_opponent_by_stretch(session, [ME]))["0-10"]
 
     assert (row["games"], row["low_sample"]) == (3, True)
     assert row["avg_gold_diff"] == -200
@@ -73,7 +73,7 @@ async def test_a_loss_inside_the_margin_is_not_clear(session):
     for n, enemy in enumerate((3000, 4000)):
         await add_stretch_game(session, f"EUW1_{n}", {0: (500, 500), 10: (3400, enemy)})
 
-    row = by_stretch(await farm_vs_jungler_by_stretch(session, [ME]))["0-10"]
+    row = by_stretch(await farm_vs_opponent_by_stretch(session, [ME]))["0-10"]
 
     assert row["avg_gold_diff"] == -100
     assert row["clear_gold_diff"] is False
@@ -125,3 +125,18 @@ async def test_the_endpoint_follows_the_player_asked_for(test_settings, sessions
     assert friend.json()["benchmarks"][SILVER]["status"] == "no_benchmark"
     assert mine["benchmarks"][SILVER]["status"] == "ok"
     assert "puuid" not in friend.text.lower()
+
+
+async def test_another_role_is_measured_against_its_own_opponent(session):
+    # A mid game: the player is participant 3, the enemy mid 8, the enemy jungler 7.
+    await add_game(session, "EUW1_1", role="MIDDLE")
+    await add_frames(session, "EUW1_1", 0, {3: 500, 7: 500, 8: 500})
+    await add_frames(session, "EUW1_1", 10, {3: 3500, 7: 2500, 8: 3100})
+    # A jungle game, which a mid stat must leave out.
+    await add_stretch_game(session, "EUW1_2", {0: (500, 500), 10: (3500, 3900)})
+
+    mid = by_stretch(await farm_vs_opponent_by_stretch(session, [ME], role="MIDDLE"))["0-10"]
+    jungle = by_stretch(await farm_vs_opponent_by_stretch(session, [ME]))["0-10"]
+
+    assert (mid["games"], mid["avg_gold_diff"]) == (1, 400)
+    assert (jungle["games"], jungle["avg_gold_diff"]) == (1, -400)

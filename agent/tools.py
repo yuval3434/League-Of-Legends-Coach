@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from analytics.champion_card import riot_notes
 from analytics.draft import MAX_ALLIES, MAX_BANS, MAX_ENEMIES, draft_board
-from analytics.jungle import (
+from analytics.timeline_stats import (
     deaths_before_objective,
     first_lane_kill,
     kill_participation,
@@ -296,7 +296,7 @@ TOOLS = (
         "lane_diff",
         lane_diff,
         "Gold and CS difference against the lane opponent at minutes 10, 15 and "
-        "20, per role. Jungle rows are also split by win and loss.",
+        "20, per role, also split by win and loss.",
     ),
     _stat_tool(
         "win_rate_by_gold_diff",

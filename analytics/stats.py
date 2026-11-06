@@ -249,7 +249,6 @@ SELECT team_position AS role, minute,
            AS median_cs_diff
 FROM diffs
 GROUP BY team_position, minute, GROUPING SETS ((), (win))
-HAVING GROUPING(win) = 1 OR team_position = 'JUNGLE'
 ORDER BY role, minute, result
 """
 
@@ -257,8 +256,8 @@ ORDER BY role, minute, result
 async def lane_diff(session: AsyncSession, puuids: Players) -> list[Row]:
     """Gold and CS difference vs. the lane opponent at minutes 10, 15 and 20.
 
-    One row per role and minute with `result` 'all'; jungle also gets 'win' and
-    'loss' rows. Those show how gaps relate to outcomes, not what caused them.
+    One row per role and minute with `result` 'all', 'win' or 'loss'. The win
+    and loss rows show how gaps relate to outcomes, not what caused them.
     Games that ended before a minute drop out of its rows, so `games` can fall
     as the minute rises.
     """
@@ -290,7 +289,7 @@ gold_at_10 AS (
       AND theirs.minute = 10
     WHERE me.puuid = ANY(:puuids)
       AND NOT m.is_remake
-      AND me.team_position = 'JUNGLE'
+      AND me.team_position = :role
       AND m.duration_s >= 600
 )
 SELECT b.bucket,
@@ -307,13 +306,15 @@ ORDER BY b.position
 """
 
 
-async def win_rate_by_gold_diff(session: AsyncSession, puuids: Players) -> list[Row]:
-    """Jungle win rate by gold difference vs. the enemy jungler at minute 10.
+async def win_rate_by_gold_diff(
+    session: AsyncSession, puuids: Players, role: str = "JUNGLE"
+) -> list[Row]:
+    """Win rate in `role` by gold difference vs. the lane opponent at minute 10.
 
     Every bucket is returned, with `win_rate_pct` null if it has no games.
     Exactly -500 is 'behind 0-500', 0 is 'ahead 0-500' and 500 is 'ahead 500+'.
     """
-    return await fetch(session, WIN_RATE_BY_GOLD_DIFF, puuids=puuids)
+    return await fetch(session, WIN_RATE_BY_GOLD_DIFF, puuids=puuids, role=role)
 
 
 AFTER_LOSS_STREAK = """
