@@ -15,7 +15,7 @@ from benchmarks.models import Base as BenchmarkBase
 from benchmarks.models import PlayerRank, Sample, ScanQueue, create_benchmark_engine
 from benchmarks.pull import Quotas, order_candidates, pull_cohort, target_champions
 from factories import make_match, make_timeline
-from ingestion.models import Base, Match, MatchParticipant, Player, RawResponse
+from ingestion.models import Base, Match, Player, RawResponse
 from ingestion.riot_client import RiotAuthError, RiotNotFound, RiotRequestFailed
 from main import create_app
 
