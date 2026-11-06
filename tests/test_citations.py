@@ -249,3 +249,36 @@ async def test_a_model_that_doesnt_cite_keeps_the_plain_check(sessions):
     assert (answer.status, answer.text, answer.citations) == ("verified", "You played 3 games.", [])
     assert "Citations" not in model.system
     assert '"ref"' not in model.sent[1][-1]["content"][0]["content"]
+
+
+# Minute labels: uncited, but checked against the minutes the results define
+
+
+LANE = labelled("lane_diff", {"rows": [{"minute": 10, "games": 92}, {"minute": 15, "games": 91}, {"minute": 20, "games": 85}]})
+
+
+def test_minute_labels_need_no_citation_when_the_results_define_them():
+    reply = (
+        "At minute 15: you're behind. Between the 10-minute and 15-minute marks the gap "
+        "grows, at 10, 15 and 20 minutes alike, and early deaths are before 15:00."
+    )
+    assert check(reply, LANE).problems == []
+
+
+def test_a_minute_label_the_results_dont_define_fails():
+    assert check("At minute 12 you fall behind.", LANE).problems == ["12 isn't a minute any tool result defines"]
+    assert check("By 17 minutes it's over.", LANE).problems == ["17 isn't a minute any tool result defines"]
+
+
+def test_a_number_beside_a_minute_label_still_needs_its_citation():
+    """The label is free; the measured number in the same sentence isn't."""
+    assert check("At minute 15 you have 91 games.", LANE).problems == ["91 has no citation"]
+
+
+def test_minute_0_is_the_start_of_the_game():
+    assert check("In the first 0-10 minutes you fall behind.", LANE).problems == []
+
+
+def test_stretch_boundaries_are_minutes_too():
+    stretch = labelled("farm_by_stretch", {"rows": [{"stretch": "10-15", "games": 90}]})
+    assert check("Between minutes 10 and 15 you lose ground.", stretch).problems == []

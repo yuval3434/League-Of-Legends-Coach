@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { CohortStretch, JunglerStretch, StretchCohort } from "./api";
-import { cohortCell, junglerCell } from "./stretches";
+import type { CohortStretch, OpponentStretch, StretchCohort } from "./api";
+import { cohortCell, opponentCell } from "./stretches";
 
-function jungler(over: Partial<JunglerStretch> = {}): JunglerStretch {
+function jungler(over: Partial<OpponentStretch> = {}): OpponentStretch {
   return {
     stretch: "10-15",
     start_minute: 10,
@@ -24,6 +24,7 @@ function cohort(row: Partial<CohortStretch> = {}, over: Partial<StretchCohort> =
   return {
     cohort: "silver",
     tier: "SILVER",
+    audience: "peers",
     status: "ok",
     benchmark_games: 500,
     benchmark_players: 100,
@@ -56,7 +57,7 @@ function cohort(row: Partial<CohortStretch> = {}, over: Partial<StretchCohort> =
 
 describe("against the enemy jungler", () => {
   it("says what was lost, with its margin and games", () => {
-    expect(junglerCell(jungler(), "gold")).toEqual({
+    expect(opponentCell(jungler(), "gold")).toEqual({
       main: "Lost 234 gold",
       detail: "give or take 160 · 84 games",
       tone: "clear",
@@ -64,7 +65,7 @@ describe("against the enemy jungler", () => {
   });
 
   it("says when a gain could be chance", () => {
-    expect(junglerCell(jungler(), "cs")).toEqual({
+    expect(opponentCell(jungler(), "cs")).toEqual({
       main: "Gained 1.5 CS",
       detail: "give or take 2.8 · 84 games · could be chance",
       tone: "unclear",
@@ -72,7 +73,7 @@ describe("against the enemy jungler", () => {
   });
 
   it("gives no amount under 10 games", () => {
-    expect(junglerCell(jungler({ games: 6, low_sample: true }), "gold")).toEqual({
+    expect(opponentCell(jungler({ games: 6, low_sample: true }), "gold")).toEqual({
       main: "Too few games",
       detail: "6 games",
       tone: "low",

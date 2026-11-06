@@ -29,6 +29,10 @@ in its answer appears in a tool result.
 - **Coach:** an LLM agent with one tool per stat. Code checks every number in
   its reply against the tool results. Runs on Opus, Sonnet, Haiku or a free
   local model.
+- **Number citations** (v9): on Claude models, every number in the coach's
+  reply names the tool-result field it was copied from, and code checks it
+  equals that field exactly. Hovering a number on the Coach page shows where it
+  came from.
 - **Champion select** (v4): what your team lacks and which of your champions add
   it. It never picks for you, and it has no matchup data.
 - **Enemy composition** (v5): the enemy's damage mix and frontline, by the same
@@ -86,15 +90,17 @@ the sort puts them, and only champions with enough games offer "Ask the coach".
 
 ![The Champions page: a sortable table, with champions under 10 games hatched](docs/screens/champions.png)
 
-**Compare:** Silver and Emerald at once. Gold and CS at 10, 15 and 20 minutes,
-with your likely range shaded, then every theme's verdict against both ranks.
+**Compare:** each of your roles against its cohorts at once: players of your
+rank, and for junglers below Emerald, Emerald junglers as a target. Gold and CS
+at 10, 15 and 20 minutes, with your likely range shaded, then every theme's
+verdict against each.
 
 ![The Compare page: gold and CS by minute against Silver and Emerald](docs/screens/compare.png)
 
 Below the charts, **Where farm is lost** splits the early game into 0 to 10, 10
 to 15 and 15 to 20 minutes. It shows the gold or CS gained in each stretch
-against the enemy jungler in the same games, and against what Silver and
-Emerald junglers gain. Each cell has its margin and both sample sizes, and says
+against your lane opponent in the same games, the enemy player in the same
+position, and against what each of the role's cohorts gains. Each cell has its margin and both sample sizes, and says
 "could be chance" inside the margin or "too few games" under 10. These rows
 never make a finding. `GET /benchmarks/stretches` and the coach's
 `farm_by_stretch` tool return the same data.
@@ -245,8 +251,18 @@ the old key.
 ## Coach
 
 The coach is an LLM agent with one tool per stat. Every number it states must
-appear in a tool result, and code checks that after each reply: a reply with an
-unsupported number gets one retry, then is shown with a warning. To see the check
+come from a tool result, and code checks that after each reply: a reply that
+fails gets one retry, then is shown with a warning.
+
+On Claude models the check is by citation. Every object in a tool result gets a
+`ref`, such as `2.14`, and the coach writes each number followed by the field
+it copied, as in `184[[2.14.avg_gold_diff]]`. Code checks that the number equals
+that field exactly, with no rounding, and fails any uncited number except list
+numbering, "1 in 20" and minute labels such as "at minute 15", which are checked
+against the minutes the results define. The markers are removed before the
+reply is shown, and on the Coach page hovering a number shows its source. The
+local model keeps the older check, that each number appears somewhere in the
+results. To see the check
 catch a made-up number, with a scripted model and no paid calls:
 
 ```sh
@@ -475,7 +491,11 @@ different failures, so both are needed (see DECISIONS.md).
 
 **Limits:**
 - **The number check proves a number exists, not that it belongs to that
-  stat.** The local model's three wrong answers above are one case of this.
+  stat.** Citations (v9) close most of this on Claude models: a cited number
+  must equal its own field. What they can't catch is a number from the right
+  field in a wrong sentence, such as `mundo`'s "8 or fewer games each" cited to
+  the losses' 8 when the wins had 9. The local model still has the whole gap.
+  The local model's three wrong answers above are one case of this.
   Another came from Opus on the `draft` case. It wrote that the win rates have
   "margins of around ±25 points", rounding the 24.5 and 24.7 in its own table.
   That breaks the rule against rounding, but it passed, because 25 is in the

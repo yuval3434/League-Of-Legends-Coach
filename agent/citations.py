@@ -23,6 +23,16 @@ from agent.numbers import ALLOWED_PHRASE, GAME_TIME, LIST_MARKER, NUMBER, _value
 
 MARKER = re.compile(r"\[\[([^\[\]\n]{1,80})\]\]")
 
+# A minute label: "minute 15", "minutes 10 and 15", "15 minutes", "the 10-minute
+# mark", "at 10, 15 and 20 min". Its numbers need no citation, but each must be a
+# minute the results define (see minutes()).
+_LIST = r"\d{1,3}(?:\s*(?:,|and|or|to|-|–)\s*\d{1,3})*"
+MINUTE_LABEL = re.compile(
+    rf"\bminutes?\s+{_LIST}\b|\b{_LIST}(?:\s+|-)(?:minutes?|mins?)\b", re.IGNORECASE
+)
+# The keys whose values are minutes, and stretch names such as "10-15".
+MINUTE_KEYS = ("minute", "start_minute", "end_minute", "stretch")
+
 # Fields that say which row an object is, for the hover's label.
 IDENTIFYING = (
     "cohort",
@@ -47,12 +57,13 @@ Citations
 Every number you write must be followed at once by a citation to the tool-result \
 field it was copied from: the object's `ref` and the field's name, in double square \
 brackets, such as 184[[2.14.my_value]] or 52.9[[1.3.win_rate_pct]]%. For a fixed fact \
-in a tool's description, such as a phase boundary, cite the tool's name: \
-15:00[[deaths_by_phase]]. A number inside a note or a list cites that field, such as \
-30[[1.0.notes]]. Copy the value exactly as the field holds it; you may leave out a \
-minus sign when the words say behind or ahead. Only list numbering and the phrase \
-"1 in 20" need no citation, so don't write any other number of your own, even in a \
-heading. The citations are removed before the player reads the reply: never mention \
+in a tool's description, cite the tool's name, such as 30[[compare_to_benchmark]]. A \
+number inside a note or a list cites that field, such as 30[[1.0.notes]]. Copy the \
+value exactly as the field holds it; you may leave out a minus sign when the words \
+say behind or ahead. Minute labels need no citation: "at minute 15", "15 minutes", \
+"the 10-minute mark" and "15:00" are checked against the minutes in the results. \
+Only those, list numbering and the phrase "1 in 20" need no citation, so don't \
+write any other number of your own, even in a heading. The citations are removed before the player reads the reply: never mention \
 them.\
 """
 
@@ -118,6 +129,20 @@ def sources(results: list[tuple[str, str]]) -> dict[str, Source]:
             found[ref.split(".")[0]] = Source(tool, objects)
             break
     return found
+
+
+def minutes(found: dict[str, Source], descriptions: dict[str, str]) -> set[float]:
+    """Every minute the results or descriptions define, for checking minute labels.
+    Minute 0, the start of the game, always counts."""
+    defined: set[float] = {0.0}
+    for source in found.values():
+        for obj in source.objects.values():
+            for key in MINUTE_KEYS:
+                if obj.get(key) is not None:
+                    defined |= _values(str(obj[key]))
+    for text in descriptions.values():
+        defined |= {_value(m[1]) for m in GAME_TIME.finditer(text) if m[2] == "00"}
+    return defined
 
 
 @dataclass
@@ -203,6 +228,8 @@ def check_citations(
         if free(*m.span(), skipped + times):
             tokens.append((m.start(), m.end(), m[0], False))
     tokens.sort()
+    labels = [m.span() for m in MINUTE_LABEL.finditer(reply)]
+    defined = minutes(found, descriptions)
 
     checked = Checked("", "")
     plain, linked, last = [], [], 0
@@ -211,7 +238,12 @@ def check_citations(
         plain.append(reply[last:start])
         linked.append(reply[last:start])
         if cite is None:
-            checked.problems.append(f"{number} has no citation")
+            in_label = minute or not free(start, end, labels)
+            value = _value(number.split(":")[0] if minute else number)
+            if not in_label:
+                checked.problems.append(f"{number} has no citation")
+            elif value not in defined or (minute and not number.endswith(":00")):
+                checked.problems.append(f"{number} isn't a minute any tool result defines")
             plain.append(number)
             linked.append(number)
             last = end

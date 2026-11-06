@@ -822,3 +822,56 @@ run was refused too, also at no cost. A role measured in one role is now a plain
 choice that includes "MAIN", the player's main role, which brings the count to
 15. Code that calls a tool without a role, such as the API's stats endpoint,
 gets MAIN filled in. A test fails above 16.
+
+## Every number cites the field it came from
+
+**Decision:** on Claude models, the server gives every object in a tool result
+a `ref` (the call's number in the conversation, then the object's place in the
+result, such as `2.14`), and the coach writes each number followed by
+`[[ref.field]]`, or `[[tool_name]]` for a fixed fact in a tool's description.
+Code checks that the number equals that field exactly, with no rounding, and
+fails any uncited number. One retry names each problem, then the reply is shown
+with a warning, as before. The markers are removed before the reply is shown,
+and each cited number comes back as a link whose hover shows its source.
+
+**Why refs, not paths:** a path such as `rows/14/my_value` makes the model count
+rows in a result of up to 32,000 characters. A ref is copied, not counted.
+
+**What's exempt:** list numbering, "1 in 20", digits in the player's Riot ID,
+and minute labels ("at minute 15", "15 minutes", "the 10-minute mark", "15:00").
+A minute label must still be a minute the results define: a `minute` field, a
+stretch boundary, a game time in a tool's description, or minute 0, the start
+of the game. The first `mundo` run failed only on minute labels the coach
+wouldn't cite, and a minute can't make up a stat.
+
+**Percentages:** every percent field already holds a percent (52.9, not
+0.529), so nothing is converted. If a tool ever returns a fraction, the percent
+gets its own field in SQL: multiplying by 100 would be a calculation.
+
+**The local model keeps the plain check.** A 4B model can't be relied on to
+cite, so it still checks that each number appears somewhere in the results.
+
+**What it catches, by replaying the recorded errors (free):** "±25" from 24.5
+and 24.7 is caught when it cites the margin it rounded. It passes only if it
+cites Viego's 25.0% win rate, and the hover then shows "Viego, win rate".
+`mundo`'s "8 or fewer games each" is caught only if it cites the wins' 9; cited
+to the losses' 8, it passes, because the error is the word "each", not the
+number.
+
+**Measured on Opus 5.5:** `draft` passed first time with 10 citations ($0.08).
+`mundo` first failed on minute labels; with them exempt, it passed every check
+with 31 citations after one retry ($0.19).
+
+**The grader sees the citations.** Each graded reply's citations are added to
+what the grader reads, so its wrong-stat check sees which field each number came
+from. The grader's calibration examples don't include citations.
+
+## The Compare page and stretches in any role
+
+**Decision:** the Compare page has the Overview's role tabs and compares each
+role with its own cohorts: peers, and for junglers below Emerald, Emerald as a
+target. Its two slots are now "peers" and "target", named by rank, instead of
+Silver and Emerald. Farm by stretch takes a role and measures against the lane
+opponent, the enemy player in the same position, and each of the role's
+cohorts. Switching player clears the page first, so one player's comparisons
+never show under another's name.

@@ -79,8 +79,8 @@ export type Comparison = {
   not_comparable?: string[];
 };
 
-/** Gold and CS gained minus the enemy jungler's, in one stretch of the game. */
-export type JunglerStretch = {
+/** Gold and CS gained minus the lane opponent's, in one stretch of the game. */
+export type OpponentStretch = {
   stretch: string;
   start_minute: number;
   end_minute: number;
@@ -100,6 +100,7 @@ export type CohortStretch = Omit<CompareRow, "theme"> & { stretch: string };
 export type StretchCohort = {
   cohort: string;
   tier: string;
+  audience: "peers" | "target";
   status: "ok" | "no_benchmark";
   benchmark_games: number;
   benchmark_players: number;
@@ -108,8 +109,10 @@ export type StretchCohort = {
 };
 
 export type Stretches = {
-  vs_enemy_jungler: JunglerStretch[];
-  benchmarks: Record<"silver" | "emerald", StretchCohort>;
+  role: Role;
+  vs_opponent: OpponentStretch[];
+  // Each of the role's cohorts that could fit the player.
+  benchmarks: Record<string, StretchCohort>;
   notes: string[];
 };
 
@@ -494,7 +497,8 @@ export const api = {
     get<{ rows: ChampionRow[] }>(`/stats/champion_stats${query({ role, player })}`).then((r) => r.rows),
   compare: (cohort: string, player: string | null) =>
     get<Comparison>(`/benchmarks/compare${query({ cohort, player })}`),
-  stretches: (player: string | null) => get<Stretches>(`/benchmarks/stretches${query({ player })}`),
+  stretches: (player: string | null, role: Role | null) =>
+    get<Stretches>(`/benchmarks/stretches${query({ player, role })}`),
   matches: (player: string | null, offset = 0) =>
     get<{ matches: MatchRow[]; total: number }>(`/matches${query({ player, offset: String(offset) })}`),
   match: (id: string, player: string | null) =>

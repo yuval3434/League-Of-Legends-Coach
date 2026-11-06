@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import type { CompareRow, Comparison } from "./api";
-import { compareHeadline, minutePoints } from "./compare";
+import { type Compared, compareHeadline, minutePoints } from "./compare";
+
+/** The page's two jungle cohorts: Silver as peers, Emerald as a target. */
+function jungleCohorts(peers: Comparison, target: Comparison): Compared[] {
+  return [
+    { slot: "peers", short: "Silver", group: "Silver junglers", comparison: peers },
+    { slot: "target", short: "Emerald", group: "Emerald junglers", comparison: target },
+  ];
+}
 
 const cs = (minute: number, mine: number, theirs: number, pct: number): CompareRow => ({
   metric: "gold_cs_at_minute", theme: "economy", value: "avg_cs", minute,
@@ -21,14 +29,14 @@ const emerald = comparison("emerald", [cs(10, 59.7, 69.5, -14), cs(20, 112.4, 14
 
 describe("compare headline", () => {
   it("uses the latest minute and the server's percentages", () => {
-    expect(compareHeadline(silver, emerald)).toBe(
+    expect(compareHeadline(jungleCohorts(silver, emerald))).toBe(
       "At 20 minutes you have 13% less CS than Silver junglers and 21% less than Emerald",
     );
   });
 
   it("skips a minute where your sample is too small", () => {
     const thin = comparison("silver", [cs(10, 59.7, 63.7, -6), { ...cs(20, 112.4, 128.9, -13), my_low_sample: true }]);
-    expect(compareHeadline(thin, emerald)).toBe(
+    expect(compareHeadline(jungleCohorts(thin, emerald))).toBe(
       "At 10 minutes you have 6% less CS than Silver junglers and 14% less than Emerald",
     );
   });
@@ -37,7 +45,7 @@ describe("compare headline", () => {
 describe("minute points", () => {
   it("puts your line and both benchmarks on each minute, with gaps where a row is missing", () => {
     const points = minutePoints("avg_cs", silver, emerald);
-    expect(points.map((p) => [p.minute, p.you, p.silver, p.emerald])).toEqual([
+    expect(points.map((p) => [p.minute, p.you, p.peers, p.target])).toEqual([
       [10, 59.7, 63.7, 69.5],
       [15, null, null, null],
       [20, 112.4, 128.9, 142.6],

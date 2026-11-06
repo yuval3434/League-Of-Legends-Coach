@@ -41,9 +41,6 @@ from benchmarks.cohorts import (
 )
 from benchmarks.themes import summarize_themes
 
-# The stretch rows, which are still about the jungle only.
-ROLE = "JUNGLE"
-
 # A lone gap this many times its margin is too big to put down to chance.
 STRONG_GAP_MULTIPLE = 2
 

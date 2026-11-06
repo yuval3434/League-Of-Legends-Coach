@@ -38,7 +38,7 @@ from analytics.stats import (
     win_rate_by_gold_diff,
     win_rates,
 )
-from benchmarks.cohorts import cohort_fits, get_cohort, offered_roles, why_no_benchmark
+from benchmarks.cohorts import cohort_fits, cohorts_for, get_cohort, offered_roles, why_no_benchmark
 from benchmarks.compare import compare, coverage
 from benchmarks.own import own_numbers
 from benchmarks.stretches import farm_by_stretch
@@ -201,13 +201,13 @@ async def _compare(context: ToolContext, arguments: dict[str, Any]) -> Row:
 
 
 async def _farm_by_stretch(context: ToolContext, arguments: dict[str, Any]) -> Row:
+    role = _in_role(context, arguments.get("role"))
+    rank = context.player.rank_tier if context.player else None
+    # The role's own cohorts: peers, then a target where one exists.
+    own = cohorts_for(rank, role) if context.player else list(_fits(context))
+    fits = {c: reason for c, reason in _fits(context).items() if c in own}
     async with context.sessions() as mine, context.benchmark_sessions() as bench:
-        return await farm_by_stretch(
-            mine,
-            bench,
-            list(context.puuids),
-            {c: reason for c, reason in _fits(context).items() if get_cohort(c).role == "JUNGLE"},
-        )
+        return await farm_by_stretch(mine, bench, list(context.puuids), fits, role)
 
 
 async def _role_measures(context: ToolContext, arguments: dict[str, Any]) -> Row:
@@ -320,12 +320,12 @@ TOOLS = (
     Tool(
         "farm_by_stretch",
         "Gold and CS in each stretch of the game (0-10, 10-15 and 15-20 minutes), "
-        "in jungle games only. `vs_enemy_jungler` is the player's gain minus the enemy "
-        "jungler's per stretch: negative is what they lost to them, with a margin "
+        "in one role. `vs_opponent` is the player's gain minus their lane "
+        "opponent's per stretch: negative is what they lost to them, with a margin "
         "and `clear_gold_diff`/`clear_cs_diff`. `benchmarks` compares the gold and "
-        "CS gained per stretch with each cohort, with both sample sizes. Use this "
-        "for any question about when in the game farm or gold is lost.",
-        {},
+        "CS gained per stretch with each of the role's cohorts, with both sample "
+        "sizes. Use this for any question about when in the game farm or gold is lost.",
+        {"role": IN_ROLE},
         _farm_by_stretch,
     ),
     Tool(
@@ -381,13 +381,15 @@ TOOLS = (
         "lane_diff",
         lane_diff,
         "Gold and CS difference against the lane opponent at minutes 10, 15 and "
-        "20, per role, also split by win and loss.",
+        "20, per role, also split by win and loss. The lane opponent is the enemy "
+        "player in the same position: the enemy jungler for a jungler, the enemy "
+        "support for a support, and so on.",
     ),
     _stat_tool(
         "win_rate_by_gold_diff",
         win_rate_by_gold_diff,
-        "Win rate in one role by gold difference against the lane opponent (for a "
-        "jungler, the enemy jungler) at minute 10.",
+        "Win rate in one role by gold difference against the lane opponent, the "
+        "enemy player in the same position, at minute 10.",
         BY_CHAMPION_IN_ROLE,
     ),
     _stat_tool(

@@ -1,7 +1,8 @@
-"""Gold and CS by stretch of the game, against the enemy jungler and each cohort.
+"""Gold and CS by stretch of the game, against the lane opponent and each cohort.
 
-A stretch is 0-10, 10-15 or 15-20 minutes. Against the enemy jungler, the
-player's own games say how much they lost in each stretch. Against a cohort, the
+A stretch is 0-10, 10-15 or 15-20 minutes. Against the lane opponent, the enemy
+player in the same position, the player's own games say how much they lost in
+each stretch. Against a cohort, the
 gold and CS gained in each stretch are compared with the same rows and rules as
 compare_to_benchmark: both sample sizes, the gap and its margin, and no benchmark
 rather than a substitute.
@@ -18,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from analytics.timeline_stats import farm_gained_by_stretch, farm_vs_opponent_by_stretch
 from analytics.stats import Scope
-from benchmarks.cohorts import COHORTS, MIN_BENCHMARK_GAMES, MIN_BENCHMARK_PLAYERS
-from benchmarks.compare import ROLE, SAMPLE_SIZE, Metric, _compare_metric, _patch_order
+from benchmarks.cohorts import MIN_BENCHMARK_GAMES, MIN_BENCHMARK_PLAYERS, get_cohort
+from benchmarks.compare import SAMPLE_SIZE, Metric, _compare_metric, _patch_order
 
 STRETCH_METRIC = Metric(
     "farm_gained_by_stretch",
@@ -32,8 +33,8 @@ NOTES = (
     "A stretch counts only games that lasted to its end, so later stretches can "
     "have fewer games.",
     "Against a cohort, the player's games are limited to the cohort's patches, "
-    "so their game count can differ from the enemy jungler rows, which use every "
-    "jungle game.",
+    "so their game count can differ from the lane opponent rows, which use every "
+    "game in the role.",
     "Stretch rows have margins but never make a finding on their own: they're the "
     "same data as gold and CS at minutes 10, 15 and 20.",
 )
@@ -49,9 +50,11 @@ async def _against_cohort(
     size = (
         await benchmark_session.execute(text(SAMPLE_SIZE), {"cohort": cohort, "champion": None})
     ).one()
+    group = get_cohort(cohort)
     result: dict[str, Any] = {
         "cohort": cohort,
-        "tier": COHORTS[cohort].tier,
+        "tier": group.tier,
+        "audience": group.audience,
         "benchmark_games": size.games,
         "benchmark_players": size.players,
         "rows": [],
@@ -64,8 +67,10 @@ async def _against_cohort(
             "note": f"A benchmark needs {MIN_BENCHMARK_GAMES} games and {MIN_BENCHMARK_PLAYERS} players.",
         }
     patches = tuple(sorted(size.patches or [], key=_patch_order))
-    mine = await farm_gained_by_stretch(my_session, Scope(puuids=tuple(puuids), role=ROLE, patches=patches))
-    theirs = await farm_gained_by_stretch(benchmark_session, Scope(cohort=cohort, role=ROLE))
+    mine = await farm_gained_by_stretch(
+        my_session, Scope(puuids=tuple(puuids), role=group.role, patches=patches)
+    )
+    theirs = await farm_gained_by_stretch(benchmark_session, Scope(cohort=cohort, role=group.role))
     rows = _compare_metric(STRETCH_METRIC, mine, theirs)
     for row in rows:
         # Never part of a theme, so never part of a finding.
@@ -78,21 +83,23 @@ async def farm_by_stretch(
     benchmark_session: AsyncSession,
     puuids: list[str],
     not_for_player: dict[str, str | None],
+    role: str = "JUNGLE",
 ) -> dict[str, Any]:
-    """Gold and CS per stretch: lost to the enemy jungler, and against each cohort.
+    """Gold and CS per stretch in `role`: lost to the lane opponent, and against
+    each of that role's cohorts.
 
-    `not_for_player` maps each cohort to why it doesn't fit the player, or None
-    when it does (see cohorts.why_no_benchmark).
+    `not_for_player` maps each cohort that could fit the player to why it
+    doesn't, or None when it does (see cohorts.cohort_fits).
     """
     return {
-        "vs_enemy_jungler": await farm_vs_opponent_by_stretch(
-            my_session, Scope(puuids=tuple(puuids), role=ROLE)
+        "role": role,
+        "vs_opponent": await farm_vs_opponent_by_stretch(
+            my_session, Scope(puuids=tuple(puuids), role=role)
         ),
         "benchmarks": {
-            cohort: await _against_cohort(
-                my_session, benchmark_session, puuids, cohort, not_for_player.get(cohort)
-            )
-            for cohort in COHORTS
+            cohort: await _against_cohort(my_session, benchmark_session, puuids, cohort, reason)
+            for cohort, reason in not_for_player.items()
+            if get_cohort(cohort).role == role
         },
         "notes": list(NOTES),
     }

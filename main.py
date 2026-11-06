@@ -588,16 +588,27 @@ def create_app(
                 )
 
     @app.get("/benchmarks/stretches")
-    async def stretches(request: Request, player: str | None = Query(default=None)) -> dict[str, Any]:
-        """Gold and CS per stretch, against the enemy jungler and each cohort that fits."""
+    async def stretches(
+        request: Request,
+        player: str | None = Query(default=None),
+        role: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        """Gold and CS per stretch in one role, the main one by default: against the
+        lane opponent and each of the role's cohorts."""
         chosen = await selected(request, player)
+        role = role or chosen.main_role or "JUNGLE"
+        if role not in ROLES:
+            raise HTTPException(422, "Give a role: TOP, JUNGLE, MIDDLE, BOTTOM or UTILITY")
         async with request.app.state.sessions() as my_session:
             async with request.app.state.benchmark_sessions() as benchmark_session:
+                # The role's own cohorts, as the Overview and Compare pages show them.
+                own = cohorts_for(chosen.rank_tier, role)
                 return await farm_by_stretch(
                     my_session,
                     benchmark_session,
                     [chosen.puuid],
-                    fits(chosen),
+                    {c: reason for c, reason in fits(chosen).items() if c in own},
+                    role,
                 )
 
     def has_anthropic_key() -> bool:

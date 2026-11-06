@@ -98,7 +98,8 @@ async def test_a_cohort_comparison_has_both_samples_and_no_theme(sessions, bench
     # Never part of a theme, so it can never become a finding.
     assert "theme" not in row
     assert result["benchmarks"]["emerald"]["status"] == "no_benchmark"
-    assert result["vs_enemy_jungler"][0]["avg_gold_diff"] == -100
+    assert result["vs_opponent"][0]["avg_gold_diff"] == -100
+    assert (result["role"], silver["audience"]) == ("JUNGLE", "peers")
 
 
 async def test_a_cohort_that_doesnt_fit_the_player_has_no_substitute(sessions, benchmark_sessions):  # noqa: F811
@@ -121,8 +122,11 @@ async def test_the_endpoint_follows_the_player_asked_for(test_settings, sessions
         friend = client.get("/benchmarks/stretches", params={"player": FRIEND})
         mine = client.get("/benchmarks/stretches").json()
 
-    # A mid laner gets no jungle benchmark; the owner's own stays.
-    assert friend.json()["benchmarks"][SILVER]["status"] == "no_benchmark"
+    # A mid laner gets their own role's cohort, with no benchmark pulled yet; the
+    # owner's jungle one stays.
+    assert friend.json()["role"] == "MIDDLE"
+    assert list(friend.json()["benchmarks"]) == ["silver_middle"]
+    assert friend.json()["benchmarks"]["silver_middle"]["status"] == "no_benchmark"
     assert mine["benchmarks"][SILVER]["status"] == "ok"
     assert "puuid" not in friend.text.lower()
 

@@ -33,7 +33,7 @@ function starters(s: Subject): string[] {
   if (s.you) {
     return [
       "What's the one thing I should work on first?",
-      "How does my farming compare with Silver junglers?",
+      "How does my farming compare with players of my rank?",
       "Do I die more than I should before objectives?",
     ];
   }
