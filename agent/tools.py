@@ -16,10 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from analytics.champion_card import riot_notes
 from analytics.draft import MAX_ALLIES, MAX_BANS, MAX_ENEMIES, draft_board
 from analytics.timeline_stats import (
+    damage_share,
     deaths_before_objective,
     first_lane_kill,
     kill_participation,
+    lane_plates,
     objective_control,
+    roams,
+    solo_kills,
     wards_per_minute,
 )
 from analytics.stats import (
@@ -34,8 +38,9 @@ from analytics.stats import (
     win_rate_by_gold_diff,
     win_rates,
 )
-from benchmarks.cohorts import COHORTS, offered_roles, why_no_benchmark
+from benchmarks.cohorts import cohort_fits, get_cohort, offered_roles, why_no_benchmark
 from benchmarks.compare import compare, coverage
+from benchmarks.own import own_numbers
 from benchmarks.stretches import farm_by_stretch
 from benchmarks.themes import THEMES
 from ingestion.ddragon import load_champions
@@ -54,6 +59,12 @@ CHAMPION = {
 }
 BY_CHAMPION = {"champion": CHAMPION}
 ROLES = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+# For stats measured in one role: null means the player's main role, not all roles.
+IN_ROLE = {
+    "anyOf": [{"type": "string", "enum": ROLES}, {"type": "null"}],
+    "description": "Games in this role. Null for the player's main role.",
+}
+BY_CHAMPION_IN_ROLE = {"champion": CHAMPION, "role": IN_ROLE}
 ROLE = {
     "anyOf": [{"type": "string", "enum": ROLES}, {"type": "null"}],
     "description": "Keep only games in this role. Null for every role.",
@@ -105,17 +116,26 @@ class ToolResult:
     is_error: bool = False
 
 
+def _main_role(context: ToolContext) -> str | None:
+    return context.player.main_role if context.player else None
+
+
 def _stat_tool(
     name: str,
     stat: Callable[[AsyncSession, Scope], Awaitable[list[Row]]],
     description: str,
     properties: dict[str, Any] = BY_CHAMPION,
 ) -> Tool:
+    """A tool for one stat. With IN_ROLE, a null role is the player's main role."""
+
     async def run(context: ToolContext, arguments: dict[str, Any]) -> Row:
+        role = arguments.get("role")
+        if properties.get("role") is IN_ROLE:
+            role = role or _main_role(context)
         scope = Scope(
             puuids=context.puuids,
             champion=arguments.get("champion"),
-            role=arguments.get("role"),
+            role=role,
         )
         async with context.sessions() as session:
             rows = await stat(session, scope)
@@ -129,12 +149,31 @@ async def _data_coverage(context: ToolContext, arguments: dict[str, Any]) -> Row
         result = await coverage(mine, bench, list(context.puuids))
     # Which cohorts fit this player at all, so the model doesn't assume one does.
     result["cohorts"] = {
-        cohort: _not_for_player(context, cohort) or "available" for cohort in COHORTS
+        cohort: reason or "available" for cohort, reason in _fits(context).items()
     }
+    player = context.player
+    if player:
+        result["roles"] = [
+            {"role": role, "games": player.role_games.get(role, 0)}
+            for role in offered_roles(player.role_games, player.main_role)
+        ]
     return result
 
 
+def _fits(context: ToolContext) -> dict[str, str | None]:
+    """Every cohort that could fit the player, with why it doesn't, or None."""
+    player = context.player
+    if player is None:
+        return cohort_fits(None, {}, None)
+    return cohort_fits(player.rank_tier, player.role_games, player.main_role, player.rank_checked)
+
+
 async def _compare(context: ToolContext, arguments: dict[str, Any]) -> Row:
+    if get_cohort(arguments["cohort"]) is None:
+        raise BadArguments(
+            f"There's no cohort called {arguments['cohort']}. data_coverage lists the "
+            "cohorts for this player."
+        )
     async with context.sessions() as mine, context.benchmark_sessions() as bench:
         result = await compare(
             mine,
@@ -156,8 +195,14 @@ async def _farm_by_stretch(context: ToolContext, arguments: dict[str, Any]) -> R
             mine,
             bench,
             list(context.puuids),
-            {cohort: _not_for_player(context, cohort) for cohort in COHORTS},
+            {c: reason for c, reason in _fits(context).items() if get_cohort(c).role == "JUNGLE"},
         )
+
+
+async def _wins_and_losses(context: ToolContext, arguments: dict[str, Any]) -> Row:
+    role = arguments.get("role") or _main_role(context) or "JUNGLE"
+    async with context.sessions() as session:
+        return await own_numbers(session, list(context.puuids), role)
 
 
 def _champions(most: int, who: str) -> dict[str, Any]:
@@ -217,19 +262,28 @@ TOOLS = (
         "data_coverage",
         "What data exists: the player's games, dates, patches and champions, and "
         "which champions have a benchmark in each cohort. `cohorts` says which "
-        "cohorts fit this player at all: \"available\", or why not. Call this first "
-        "if you don't know what's available.",
+        "cohorts fit this player at all: \"available\", or why not. `roles` are the "
+        "roles the player gets benchmarks in, main role first. Call this first if "
+        "you don't know what's available.",
         {},
         _data_coverage,
     ),
     Tool(
         "compare_to_benchmark",
-        "Compare the player's jungle stats with a cohort of real players. Returns "
-        "`themes`, which say what counts as a finding, and `rows`, with both "
-        "sample sizes, the gap and its margin. Silver is the player's peers. "
-        "Emerald is a target, and gets stats that don't depend on the opponent.",
+        "Compare the player's stats in one role with a cohort of real players "
+        "in that role. Returns `themes`, which say what counts as a finding, and "
+        "`rows`, with both sample sizes, the gap and its margin. A cohort of the "
+        "player's own rank is their peers. Emerald junglers are a target for "
+        "junglers below Emerald, and get only stats that don't depend on the "
+        "opponent. Each role is judged on its own measures.",
         {
-            "cohort": {"type": "string", "enum": sorted(COHORTS)},
+            "cohort": {
+                "type": "string",
+                "description": (
+                    "A cohort from data_coverage's `cohorts`, such as silver, emerald "
+                    "or gold_middle. Its role is the role compared."
+                ),
+            },
             "champion": CHAMPION,
             # Strict mode rejects an enum next to a list of types, so null is
             # its own branch.
@@ -243,7 +297,7 @@ TOOLS = (
     Tool(
         "farm_by_stretch",
         "Gold and CS in each stretch of the game (0-10, 10-15 and 15-20 minutes), "
-        "in jungle games. `vs_enemy_jungler` is the player's gain minus the enemy "
+        "in jungle games only. `vs_enemy_jungler` is the player's gain minus the enemy "
         "jungler's per stretch: negative is what they lost to them, with a margin "
         "and `clear_gold_diff`/`clear_cs_diff`. `benchmarks` compares the gold and "
         "CS gained per stretch with each cohort, with both sample sizes. Use this "
@@ -309,7 +363,9 @@ TOOLS = (
     _stat_tool(
         "win_rate_by_gold_diff",
         win_rate_by_gold_diff,
-        "Jungle win rate by gold difference against the enemy jungler at minute 10.",
+        "Win rate in one role by gold difference against the lane opponent (for a "
+        "jungler, the enemy jungler) at minute 10.",
+        BY_CHAMPION_IN_ROLE,
     ),
     _stat_tool(
         "after_loss_streak",
@@ -332,34 +388,75 @@ TOOLS = (
         "objective_control",
         objective_control,
         "Objectives taken by the player's team and by the enemy, per objective, in "
-        "jungle games.",
+        "jungle games only.",
     ),
     _stat_tool(
         "deaths_before_objective",
         deaths_before_objective,
         "How often the player died in the 60 seconds before an objective was "
-        "taken, with a baseline to compare with, in jungle games.",
+        "taken, with a baseline to compare with, in one role.",
+        BY_CHAMPION_IN_ROLE,
     ),
     _stat_tool(
         "kill_participation",
         kill_participation,
-        "Share of the team's kills the player took part in, in jungle games.",
+        "Share of the team's kills the player took part in, in one role.",
+        BY_CHAMPION_IN_ROLE,
     ),
     _stat_tool(
         "wards_per_minute",
         wards_per_minute,
         "Wards placed per minute, split into control wards and trinket wards, and "
-        "wards destroyed per minute, in jungle games. Also vision score per minute "
-        "and oracle_lens_pct, the share of games ending with Oracle Lens. Trinket "
-        "wards mostly show which trinket the player holds, and Riot's vision score "
-        "formula isn't public, so treat those three as context only.",
+        "wards destroyed per minute, in one role. Also vision score per minute, "
+        "support-item wards per minute, and oracle_lens_pct, the share of games "
+        "ending with Oracle Lens. Trinket wards mostly show which trinket the "
+        "player holds, and Riot's vision score formula isn't public, so treat those "
+        "as context only. A support's placed wards include the support item's.",
+        BY_CHAMPION_IN_ROLE,
     ),
     _stat_tool(
         "first_lane_kill",
         first_lane_kill,
         "The first kill or assist on a laner in their own lane before 15:00, per "
         "lane. This isn't gank data: a game with no such kill may still have had "
-        "ganks, and failed ganks can't be seen.",
+        "ganks, and failed ganks can't be seen. Jungle games only.",
+    ),
+    _stat_tool(
+        "solo_kills",
+        solo_kills,
+        "Kills the player made with no one assisting, per game and before 15:00, "
+        "in one role.",
+        BY_CHAMPION_IN_ROLE,
+    ),
+    _stat_tool(
+        "lane_plates",
+        lane_plates,
+        "Enemy turret plates that fell in the player's lane before 14:00, per game, "
+        "in one role: every one, and the ones the player last hit (context, since "
+        "minions take many). No rows for jungle games.",
+        BY_CHAMPION_IN_ROLE,
+    ),
+    _stat_tool(
+        "damage_share",
+        damage_share,
+        "The player's share of their team's damage to champions, per game, in one role.",
+        BY_CHAMPION_IN_ROLE,
+    ),
+    _stat_tool(
+        "roams",
+        roams,
+        "Kills and assists before 14:00 away from mid and both bases, per game, in "
+        "one role. Only roams that paid off show. Context, not a judgement.",
+        BY_CHAMPION_IN_ROLE,
+    ),
+    Tool(
+        "wins_and_losses",
+        "The player's own measures in one role over all their games, and over "
+        "their wins and their losses apart, with margins and sample sizes. For a "
+        "role with no benchmark. It shows how a measure moves with the result, not "
+        "what caused it, and it is never a finding.",
+        {"role": IN_ROLE},
+        _wins_and_losses,
     ),
 )
 _BY_NAME = {tool.name: tool for tool in TOOLS}

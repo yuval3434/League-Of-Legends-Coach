@@ -26,12 +26,12 @@ from agent.tools import TOOLS, ToolContext, run_tool
 from analytics.champion_card import champion_card, riot_notes
 from analytics.matches import match_detail, recent_matches
 from benchmarks.cohorts import (
-    COHORTS,
     MIN_BENCHMARK_GAMES,
     MIN_BENCHMARK_PLAYERS,
     PULLABLE_TIERS,
     ROLES,
     TARGET_OVERALL,
+    cohort_fits,
     cohorts_for,
     get_cohort,
     offered_roles,
@@ -366,22 +366,8 @@ def create_app(
         state = request.app.state
         return ToolContext(state.sessions, state.benchmark_sessions, (player.puuid,), player)
 
-    def benchmarks_for(
-        rank_tier: str | None,
-        role_games: dict[str, int],
-        main_role: str | None,
-        rank_checked: bool,
-    ) -> dict[str, str | None]:
-        """The first two cohorts and every one for the player's roles, each with
-        why it doesn't fit the player, or None if it does."""
-        roles = offered_roles(role_games, main_role)
-        names = list(COHORTS)
-        for role in roles:
-            names += [n for n in cohorts_for(rank_tier, role) if n not in names]
-        return {name: why_no_benchmark(name, rank_tier, roles, rank_checked) for name in names}
-
     def fits(player: SelectedPlayer) -> dict[str, str | None]:
-        return benchmarks_for(
+        return cohort_fits(
             player.rank_tier, player.role_games, player.main_role, player.rank_checked
         )
 
@@ -860,7 +846,7 @@ def create_app(
         return [
             row
             | {
-                "benchmarks": benchmarks_for(
+                "benchmarks": cohort_fits(
                     row["rank_tier"],
                     row["role_games"],
                     row["main_role"],

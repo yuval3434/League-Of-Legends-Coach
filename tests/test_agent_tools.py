@@ -15,7 +15,10 @@ from ingestion.ddragon import refresh_champions
 from test_draft import champ, fake_ddragon
 
 ME = "me"
-BY_CHAMPION = [t.name for t in TOOLS if "champion" in t.properties and t.name != "compare_to_benchmark"]
+# Lane plates has no rows for jungle games, which is all this test data has.
+BY_CHAMPION = [
+    t.name for t in TOOLS if "champion" in t.properties and t.name not in ("compare_to_benchmark", "lane_plates")
+]
 
 
 @pytest.fixture
@@ -33,7 +36,7 @@ async def add_two_champions(sessions):
     """A game each on Viego and Quinn, with everything the stats need to find rows."""
     async with sessions() as session:
         for match_id, champion in (("EUW1_1", "Viego"), ("EUW1_2", "Quinn")):
-            await add_game(session, match_id, champion=champion, patch="16.21", kills=2)
+            await add_game(session, match_id, champion=champion, patch="16.21", kills=2, damage=1000)
             for minute in (10, 15, 20):
                 await add_frames(session, match_id, minute, {2: 1000, 7: 900})
             await add_event(
@@ -199,7 +202,7 @@ async def test_low_sample_is_only_mentioned_when_true(context, sessions):
     [
         ("no_such_tool", {}, "no tool"),
         ("win_rates", {"puuid": "someone-else"}, "Unknown arguments"),
-        ("compare_to_benchmark", {"cohort": "gold"}, "must be one of"),
+        ("compare_to_benchmark", {"cohort": "gold"}, "no cohort called gold"),
         ("win_rates", {"champion": 7}, "must be text"),
         ("draft_board", {"allies": "Ahri", "enemies": [], "bans": []}, "list of names"),
     ],

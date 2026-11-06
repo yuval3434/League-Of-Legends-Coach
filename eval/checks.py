@@ -51,7 +51,16 @@ def says(answer: CoachAnswer, phrases: tuple[str, ...]) -> Check:
     return Check(bool(found), f"found {found}" if found else f"none of {list(phrases)}")
 
 
-def run_code_check(name: str, answer: CoachAnswer, phrases: tuple[str, ...]) -> Check:
+def right_cohort(answer: CoachAnswer, cohort: str | None) -> Check:
+    """Every benchmark comparison used the player's own peer cohort, and there was one."""
+    used = [log.arguments.get("cohort") for log in answer.tool_log if log.name == "compare_to_benchmark"]
+    passed = bool(used) and cohort is not None and all(c == cohort for c in used)
+    return Check(passed, f"compared with {used}, expected {cohort}")
+
+
+def run_code_check(
+    name: str, answer: CoachAnswer, phrases: tuple[str, ...], cohort: str | None = None
+) -> Check:
     if name == "verified":
         return verified(answer)
     if name == "used_tools":
@@ -60,4 +69,6 @@ def run_code_check(name: str, answer: CoachAnswer, phrases: tuple[str, ...]) -> 
         return first_try(answer)
     if name == "says":
         return says(answer, phrases)
+    if name == "right_cohort":
+        return right_cohort(answer, cohort)
     raise ValueError(f"Unknown code check: {name}")

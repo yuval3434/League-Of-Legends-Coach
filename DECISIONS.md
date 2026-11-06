@@ -790,3 +790,23 @@ beside the player's average in that role, with that role's cohorts as
 benchmarks. The gap rules and the enemy composition don't depend on role, so
 they're unchanged. The `draft_board` tool takes an optional `role`; with none,
 it uses the player's main role.
+
+## The coach works in any role
+
+**Decision:** the coach is no longer a jungle coach. Tools measured in one role
+take a `role`, and a null role means the player's main role, not jungle: before
+this, a mid laner asking about kill participation would have been given their
+jungle games. `compare_to_benchmark` takes any cohort name and checks it in
+code, because a fixed list can't hold cohorts pulled on demand. `data_coverage`
+lists the player's roles and every cohort that could fit them. New tools: solo
+kills, lane plates, damage share, roams, and `wins_and_losses` for a role with
+no benchmark, which the prompt says to present as how a measure moves with the
+result, never as a finding. Objective share, first lane kill and farm by stretch
+stay jungle-only, and their descriptions say so.
+
+**The eval gets a mid laner, asked as "you".** The new `mid_peers` case asks the
+test Gold mid laner "What should I work on in my mid games?" and passes its code
+check only if every benchmark comparison uses their own peer cohort. The case
+picks its player by rule (the first synced player whose main role isn't jungle)
+and shows them to the coach as the owner with a placeholder name, so no Riot ID
+reaches the prompt or the saved results.

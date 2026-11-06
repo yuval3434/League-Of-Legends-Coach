@@ -129,6 +129,21 @@ def why_no_benchmark(
     return None
 
 
+def cohort_fits(
+    rank_tier: str | None,
+    role_games: dict[str, int],
+    main_role: str | None,
+    rank_checked: bool = True,
+) -> dict[str, str | None]:
+    """The first two cohorts and every one for the player's roles, each with why
+    it doesn't fit the player, or None if it does."""
+    roles = offered_roles(role_games, main_role)
+    names = list(COHORTS)
+    for role in roles:
+        names += [n for n in cohorts_for(rank_tier, role) if n not in names]
+    return {name: why_no_benchmark(name, rank_tier, roles, rank_checked) for name in names}
+
+
 WINDOW_DAYS = 28
 TARGET_OVERALL = 500
 TARGET_PER_CHAMPION = 100
