@@ -26,7 +26,9 @@ MARKER = re.compile(r"\[\[([^\[\]\n]{1,80})\]\]")
 # A minute label: "minute 15", "minutes 10 and 15", "15 minutes", "the 10-minute
 # mark", "at 10, 15 and 20 min". Its numbers need no citation, but each must be a
 # minute the results define (see minutes()).
-_LIST = r"\d{1,3}(?:\s*(?:,|and|or|to|-|–)\s*\d{1,3})*"
+# Whole numbers only: "21" in "21.8" isn't a minute.
+_N = r"\d{1,3}(?!\d|\.\d)"
+_LIST = rf"{_N}(?:\s*(?:,|and|or|to|-|–)\s*{_N})*"
 MINUTE_LABEL = re.compile(
     rf"\bminutes?\s+{_LIST}\b|\b{_LIST}(?:\s+|-)(?:minutes?|mins?)\b", re.IGNORECASE
 )

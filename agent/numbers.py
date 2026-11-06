@@ -8,7 +8,8 @@ wrong stat, and it doesn't read numbers written as words, such as "twice".
 import re
 
 NUMBER = re.compile(r"(?<![\w.])(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)")
-GAME_TIME = re.compile(r"(?<![\w.:])(\d{1,3}):(\d{2})(?![\d:])")
+# Not followed by a digit or ":digit" (so 1:23:45 isn't one), but a colon may end it: "15:00:".
+GAME_TIME = re.compile(r"(?<![\w.:])(\d{1,3}):(\d{2})(?!\d)(?!:\d)")
 LIST_MARKER = re.compile(r"^\s*\d+[.)]\s", re.MULTILINE)
 # The system prompt tells the model to explain findings with this phrase.
 ALLOWED_PHRASE = re.compile(r"\b1 in 20\b", re.IGNORECASE)

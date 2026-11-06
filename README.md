@@ -328,7 +328,7 @@ restart keeps the old environment.
 
 ## Eval
 
-The eval asks the real coach 12 questions and grades each answer. Checks that code
+The eval asks the real coach 16 questions and grades each answer. Checks that code
 can do exactly are code: the number check passed, a tool was called, and the reply
 says "no benchmark" for Dr. Mundo and "not enough data" for Viego. The rest are
 graded by a model, Haiku 5.5, one call per property: a real number attached to the
@@ -436,6 +436,67 @@ coach's and three are the grader's:
 That reading is mine; the table keeps the grader's verdicts. The two coach
 failures aren't fixed: they're more cases of two known gaps, listed under the
 limits below.
+
+### The full run with citations
+
+The first run with number citations, on 2026-11-07: all 16 cases on Opus 5.5,
+with four new cases outside the jungle. It cost $2.72: $2.56 for the coach and
+$0.16 for the grader. 12 of the 16 replies needed a citation retry, which is
+most of why it cost more than v8's $1.68.
+
+| Check | How | Passed |
+|---|---|---|
+| A tool was called | Code | 16 / 16 |
+| The number check passed | Code | 15 / 16 |
+| Role-taking tools used the role asked about | Code | 4 / 4 |
+| Compared with the player's own peer cohort | Code | 1 / 1 |
+| Never says "enemy jungler" about mid lane | Code | 1 / 1 |
+| Says the expected words | Code | 5 / 7 |
+| No number the retry had to fix | Code | 0 / 1 |
+| A real number on the wrong stat | Model | 16 / 16 |
+| Numbers in words | Code, then model | 15 / 16 |
+| Claims the tools don't support | Model | 14 / 16 |
+| Win-only or loss-only rows as findings | Model | 2 / 5 |
+| Ranking gaps in different units | Model | 5 / 5 |
+| Nothing computed between minutes | Model | 3 / 3 |
+| No pick chosen | Model | 2 / 2 |
+| No matchup claim | Model | 1 / 2 |
+| Presents both Silver findings | Model | 1 / 1 |
+| No relative stats compared against Emerald | Model | 1 / 1 |
+| **Total** | | **102 / 113** |
+
+Reading each of the 11 failures against the replies and tool results: four are
+the coach's, three the grader's, and four were problems in my checks or cases.
+
+- **Coach, `bot_no_benchmark`:** it said none of the stretch gaps was beyond its
+  margin, then made "the 15–20 minute stretch" the first thing to work on.
+- **Coach, `wins`, twice:** it stated "getting ahead helps you win" as a fact,
+  presented lane differences split by result as facts, and built a weakness on
+  mid-game deaths per 10 minutes, a row with no margin.
+- **Coach, `draft_options`:** "one gap" and "two physical ranged carries" are
+  counts from the board written as words.
+- **Grader, `bot_no_benchmark` and `support_vision`:** both failed the
+  wins-and-losses check for differences that `wins_and_losses` marks clear
+  (early deaths 2.09 in 11 wins against 3.71 in 17 losses; the support's deaths
+  in all three phases), stated as links, not causes. That check was written for
+  rows split by result inside a comparison, which are only ever a suggestion;
+  the v8 tool reports clear differences between wins and losses on purpose.
+- **Grader, `draft_options`:** "effective against tanks such as Darius and
+  Malphite" applies Riot's tip to the board: how to play, not who wins.
+- **My checks, `farming`:** the citation check didn't read "20:00:" at the end
+  of a bold heading as a time, so it failed "20" and "00" twice. Fixed.
+- **My check, `stretch_no_tool`:** the first reply left a minute range without
+  the word "minute", which my minute pattern doesn't cover; the retry fixed it.
+  The check is meant to catch a computed number on the first try, and a
+  citation slip now fails it too.
+- **My case, `bot_no_benchmark`:** the reply said "no Gold bot lane benchmark",
+  and my pattern allowed only two words between "no" and "benchmark". Fixed.
+- **My case, `mundo`:** it expects "no benchmark", but Dr. Mundo has had a
+  Silver benchmark since the overnight pulls (32 games from 29 players), so the
+  coach rightly compared with it.
+
+Two of the four new cases passed every check (`top_lane`, `mid_stretch`), and
+every role-taking call used the role the question named.
 
 ### Newer cases
 

@@ -282,3 +282,15 @@ def test_minute_0_is_the_start_of_the_game():
 def test_stretch_boundaries_are_minutes_too():
     stretch = labelled("farm_by_stretch", {"rows": [{"stretch": "10-15", "games": 90}]})
     assert check("Between minutes 10 and 15 you lose ground.", stretch).problems == []
+
+
+# Fixes after the 16-case run
+
+
+def test_a_game_time_that_ends_a_bold_heading_is_still_a_time():
+    assert check("**The window from 15:00 to 20:00:** take your camps.", LANE).problems == []
+
+
+def test_a_decimal_after_a_minute_list_is_a_number_not_a_minute():
+    result = check("13.2[[1.1.games]] behind at minute 15 and 21.8 behind at minute 20.", LANE)
+    assert result.problems == ["13.2 cites 1.1.games, which is 92", "21.8 has no citation"]

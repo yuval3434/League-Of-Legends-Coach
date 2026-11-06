@@ -166,3 +166,11 @@ def test_the_new_cases_name_their_player_and_role_but_no_one():
         assert (case.player, case.role, "role_args" in case.code_checks) == (player, role, True)
     assert "avoids" in by_id["mid_stretch"].code_checks
     assert len(CASES) == 16
+
+
+def test_the_no_benchmark_pattern_allows_a_long_cohort_name():
+    from eval.checks import says
+
+    case = next(c for c in CASES if c.id == "bot_no_benchmark")
+    reply = CoachAnswer("No Gold bot lane benchmark exists yet.", "verified")
+    assert says(reply, case.says).passed
