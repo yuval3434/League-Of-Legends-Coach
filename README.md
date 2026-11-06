@@ -310,7 +310,7 @@ restart keeps the old environment.
 
 ## Eval
 
-The eval asks the real coach 10 questions and grades each answer. Checks that code
+The eval asks the real coach 12 questions and grades each answer. Checks that code
 can do exactly are code: the number check passed, a tool was called, and the reply
 says "no benchmark" for Dr. Mundo and "not enough data" for Viego. The rest are
 graded by a model, Haiku 5.5, one call per property: a real number attached to the
@@ -368,6 +368,57 @@ difference against Emerald and compared only gold and CS at each minute, which
 are allowed. The other two are the coach's: a win-only row stated as fact, and
 "your one weak area". It cost $0.91.
 
+### The full run on v8
+
+v8 changed the prompt from a jungle coach's to one for any role, and changed the
+tools, so all 12 cases were run again on Opus 5.5 on 2026-11-06. Every answer
+passed the number check and called tools. It cost $1.68: $1.56 for the coach
+and $0.12 for the grader.
+
+| Check | How | Passed |
+|---|---|---|
+| The number check passed | Code | 12 / 12 |
+| A tool was called | Code | 12 / 12 |
+| Says the expected words | Code | 5 / 5 |
+| No number the retry had to fix | Code | 1 / 1 |
+| Compared with the player's own peer cohort | Code | 1 / 1 |
+| Claims the tools don't support | Model | 12 / 12 |
+| Ranking gaps in different units | Model | 5 / 5 |
+| Win-only or loss-only rows as findings | Model | 3 / 3 |
+| Presents both Silver findings | Model | 1 / 1 |
+| No relative stats compared against Emerald | Model | 1 / 1 |
+| No pick chosen | Model | 2 / 2 |
+| A real number on the wrong stat | Model | 11 / 12 |
+| Numbers in words | Code, then model | 10 / 12 |
+| No matchup claim | Model | 1 / 2 |
+| Nothing computed between minutes | Model | 0 / 1 |
+| **Total** | | **77 / 82** |
+
+Reading the five failures against the replies and tool results, two are the
+coach's and three are the grader's:
+
+- **Coach, `mundo`:** it said the win and loss splits had "8 or fewer" games
+  each, when the wins had 9 at minutes 10 and 15. The number check missed it
+  because 8 is in the results too, as the losses' count.
+- **Coach, `stretch_no_tool`:** it correctly refused to give the gold lost from
+  10 to 15, then said "the gap grows faster in games you lose". That compares
+  the change from 10 to 15 in losses with the change in wins, a subtraction no
+  tool made, in words instead of a number.
+- **Grader, `stretch_no_tool`:** "here are the two numbers" counts the reply's
+  own table rows, not anything in the player's data.
+- **Grader, `draft`:** "fewer than two Fighters" is copied from the tool's own
+  rule text.
+- **Grader, `draft_options`:** it failed Amumu's strengths ("his E reduces the
+  physical damage he takes, and three of the four enemies are physical") as
+  implying a good pick. The case asks for each champion's strengths against the
+  enemy team from Riot's text, and the matchup rule covers only outcomes: who
+  wins, who's favoured, who's a good pick. The reply makes none of those and
+  says so.
+
+That reading is mine; the table keeps the grader's verdicts. The two coach
+failures aren't fixed: they're more cases of two known gaps, listed under the
+limits below.
+
 ### Newer cases
 
 Two cases were added after those runs. Each has been run once on Opus 5.5:
@@ -392,10 +443,6 @@ Two cases were added after those runs. Each has been run once on Opus 5.5:
   finding, as something to keep an eye on, though it called them only a possible
   pattern.
 
-**Not re-run since v8.** The v8 prompt is no longer a jungle coach's, and the
-tools changed. Only `mid_peers` has been run on it: the other 11 cases haven't
-been run since, so their results above are from the earlier prompt. A full
-12-case run is still to do.
 
 ### Results on a local model
 
@@ -432,7 +479,16 @@ different failures, so both are needed (see DECISIONS.md).
   That breaks the rule against rounding, but it passed, because 25 is in the
   tool result as Viego's 25.0% win rate. The grader's wrong-stat check passed
   it too. Neither check can tell a rounded number from an unrelated one that
-  happens to match.
+  happens to match. The v8 run found another, on `mundo`: the win and loss
+  splits had "8 or fewer" games each, when the wins had 9. It passed the number
+  check because 8 is in the same result as the losses' count. The grader's
+  wrong-stat check caught this one.
+- **A calculation done in words passes the number check.** The check reads
+  numbers, so a comparison that needs arithmetic but states no number gets
+  through. On `stretch_no_tool` in the v8 run, the coach rightly refused to give
+  the gold lost from 10 to 15 minutes, then wrote that "the gap grows faster in
+  games you lose": a comparison of two changes no tool computed. Only the
+  grader's check for computed values caught it.
 - **The sample is small.** With 8 cases run once, a difference in pass rate under
   about 35 points is noise, so one run can't tell two models apart. Comparing
   models needs more cases and repeated runs (`--reps`).
