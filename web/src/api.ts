@@ -247,6 +247,8 @@ export type ChampionRow = {
   assists: number;
   kda: number;
   cs_per_min: number;
+  // The games split by role; "" for games Riot gave no role.
+  games_by_role: Record<string, number>;
   low_sample?: boolean;
 };
 

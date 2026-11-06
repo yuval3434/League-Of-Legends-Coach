@@ -8,7 +8,7 @@ import { api, type ChampionRow, type Role } from "../api";
 import { ChampionIcon } from "../components/ChampionIcon";
 import { Layout } from "../components/Layout";
 import { Marker } from "../components/Verdict";
-import { nextSort, rangeWords, sortChampions, type Sort, type SortKey } from "../champions";
+import { nextSort, rangeWords, roleSplit, sortChampions, type Sort, type SortKey } from "../champions";
 import { usePlayer } from "../player";
 import { type Subject, subjectOf, YOU, Whose } from "../subject";
 import { useChampionNames } from "../ddragon";
@@ -96,7 +96,17 @@ function HeaderCell({ column, sort, onSort }: { column: (typeof COLUMNS)[number]
   );
 }
 
-function ChampionTableRow({ row, name, subject }: { row: ChampionRow; name: string; subject: Subject }) {
+function ChampionTableRow({
+  row,
+  name,
+  subject,
+  allRoles,
+}: {
+  row: ChampionRow;
+  name: string;
+  subject: Subject;
+  allRoles: boolean;
+}) {
   const low = row.low_sample ?? false;
   const tone = low ? "text-ink3" : "text-ink";
   return (
@@ -110,9 +120,21 @@ function ChampionTableRow({ row, name, subject }: { row: ChampionRow; name: stri
         </div>
       </td>
       <td className={`py-2.5 pl-4 text-right ${tone}`}>
-        <span className="inline-flex items-center gap-2">
+        {/* Under "All roles", the split by role waits behind a hover or focus. */}
+        <span
+          tabIndex={allRoles ? 0 : undefined}
+          className="group/games relative inline-flex items-center gap-2 outline-none"
+        >
           {low && <Marker state="low" size={8} />}
           {row.games}
+          {allRoles && (
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute bottom-full right-0 z-10 mb-1.5 w-max max-w-[300px] rounded-[3px] border border-rule bg-panel px-3 py-2 text-left text-[13px] leading-relaxed text-ink2 opacity-0 shadow-lg shadow-black/40 transition-opacity duration-150 group-hover/games:opacity-100 group-focus/games:opacity-100"
+            >
+              {roleSplit(row)}
+            </span>
+          )}
         </span>
       </td>
       <td className="py-2.5 pl-4">
@@ -227,7 +249,13 @@ export function Champions() {
             </thead>
             <tbody>
               {shown.map((row) => (
-                <ChampionTableRow key={row.champion} row={row} name={name(row.champion)} subject={s} />
+                <ChampionTableRow
+                  key={row.champion}
+                  row={row}
+                  name={name(row.champion)}
+                  subject={s}
+                  allRoles={role === null}
+                />
               ))}
             </tbody>
           </table>

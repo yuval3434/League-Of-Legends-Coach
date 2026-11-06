@@ -292,7 +292,9 @@ function Results({
                           <span className="text-[11px] text-ink3">{isOpen ? "▴" : "▾"}</span>
                         </button>
                       </th>
-                      <td className="py-2.5 pr-6 font-mono">{p.games}</td>
+                      <td className="py-2.5 pr-6 font-mono">
+                        {p.games} {role} game{p.games === 1 ? "" : "s"}
+                      </td>
                       <td className="py-2.5 pr-6">
                         <div>{rate.main}</div>
                         <div className="font-mono text-[11px] text-ink3">{rate.detail}</div>

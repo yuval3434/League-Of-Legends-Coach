@@ -12,7 +12,7 @@ const cs = (minute: number, mine: number, theirs: number, pct: number): CompareR
   clear_gap: true, strong_gap: false, status: "ok",
 });
 const comparison = (cohort: string, rows: CompareRow[]): Comparison => ({
-  cohort, tier: cohort.toUpperCase(), status: "ok", benchmark_games: 500, benchmark_players: 450,
+  cohort, tier: cohort.toUpperCase(), role: "JUNGLE", status: "ok", benchmark_games: 500, benchmark_players: 450,
   benchmark_patches: ["16.19"], rows, themes: [], notes: [],
 });
 

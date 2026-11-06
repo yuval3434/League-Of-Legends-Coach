@@ -1089,3 +1089,13 @@ async def test_champion_stats_put_the_most_played_first(sessions):
         rows = await champion_stats(session, [ME])
 
     assert [r["champion"] for r in rows] == ["Viego", "Amumu"]
+
+
+async def test_champion_stats_split_each_champions_games_by_role(session):
+    for n in range(3):
+        await add_game(session, f"EUW1_J{n}", champion="DrMundo")
+    await add_game(session, "EUW1_T1", champion="DrMundo", role="TOP")
+
+    row = (await champion_stats(session, [ME]))[0]
+
+    assert (row["games"], row["games_by_role"]) == (4, {"JUNGLE": 3, "TOP": 1})
