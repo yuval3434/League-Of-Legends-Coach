@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     sync_queues: list[int] = [420, 440]
     sync_match_count: int = 100
+    # Every tracked player is synced this often while the API runs; 0 turns it off.
+    auto_sync_minutes: int = 30
 
     anthropic_api_key: SecretStr = SecretStr("")
     coach_model: str = "claude-opus-5-5"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseRiotId, progressOf, timeLeft } from "./sync";
+import { autoSyncWords, parseRiotId, progressOf, timeLeft } from "./sync";
 
 describe("Riot IDs", () => {
   it("splits a name and tag, keeping spaces in the name", () => {
@@ -45,5 +45,31 @@ describe("sync progress", () => {
     expect(timeLeft(144)).toBe("about 2 min left");
     expect(timeLeft(30)).toBe("under a minute left");
     expect(timeLeft(null)).toBe("");
+  });
+});
+
+describe("auto-sync", () => {
+  const clock = () => "11:52";
+
+  it("says when it last ran and what it found", () => {
+    expect(autoSyncWords({ state: "ok", every_minutes: 30, last_run_at: "x", players: 2, new_games: 1 }, clock)).toEqual({
+      text: "Auto-sync every 30 minutes. Last at 11:52: 1 new game.",
+      warn: false,
+    });
+    const partly = autoSyncWords(
+      { state: "partly_failed", every_minutes: 30, last_run_at: "x", new_games: 0, failed: ["Ana#EUW wasn't found"] },
+      clock,
+    );
+    expect(partly.text).toBe("Auto-sync every 30 minutes. Last at 11:52: 0 new games. Couldn't sync: Ana#EUW wasn't found.");
+  });
+
+  it("warns when the key is refused, in the server's words", () => {
+    const words = autoSyncWords({ state: "key_refused", every_minutes: 30, error: "Riot refused the API key." }, clock);
+    expect(words).toEqual({ text: "Riot refused the API key.", warn: true });
+  });
+
+  it("doesn't warn about a skipped round", () => {
+    const words = autoSyncWords({ state: "skipped", every_minutes: 30, error: "A manual sync was running." }, clock);
+    expect(words).toEqual({ text: "Auto-sync every 30 minutes. The last round was skipped: a manual sync was running.", warn: false });
   });
 });
