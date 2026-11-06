@@ -1,0 +1,65 @@
+# Checks every push and pull request: the frontend builds and passes its tests,
+# and the backend passes lint and its whole suite against a real Postgres.
+# No secrets are set here, so nothing can reach a paid model or the Riot API.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      # tsc -b, then vite build: the real type check.
+      - run: npm run build
+      - run: npm test
+
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: lolcoach
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: lolcoach
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lolcoach -d lolcoach"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: lolcoach
+      POSTGRES_PASSWORD: ci-only-password
+      POSTGRES_DB: lolcoach
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: No API keys
+        run: |
+          test -z "${ANTHROPIC_API_KEY:-}" || { echo "ANTHROPIC_API_KEY must not be set in CI"; exit 1; }
+          test -z "${RIOT_API_KEY:-}" || { echo "RIOT_API_KEY must not be set in CI"; exit 1; }
+      - run: uvx ruff@0.15.9 check .
+      # CI makes the conftest fail, not skip, if Postgres can't be reached.
+      - run: uv run pytest -q -rfs

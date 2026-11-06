@@ -1,5 +1,7 @@
 # LoL Coach
 
+[![CI](https://github.com/yuval3434/League-Of-Legends-Coach/actions/workflows/ci.yml/badge.svg)](https://github.com/yuval3434/League-Of-Legends-Coach/actions/workflows/ci.yml)
+
 A personal League of Legends coach, for any role. It pulls my matches from the
 Riot API, computes every stat in SQL, compares them with real players of the same
 rank and role, and uses an LLM agent to explain them in plain language. The model never
@@ -527,3 +529,14 @@ uv run pytest
 ```
 
 Tests use a separate `lolcoach_test` database.
+
+The frontend's type check is `npm run build`, which runs `tsc -b`: in this
+project `tsc --noEmit` checks nothing, because the root `tsconfig.json` only
+points to the real configs.
+
+[CI](.github/workflows/ci.yml) runs on every push and pull request. The frontend
+job runs `npm ci`, `npm run build` and `npm test`. The backend job runs ruff and
+the whole suite against Postgres in a service container. No secret is set in CI,
+and a step fails the run if an Anthropic or Riot key is present, so nothing can
+reach a paid model. On CI, the tests fail instead of skipping when Postgres
+can't be reached, so a green run means they ran.

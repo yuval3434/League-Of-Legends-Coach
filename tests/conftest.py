@@ -38,6 +38,9 @@ def test_settings() -> Settings:
     try:
         _ensure_test_database(settings)
     except OSError:
+        # On CI a skip would turn a broken database into a green run.
+        if os.getenv("CI"):
+            raise
         pytest.skip("Postgres isn't running: docker compose up -d db")
     # No test may reach a paid model, even with a key in .env.
     return settings.model_copy(
