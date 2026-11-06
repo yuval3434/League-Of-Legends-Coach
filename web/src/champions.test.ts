@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { ChampionRow } from "./api";
-import { nextSort, rangeWords, sortChampions } from "./champions";
+import { nextSort, rangeWords, roleSplit, sortChampions } from "./champions";
 import { parseRoute, askCoach } from "./router";
 
 const row = (champion: string, games: number, win_rate_pct: number): ChampionRow => ({
   champion, games, win_rate_pct, wins: 0, kills: 0, deaths: 0, assists: 0, kda: 1, cs_per_min: 5,
-  margin_win_rate_pct: null, win_rate_low_pct: null, win_rate_high_pct: null,
+  margin_win_rate_pct: null, win_rate_low_pct: null, win_rate_high_pct: null, games_by_role: {},
 });
 const rows = [row("Viego", 8, 25), row("DrMundo", 18, 50), row("Nunu", 5, 80), row("Zaahen", 15, 33.3)];
 const ids = (r: ChampionRow[]) => r.map((x) => x.champion);
@@ -61,5 +61,15 @@ describe("routes", () => {
 
   it("falls back to the Overview", () => {
     expect(parseRoute("#/nowhere").page).toBe("overview");
+  });
+});
+
+describe("the games split by role", () => {
+  it("lists the most played role first", () => {
+    expect(roleSplit({ games: 18, games_by_role: { TOP: 1, JUNGLE: 17 } })).toBe("18 games: 17 jungle, 1 top");
+  });
+
+  it("names games Riot gave no role", () => {
+    expect(roleSplit({ games: 3, games_by_role: { MIDDLE: 2, "": 1 } })).toBe("3 games: 2 mid, 1 with no role");
   });
 });

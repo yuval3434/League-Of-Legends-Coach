@@ -4,7 +4,8 @@
 
 import type { Board, EnemyComposition, GapId, PoolEntry } from "./api";
 
-export type Side = keyof Board;
+// The board's three champion lists; its `role` isn't a side.
+export type Side = "allies" | "enemies" | "bans";
 
 export const SIDES: { side: Side; label: string; max: number }[] = [
   { side: "allies", label: "Your team", max: 4 },
@@ -24,7 +25,7 @@ export const GAP_NAMES: Record<GapId, string> = {
 export function cantAdd(board: Board, side: Side, champion: string): string | null {
   const max = SIDES.find((s) => s.side === side)!.max;
   if (board[side].length >= max) return `${max} at most`;
-  if (Object.values(board).some((list) => list.includes(champion))) return "Already on the board";
+  if ([board.allies, board.enemies, board.bans].some((list) => list.includes(champion))) return "Already on the board";
   return null;
 }
 

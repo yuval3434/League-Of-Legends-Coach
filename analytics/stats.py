@@ -485,7 +485,7 @@ async def gold_cs_at_minute(session: AsyncSession, puuids: Players) -> list[Row]
 
 CHAMPION_STATS = """
 WITH games AS (
-    SELECT p.champion_name, p.win, p.kills, p.deaths, p.assists,
+    SELECT p.champion_name, p.team_position, p.win, p.kills, p.deaths, p.assists,
            (p.lane_cs + p.jungle_cs) / (m.duration_s / 60.0) AS cs_per_min
     FROM match_participants p
     JOIN matches m ON m.match_id = p.match_id
@@ -502,7 +502,13 @@ totals AS (
            sum(deaths)::int AS deaths,
            sum(assists)::int AS assists,
            round((sum(kills) + sum(assists))::numeric / greatest(sum(deaths), 1), 2) AS kda,
-           round(avg(cs_per_min), 2) AS cs_per_min
+           round(avg(cs_per_min), 2) AS cs_per_min,
+           -- Riot leaves the role empty on some games; those count as "".
+           (SELECT jsonb_object_agg(r.team_position, r.games)
+            FROM (SELECT g.team_position, count(*) AS games
+                  FROM games g
+                  WHERE g.champion_name = games.champion_name
+                  GROUP BY g.team_position) r) AS games_by_role
     FROM games
     GROUP BY champion_name
 )
@@ -527,6 +533,6 @@ async def champion_stats(session: AsyncSession, puuids: Players) -> list[Row]:
 
     KDA is the totals' (kills + assists) / deaths, as match history sites show it,
     with deaths counted as 1 when there were none. Pass a Scope with a role to
-    keep only games in that role.
+    keep only games in that role. `games_by_role` splits `games` by role.
     """
     return await fetch(session, CHAMPION_STATS, puuids=puuids)

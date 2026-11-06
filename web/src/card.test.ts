@@ -7,7 +7,7 @@ describe("card cells", () => {
   it("gives the value, its margin and games", () => {
     expect(sideCell("cs_per_min", { value: 5.92, margin: 0.37, games: 17, low_sample: false })).toEqual({
       main: "5.92",
-      detail: "give or take 0.37 · 17 games",
+      detail: "give or take 0.37 · 17 jungle games",
       low: false,
     });
   });
@@ -15,10 +15,15 @@ describe("card cells", () => {
   it("greys a value under 10 games and says too early to tell", () => {
     expect(sideCell("gold_at_15", { value: 5960, margin: 501, games: 5, low_sample: true })).toEqual({
       main: "5,960",
-      detail: "too early to tell · 5 games",
+      detail: "too early to tell · 5 jungle games",
       low: true,
     });
     expect(sideCell("kill_participation", null).main).toBe("—");
+  });
+
+  it("names the card's role in every count", () => {
+    const side = { value: 6.8, margin: 0.26, games: 13, low_sample: false };
+    expect(sideCell("cs_per_min", side, "MIDDLE").detail).toBe("give or take 0.26 · 13 mid games");
   });
 });
 

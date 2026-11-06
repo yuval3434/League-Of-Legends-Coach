@@ -1,6 +1,7 @@
 // Sorting for the Champions table. It orders the API's rows; it computes nothing.
 
-import type { ChampionRow } from "./api";
+import type { ChampionRow, Role } from "./api";
+import { roleWord } from "./offers";
 import { YOU, type Subject, who, whose } from "./subject";
 
 export type SortKey = "champion" | "games" | "win_rate_pct" | "kda" | "cs_per_min";
@@ -16,6 +17,16 @@ export function sortChampions(rows: ChampionRow[], sort: Sort, name: (id: string
         : a[sort.key] - b[sort.key];
     return sign * first || b.games - a.games || name(a.champion).localeCompare(name(b.champion));
   });
+}
+
+const ROLE_ORDER: Role[] = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"];
+
+/** "18 games: 17 jungle, 1 top", most played role first. */
+export function roleSplit(row: Pick<ChampionRow, "games" | "games_by_role">): string {
+  const parts = Object.entries(row.games_by_role)
+    .sort(([a, x], [b, y]) => y - x || ROLE_ORDER.indexOf(a as Role) - ROLE_ORDER.indexOf(b as Role))
+    .map(([role, n]) => `${n} ${role ? roleWord(role as Role) : "with no role"}`);
+  return `${row.games} game${row.games === 1 ? "" : "s"}: ${parts.join(", ")}`;
 }
 
 /** The win rate's range in plain words, for the hover. */

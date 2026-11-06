@@ -59,8 +59,8 @@ export function ChampionCardView({
           </thead>
           <tbody>
             {card.rows.map((row) => {
-              const mine = sideCell(row.stat, row.champion);
-              const all = sideCell(row.stat, row.overall);
+              const mine = sideCell(row.stat, row.champion, card.role);
+              const all = sideCell(row.stat, row.overall, card.role);
               return (
                 <tr key={row.stat} className="border-b border-rule/60 align-top">
                   <th scope="row" className="py-2 pr-5 text-left font-normal text-ink2">
@@ -83,7 +83,7 @@ export function ChampionCardView({
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
         {Object.entries(card.benchmarks).map(([key, benchmark]) => {
           const rank = benchmark.tier.charAt(0) + benchmark.tier.slice(1).toLowerCase();
-          const lines = benchmarkLines(benchmark, rank, display);
+          const lines = benchmarkLines(benchmark, rank, display, card.role);
           return (
             <div key={key} className="border-t border-rule pt-2">
               <div className="smallcaps text-ink3">Benchmark: {rank}</div>

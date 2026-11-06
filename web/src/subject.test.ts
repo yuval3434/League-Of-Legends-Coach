@@ -45,7 +45,7 @@ describe("compare headline with one cohort", () => {
     difference: -30.2, difference_pct: pct, difference_margin: 6, clear_gap: true, strong_gap: false, status: "ok",
   });
   const ok = (cohort: string, rows: CompareRow[]): Comparison => ({
-    cohort, tier: cohort.toUpperCase(), status: "ok", benchmark_games: 500, benchmark_players: 440,
+    cohort, tier: cohort.toUpperCase(), role: "JUNGLE", status: "ok", benchmark_games: 500, benchmark_players: 440,
     benchmark_patches: ["16.21"], rows, themes: [], notes: [],
   });
   const none = (cohort: string): Comparison => ({ ...ok(cohort, []), status: "no_benchmark" });
