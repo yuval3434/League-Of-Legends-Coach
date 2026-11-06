@@ -650,7 +650,13 @@ difference between them isn't a fair comparison.
 **Benchmarks:** a rank's benchmark on one champion needs 30 games from 10
 players, the same floors as everywhere else. Emerald's win rate on a champion
 isn't shown, for the same reason as Emerald's overall win rate: Emerald players
-face Emerald opponents. On 2026-11-04, only Viego and Nunu reach the floors in
-both ranks; Dr. Mundo, the most played, has 19 Silver games and 10 Emerald. A
-longer pull for him was started but stopped at once: the Riot development key
-had expired.
+face Emerald opponents. On 2026-11-04, only Viego and Nunu reached the floors
+in both ranks; Dr. Mundo, the most played, had 19 Silver games and 10 Emerald.
+
+**The Dr. Mundo pull:** Riot can't list matches by champion, so the pull checks
+more random cohort matches, and he turns up in about 0.6% of Silver matches and
+0.3% of Emerald ones. Overnight on 2026-11-04, Silver went from 3,000 to 5,000
+checked matches, and Dr. Mundo from 19 games to 32 from 29 players: his Silver
+benchmark now exists. The Emerald pull started but checked no matches before
+the machine's Docker stopped, so Emerald is still 10 games and says "No
+benchmark". Reaching 30 there needs about 6,000 more matches, roughly 5 hours.
