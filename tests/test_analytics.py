@@ -6,9 +6,13 @@ from itertools import count
 import pytest
 from sqlalchemy import insert
 
-from analytics.jungle import (
+from analytics.timeline_stats import (
+    damage_share,
+    lane_plates,
+    roams,
+    solo_kills,
     farm_gained_by_stretch,
-    farm_vs_jungler_by_stretch,
+    farm_vs_opponent_by_stretch,
     deaths_before_objective,
     first_lane_kill,
     kill_participation,
@@ -53,7 +57,11 @@ ALL_STATS = [
     gold_cs_at_minute,
     overall_cs_per_minute,
     farm_gained_by_stretch,
-    farm_vs_jungler_by_stretch,
+    farm_vs_opponent_by_stretch,
+    solo_kills,
+    lane_plates,
+    damage_share,
+    roams,
 ]
 _event_ids = count(1000)
 
@@ -87,7 +95,7 @@ def _participant(match_id, participant_id, puuid, role, win, **stats):
         "lane_cs": stats.pop("lane_cs", 0),
         "jungle_cs": stats.pop("jungle_cs", 0),
         "gold_earned": 0,
-        "damage_to_champions": 0,
+        "damage_to_champions": stats.pop("damage", 0),
         "vision_score": stats.pop("vision_score", 0),
     }
 
@@ -383,13 +391,13 @@ async def test_jungle_splits_by_result(session):
     assert find(rows, minute=10, result="all")["games"] == 2
 
 
-async def test_other_roles_have_no_win_loss_split(session):
+async def test_every_role_is_split_by_win_and_loss(session):
     await add_game(session, role="TOP")
     await add_frames(session, "EUW1_1", 10, {1: 100})
 
     rows = await lane_diff(session, [ME])
 
-    assert [r["result"] for r in rows] == ["all"]
+    assert [(r["role"], r["result"]) for r in rows] == [("TOP", "all"), ("TOP", "win")]
 
 
 async def test_final_frame_of_a_short_game_is_not_a_checkpoint(session):

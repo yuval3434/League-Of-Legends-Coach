@@ -148,3 +148,14 @@ async def test_the_endpoint_returns_the_card_and_riots_text(test_settings, sessi
     assert body["riot"]["enemy_tips"] == ["Wait for Cyclone before engaging."]
     assert missing.status_code == 404
     assert "puuid" not in card.text.lower()
+
+
+async def test_a_card_in_another_role_shows_that_roles_cohorts(session, benchmark_sessions):  # noqa: F811
+    await play(session, "Ahri", 4, role="MIDDLE")
+    await play(session, "Ahri", 2, first=10)  # jungle Ahri: not this card's games
+    fits = FITS | {"gold_middle": None}
+    async with benchmark_sessions() as bench:
+        card = await champion_card(session, bench, (ME,), "Ahri", fits, None, "MIDDLE")
+
+    assert (card["role"], card["games"]) == ("MIDDLE", 4)
+    assert list(card["benchmarks"]) == ["gold_middle"]

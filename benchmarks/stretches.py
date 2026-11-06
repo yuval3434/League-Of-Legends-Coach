@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from analytics.jungle import farm_gained_by_stretch, farm_vs_jungler_by_stretch
+from analytics.timeline_stats import farm_gained_by_stretch, farm_vs_opponent_by_stretch
 from analytics.stats import Scope
 from benchmarks.cohorts import COHORTS, MIN_BENCHMARK_GAMES, MIN_BENCHMARK_PLAYERS
 from benchmarks.compare import ROLE, SAMPLE_SIZE, Metric, _compare_metric, _patch_order
@@ -85,7 +85,7 @@ async def farm_by_stretch(
     when it does (see cohorts.why_no_benchmark).
     """
     return {
-        "vs_enemy_jungler": await farm_vs_jungler_by_stretch(
+        "vs_enemy_jungler": await farm_vs_opponent_by_stretch(
             my_session, Scope(puuids=tuple(puuids), role=ROLE)
         ),
         "benchmarks": {

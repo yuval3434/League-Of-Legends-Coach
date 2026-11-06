@@ -1,8 +1,8 @@
 # LoL Coach
 
-A personal League of Legends jungle coach. It pulls my matches from the Riot API,
-computes every stat in SQL, compares them with real Silver and Emerald junglers,
-and uses an LLM agent to explain them in plain language. The model never
+A personal League of Legends coach, for any role. It pulls my matches from the
+Riot API, computes every stat in SQL, compares them with real players of the same
+rank and role, and uses an LLM agent to explain them in plain language. The model never
 produces a number: it calls one tool per stat, and code checks that every number
 in its answer appears in a tool result.
 
@@ -14,8 +14,14 @@ in its answer appears in a tool result.
   limiter, with Riot's raw responses stored next to the parsed data.
 - **Stats in SQL:** every stat comes with its sample size and a 95% margin, and
   says "not enough data" under 10 games.
-- **Benchmarks:** comparisons with real Silver junglers (peers) and Emerald
-  junglers (a target). A gap only counts as a finding when the data supports it.
+- **Benchmarks:** comparisons with real players of your rank in your role,
+  pulled on demand from the Overview with the time it takes; Emerald junglers
+  are also a target for junglers below Emerald. A gap only counts as a finding
+  when the data supports it.
+- **Any role** (v8): each role is judged on its own measures, such as solo kills
+  and lane plates for top, damage share for mid, and every ward a support
+  places. With no benchmark yet, the Overview shows your own numbers, with wins
+  against losses. The Draft pool and champion cards work in any role.
 - **Farm by stretch** (v3): gold and CS lost from 0 to 10, 10 to 15 and 15 to 20
   minutes, against the enemy jungler and against each rank.
 - **Coach:** an LLM agent with one tool per stat. Code checks every number in
@@ -36,7 +42,7 @@ in its answer appears in a tool result.
 - **Web app** (v2 to v5): Overview, Matches, Champions, Compare, Draft and Coach
   pages, plus Players and Settings. Fits a phone screen.
 - **Several players:** sync friends and switch between them. Each player only
-  gets the benchmarks that fit their rank and role.
+  gets the benchmarks that fit their rank and roles.
 - **Eval:** 10 questions to the real coach, graded by code and by a model grader
   that is itself checked first.
 - **Demo mode:** 12 anonymized games, no Riot key needed.
@@ -97,8 +103,8 @@ never make a finding. `GET /benchmarks/stretches` and the coach's
 the enemy's and the bans. Nothing is read from the game client, and no player is
 named. The page shows what your team lacks, using rules over Data Dragon's tags
 and Riot's attack and magic ratings: no frontline, no magic damage, no physical
-damage. It then lists which of your jungle champions with 3 or more games add
-it, with their games and win rate, or "too early to tell" under 10 games. They
+damage. It then lists which of your champions with 3 or more games in your
+role add it, with their games and win rate, or "too early to tell" under 10 games. They
 are listed most played first and never ranked, and the page never picks one:
 Riot's League policy lists apps that dictate player decisions as unapproved.
 The enemy team gets the same rules: its damage mix ("mostly physical: 3 of 4")
@@ -109,8 +115,8 @@ win rate needs. Riot's own tips against each enemy pick follow, from Data
 Dragon, labelled as general text that can be older than a champion's abilities.
 
 Clicking a pool champion opens its card: your CS per minute, gold at 15,
-deaths by phase and kill participation on it, next to your overall jungle
-average, greyed with "too early to tell" under 10 games. Below that, each rank's
+deaths by phase and kill participation on it, next to your overall average in
+that role, greyed with "too early to tell" under 10 games. Below that, each rank's
 benchmark on that champion where it has 30 games from 10 players, and Riot's
 tips and ability text.
 
@@ -199,25 +205,35 @@ The first player synced is the owner: the default on every page and the one the
 eval runs on. Other players can be added from the web app's Players page, and
 their games stay in the same local database. Every stat, comparison and coach
 answer is about one player, picked by the server; the model never sees or
-chooses a PUUID. A player only gets a benchmark their rank and role fit: Silver
-for Silver junglers, Emerald as a target for junglers below Emerald. Anyone else
-sees "no benchmark", never another player's or another rank's comparison. Ranks
+chooses a PUUID. A player only gets a benchmark their rank and role fit: their
+own rank's players in their main role and in any role with 10+ games, and Emerald
+as a target for junglers below Emerald. Anyone else sees "no benchmark" and the
+offer to pull one, never another player's or another rank's comparison. Ranks
 are current solo/duo ranks, because match data doesn't record rank per game.
 
 ## Benchmarks
 
-Compare your jungle stats with real Silver and Emerald games:
+A cohort is one rank and one role: `silver` and `emerald` are junglers, and any
+other is named like `gold_middle`, Gold mid laners. Each player gets their
+peers' cohort in their main role and in any role with 10+ games, and junglers
+below Emerald also get Emerald as a target. When a cohort has no benchmark yet,
+the Overview offers to pull one, with the time it takes:
 
 ```sh
+curl "localhost:8000/benchmarks/offers"                 # each role, its cohorts, the estimate
 curl -X POST localhost:8000/benchmarks/pull -H "Content-Type: application/json" \
-  -d '{"cohort": "silver", "max_matches": 500}'
+  -d '{"cohort": "gold_middle"}'                         # stops at 500 games
+curl -X POST localhost:8000/benchmarks/pull -H "Content-Type: application/json" \
+  -d '{"cohort": "gold_middle", "more": true}'           # 2,000 more matches, for champions
 curl localhost:8000/benchmarks/status
-curl "localhost:8000/benchmarks/compare?cohort=silver"
+curl "localhost:8000/benchmarks/compare?cohort=gold_middle"
 curl "localhost:8000/benchmarks/compare?cohort=emerald&champion=Viego"
 ```
 
-`max_matches` is the cohort's running total, so raise it to carry on. A pull saves
-its progress as it goes and can be started again after a key expires. It can't
+A pull to 500 games took 29 minutes for Gold mid laners on a development key. Scripts can still
+pass `max_matches`, the cohort's running total of matches checked. Master and
+above can't be pulled yet. A pull saves its progress as it goes and can be
+started again after a key expires. It can't
 run alongside a sync, because they share one call budget. Benchmark data stays in
 the `benchmark` schema. [DECISIONS.md](DECISIONS.md) explains the rules.
 
@@ -367,6 +383,19 @@ Two cases were added after those runs. Each has been run once on Opus 5.5:
   ranks them, or that claims anything about a matchup. It passed every check
   ($0.05), but with a rounded number that every check missed (see the limits
   below).
+- **`mid_peers`** (v8) asks "What should I work on in my mid games?" as a Gold
+  mid laner picked at random from the ladder, shown to the coach as "you" with
+  a placeholder name. A code check passes only if every benchmark comparison
+  uses their own peer cohort, Gold mid laners. Run once on Sonnet 5.5, it passed
+  every check ($0.07): it compared with `gold_middle` alone and led with the one
+  finding, control wards. One soft spot: it listed early deaths, which aren't a
+  finding, as something to keep an eye on, though it called them only a possible
+  pattern.
+
+**Not re-run since v8.** The v8 prompt is no longer a jungle coach's, and the
+tools changed. Only `mid_peers` has been run on it: the other 11 cases haven't
+been run since, so their results above are from the earlier prompt. A full
+12-case run is still to do.
 
 ### Results on a local model
 

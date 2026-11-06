@@ -679,3 +679,146 @@ would have meant no new games for the 5 or more hours a pull can take.
 **Limits:** nothing syncs while the computer sleeps or Docker is closed, and a
 development key still expires every 24 hours, after which auto-sync waits for
 a new one.
+
+## Benchmarks on demand, for any rank and role
+
+**Decision:** a cohort is one rank and one role, and its name says which:
+`gold_middle` is Gold mid laners. Silver and Emerald junglers keep their names.
+A cohort exists once its sample has rows; there's no table of cohorts to keep in
+step with the data. Each player gets their peers' cohort in their main role and
+in every role with 10+ games. Outside the jungle there are peers only; Emerald
+stays a target for junglers. When a cohort has no benchmark, the Overview offers
+a pull with its time, which stops at 500 games. "Pull more" checks 2,000 more
+matches for champion benchmarks.
+
+**Same rules as before:** 500 games, 30 games and 10 players before a benchmark
+exists, one player per match per cohort, 28 days, at most 10 games per player
+per champion, nothing substituted. The targets for champion benchmarks are the
+champions the requesting player has 5+ games on in that role.
+
+**The estimate comes from measured pulls.** The Gold mid pull, the first made
+from the Overview's offer, sampled 500 games from 653 checked matches in 29
+minutes, so 500 games are offered as about 653 matches and 29 minutes. I first
+used the Silver jungle pull, 683 matches in 91 minutes, but it ran beside the
+Emerald pull and shared its call budget, so it was three times too slow. Past 500, only target
+champions are rank-checked; the Emerald Dr. Mundo pull checked 3,584 matches in
+75 minutes, so "Pull more" is about 42 minutes.
+
+**Stored lobbies are reused, but not counted on.** A new cohort first queues
+the stored matches of other cohorts at the same rank still inside the window:
+they are lobbies of that rank, and checking them costs no match call. That
+should be faster, but no pull has measured it, so the estimate assumes the
+fresh rate.
+
+**Master and above can't be pulled yet.** The pull finds players on Riot's
+divided ladder, which stops at Diamond; the apex leagues are behind other
+endpoints.
+
+**Tested on a real player:** a random Gold mid laner from the ladder, picked by
+9 of their last 10 ranked games being mid. Their Riot ID stays out of the docs
+and screenshots. Their 100 synced games are 38 mid, 28 bot, 22 top and 12
+jungle, so they get four roles. The Gold mid pull reached 500 games from 455
+players. 76% of checked matches gave a game, against 73% for Silver junglers.
+
+## Each role is judged on its own measures
+
+**Decision:** a comparison uses the cohort's role and that role's measures.
+"Judged" measures can make a finding; "context" ones are shown beside the
+benchmark and never judged.
+
+| Role | Judged | Context |
+|---|---|---|
+| Jungle | Unchanged | Unchanged |
+| Top | Gold and CS, lane difference, deaths, kill participation, vision, solo kills, lane plates | Damage share, plates last hit |
+| Mid | Gold and CS, lane difference, deaths, kill participation, vision, damage share | Roams |
+| Bot | Gold and CS, lane difference, deaths, vision, lane plates | Kill participation, plates last hit |
+| Support | Deaths, kill participation, all wards placed, control wards, wards destroyed | Gold, CS and lane difference |
+
+Objective share stays jungle-only: for other roles it measures the team. First
+lane kill stays jungle-only: it measures ganks.
+
+**Counted by us, not taken from Riot.** Match responses carry Riot's own
+"challenges" numbers, such as `soloKills` and `turretPlatesTaken`, but their
+formulas aren't public, like vision score's. Solo kills are counted from the
+timeline as kills with no assisting player. Damage share is the player's share
+of their team's damage to champions, from Riot's end-of-game totals.
+
+**Plates before 14:00 only.** Our stored timelines show plates falling all game:
+up to 15 per lane per team across 203 matches, the latest at 48 minutes. Counted
+over a whole game, they would mostly measure late pushing. Before 14:00 they
+measure the lane. Minions take many plates, so plates the player last-hit are
+context, and the judged number is every enemy plate that fell in their lane.
+
+**Support vision counts every ward.** A support's wards include the support
+item's (`SIGHT_WARD`, 3,975 in our stored games), so all placed wards are judged
+for supports. Other roles still judge only control wards and wards destroyed,
+because trinket wards mostly show trinket choice.
+
+**Deaths before objectives aren't in the support comparison.** I planned them,
+but the stat compares rates against a baseline and has no margin, so it could
+never be judged. The coach can still use it.
+
+**A theme with only context rows says so** ("context_only"), instead of "no
+verdict yet", which would suggest a verdict was coming.
+
+**Checked against the jungle:** every row and theme of four jungle comparisons
+(Silver and Emerald, all champions and one champion) is identical to before.
+Only the vision note's wording changed, from "a jungler" to "a player".
+
+## With no benchmark, the Overview shows the player's own numbers
+
+**Decision:** when no cohort fits a player in a role, the Overview says why,
+offers the pull, and shows the role's measures from the player's own games:
+over all games, and over wins and losses apart, each with its margin and sample
+size. Win rate isn't split, because split by result it says nothing.
+
+**Why wins against losses:** it's the only comparison that needs no one else's
+games, so it can't stand in for a benchmark or borrow another rank's. It goes
+through the same gap and margin code as a benchmark comparison, and a
+difference is only called clear with 10+ games on each side. It shows how a
+measure moves with the result, not what caused it, and the page says so.
+
+**Never a number from memory.** The page doesn't say what "a typical Gold mid
+laner" does: without a pulled cohort, there's no such number to show.
+
+## The Draft pool in any role
+
+**Decision:** the Draft page has a role tab for each role the player gets
+benchmarks in, their main role first and chosen by default. The pool is their
+champions with 3+ games in that role, and a champion's card puts its games
+beside the player's average in that role, with that role's cohorts as
+benchmarks. The gap rules and the enemy composition don't depend on role, so
+they're unchanged. The `draft_board` tool takes an optional `role`; with none,
+it uses the player's main role.
+
+## The coach works in any role
+
+**Decision:** the coach is no longer a jungle coach. Tools measured in one role
+take a `role`, and a null role means the player's main role, not jungle: before
+this, a mid laner asking about kill participation would have been given their
+jungle games. `compare_to_benchmark` takes any cohort name and checks it in
+code, because a fixed list can't hold cohorts pulled on demand. `data_coverage`
+lists the player's roles and every cohort that could fit them. New tools:
+`role_measures` (solo kills, lane plates, damage share and roams in one tool)
+and `wins_and_losses` for a role with no benchmark, which the prompt says to present as how a measure moves with the
+result, never as a finding. Objective share, first lane kill and farm by stretch
+stay jungle-only, and their descriptions say so.
+
+**The eval gets a mid laner, asked as "you".** The new `mid_peers` case asks the
+test Gold mid laner "What should I work on in my mid games?" and passes its code
+check only if every benchmark comparison uses their own peer cohort. The case
+picks its player by rule (the first synced player whose main role isn't jungle)
+and shows them to the coach as the owner with a placeholder name, so no Riot ID
+reaches the prompt or the saved results.
+
+**Four stats, one tool.** Anthropic's API refuses a request with more than 20
+strict tools, and four separate tools would have made 23: the first eval run
+was refused before the model answered, at no cost. Strict mode stays on every
+tool, so the API keeps enforcing each schema, and a test now fails above 20.
+
+**"MAIN" instead of a nullable role.** Strict tools may also have at most 16
+parameters with union types in all, and the nullable roles made 22: the second
+run was refused too, also at no cost. A role measured in one role is now a plain
+choice that includes "MAIN", the player's main role, which brings the count to
+15. Code that calls a tool without a role, such as the API's stats endpoint,
+gets MAIN filled in. A test fails above 16.

@@ -17,7 +17,7 @@ import json
 import sys
 import time
 from collections import defaultdict
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -31,7 +31,8 @@ from agent.llm import LOCAL_PREFIX, LocalModelError, ModelClient, Usage, create_
 from agent.options import OPTIONS_MAX_TOKENS, prepare
 from agent.tools import ToolContext
 from benchmarks.models import create_benchmark_engine
-from ingestion.players import load_player
+from benchmarks.cohorts import cohorts_for
+from ingestion.players import SelectedPlayer, list_players, load_player
 from eval.calibration import load_examples, load_tool_outputs
 from eval.cases import CASES, Case
 from eval.checks import number_words, run_code_check
@@ -46,7 +47,7 @@ LOCAL_CASE_TIMEOUT_S = 1800
 
 # For the estimate: what the first two real questions cost on Opus 5.5.
 MEASURED_OPUS_COST = {"narrow": 0.084, "broad": 0.142}
-BROAD_CASES = {"work_on", "weakest"}
+BROAD_CASES = {"work_on", "weakest", "mid_peers"}
 CHARS_PER_TOKEN = (4.0, 2.5)
 JUDGE_OUTPUT_TOKENS = (300, 2000)
 
@@ -107,6 +108,22 @@ async def run_case(
     rep: int,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Return (row, None) for a graded answer, or (None, error) for a failed attempt."""
+    player = context.player if context else None
+    peer = cohorts_for(player.rank_tier, player.main_role)[0] if player and player.main_role else None
+    return await _run_case(model, model_id, context, client, judge_model, case, rep, peer)
+
+
+async def _run_case(
+    model: ModelClient,
+    model_id: str,
+    context: ToolContext,
+    client: AsyncAnthropic,
+    judge_model: str,
+    case: Case,
+    rep: int,
+    peer: str | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Run one case; `peer` is the player's own peer cohort, for right_cohort."""
     started = time.monotonic()
     limit = LOCAL_CASE_TIMEOUT_S if model_id == "local" else CASE_TIMEOUT_S
     try:
@@ -144,7 +161,7 @@ async def run_case(
         return row, None
 
     for name in case.code_checks:
-        check = run_code_check(name, answer, case.says)
+        check = run_code_check(name, answer, case.says, peer)
         row["checks"][name] = {"by": "code", "passed": check.passed, "detail": check.detail}
     outputs = format_tool_outputs(row["tool_log"])
     judged, judge_usage = await _judge_checks(client, judge_model, case, answer, outputs)
@@ -254,7 +271,7 @@ async def calibrate(client: AsyncAnthropic, judge_model: str, reps: int, out: Pa
 async def live(
     model: ModelClient,
     model_id: str,
-    context: ToolContext,
+    contexts: dict[str, ToolContext],
     client: AsyncAnthropic,
     judge_model: str,
     cases: list[Case],
@@ -264,6 +281,7 @@ async def live(
     rows, errors = [], []
     for rep in range(reps):
         for case in cases:
+            context = contexts[case.player]
             row, error = await run_case(model, model_id, context, client, judge_model, case, rep)
             print(f"  {case.id} rep {rep}: {row['status'] if row else error['error']}", flush=True)
             rows += [row] if row else []
@@ -309,6 +327,20 @@ def estimate(models: list[str], cases: list[Case], reps: int, calibration_reps: 
     return lines
 
 
+async def non_jungler(sessions: Any, players: list[dict[str, Any]]) -> SelectedPlayer | None:
+    """The first synced player who mains a role other than jungle, shown to the
+    coach as the owner, so it says "you" and the saved results never name them."""
+    row = next(
+        (p for p in players if not p["is_owner"] and p["main_role"] not in (None, "JUNGLE")),
+        None,
+    )
+    if row is None:
+        return None
+    async with sessions() as session:
+        player = await load_player(session, row["puuid"])
+    return replace(player, is_owner=True, game_name="Player", tag_line="EVAL")
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("mode", choices=["estimate", "calibrate", "live"])
@@ -346,19 +378,26 @@ async def main() -> int:
             return 1
         sessions = async_sessionmaker(create_async_engine(settings.database_url))
         benchmark = async_sessionmaker(create_benchmark_engine(settings))
-        # Always the owner: the cases are written about the owner's games.
+        # The owner, and for some cases a player in another role, asked as "you".
         async with sessions() as session:
             owner = await load_player(session)
+            others = await list_players(session)
         if owner is None:
             print("No owner synced yet: run POST /sync first.")
             return 1
-        context = ToolContext(sessions, benchmark, (owner.puuid,), owner)
+        contexts = {"owner": ToolContext(sessions, benchmark, (owner.puuid,), owner)}
+        if any(case.player == "non_jungler" for case in cases):
+            other = await non_jungler(sessions, others)
+            if other is None:
+                print("No synced player mains a role other than jungle: sync one first.")
+                return 1
+            contexts["non_jungler"] = ToolContext(sessions, benchmark, (other.puuid,), other)
         model = create_model(settings, model_id)
         # Windows paths can't hold the ":" in a local model's name, such as qwen3:4b.
         name = f"local-{settings.local_model}" if model_id == "local" else model_id
         out = RESULTS / f"{stamp}-live-{name.replace(':', '-')}"
         out.mkdir(parents=True)
-        summary = await live(model, model_id, context, client, args.judge_model, cases, args.reps, out)
+        summary = await live(model, model_id, contexts, client, args.judge_model, cases, args.reps, out)
     (out / "summary.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
     print(json.dumps(summary, indent=1))
     print(f"\nSaved to {out}")

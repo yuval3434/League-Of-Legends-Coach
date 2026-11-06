@@ -17,10 +17,3 @@ export function usePlayer(): { puuid: string | null; player: Player | null; erro
   }, [puuid]);
   return { puuid, player, error };
 }
-
-/** The cohort a player is measured against first: their peers, else a target, else none. */
-export function mainCohort(player: Player): "silver" | "emerald" | null {
-  if (player.benchmarks.silver === null) return "silver";
-  if (player.benchmarks.emerald === null) return "emerald";
-  return null;
-}

@@ -19,6 +19,7 @@ from agent.llm import AnthropicModel, ModelClient
 from agent.pricing import price_of
 from agent.prompt import SYSTEM_PROMPT
 from agent.tools import ToolContext, run_tool
+from benchmarks.cohorts import ROLE_NAMES
 
 # The button's default model; the person can pick another in the model picker.
 DEFAULT_MODEL = "claude-sonnet-5-5"
@@ -56,9 +57,10 @@ def _names(champions: list[str]) -> str:
     return ", ".join(champions) if champions else "none yet"
 
 
-async def prepare(context: ToolContext, board: dict[str, list[str]]) -> Prepared:
+async def prepare(context: ToolContext, board: dict[str, Any]) -> Prepared:
     """Run the two tools for this board. Raises ValueError on a board they refuse."""
-    arguments = {key: board.get(key, []) for key in ("allies", "enemies", "bans")}
+    arguments: dict[str, Any] = {key: board.get(key, []) for key in ("allies", "enemies", "bans")}
+    arguments["role"] = board.get("role")
     board_result = await run_tool(context, "draft_board", arguments)
     if board_result.is_error:
         raise ValueError(board_result.content)
@@ -68,7 +70,10 @@ async def prepare(context: ToolContext, board: dict[str, list[str]]) -> Prepared
         if "unavailable" not in entry
     ]
     if not pool:
-        raise ValueError("None of your jungle champions with 3 or more games is available.")
+        role = json.loads(board_result.content)["role"]
+        raise ValueError(
+            f"None of your {ROLE_NAMES[role]} champions with 3 or more games is available."
+        )
     looked_up = pool + arguments["allies"] + arguments["enemies"]
     notes_arguments = {"champions": looked_up}
     notes_result = await run_tool(context, "riot_notes", notes_arguments)

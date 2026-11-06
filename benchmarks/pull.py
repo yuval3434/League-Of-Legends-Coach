@@ -3,8 +3,13 @@
 Riot can't list matches by champion or rank, so the pull works in three steps:
 1. Take random ladder players from the cohort's tier.
 2. Queue a few of each player's recent matches. They're a way into the cohort's
-   lobbies; the player themselves may not be the jungler.
-3. Check each match, and keep at most one jungler who is in the cohort's tier.
+   lobbies; the player themselves may not be in the cohort's role.
+3. Check each match, and keep at most one player in the cohort's role who is in
+   the cohort's tier.
+
+A new cohort first queues the stored matches of other cohorts at the same tier,
+still inside the window: they're already lobbies of that tier, and their match
+responses are stored, so checking them costs no match call.
 
 Every step is saved as it goes, so a pull can stop at any point, such as when a
 development key expires, and carry on from there next time.
@@ -20,18 +25,18 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from benchmarks.cohorts import (
-    COHORTS,
     MAX_GAMES_PER_PLAYER_CHAMPION,
     MIN_TARGET_CHAMPION_GAMES,
     TARGET_OVERALL,
     TARGET_PER_CHAMPION,
     WINDOW_DAYS,
     Cohort,
+    get_cohort,
 )
 from benchmarks.models import CohortPlayer, PlayerRank, Sample, ScanQueue
 from ingestion.models import Match, MatchParticipant, Player, RawResponse
@@ -45,6 +50,8 @@ RANKED_SOLO = 420
 DIVISIONS = ("I", "II", "III", "IV")
 MAX_LADDER_PAGE = 50
 MATCHES_PER_SEED_PLAYER = 6
+# Matches queued and checked at a time.
+BATCH = 200
 
 Row = dict[str, Any]
 
@@ -57,9 +64,9 @@ class Quotas:
     per_champion: Counter[str] = field(default_factory=Counter)
     per_player: Counter[tuple[str, str]] = field(default_factory=Counter)
 
-    def wants(self, jungler: Row, targets: set[str]) -> bool:
-        champion = jungler["champion_name"]
-        if self.per_player[(jungler["puuid"], champion)] >= (
+    def wants(self, player: Row, targets: set[str]) -> bool:
+        champion = player["champion_name"]
+        if self.per_player[(player["puuid"], champion)] >= (
             MAX_GAMES_PER_PLAYER_CHAMPION
         ):
             return False
@@ -68,35 +75,38 @@ class Quotas:
         )
 
 
-def order_junglers(
-    match_id: str, junglers: Iterable[Row], targets: set[str]
+def order_candidates(
+    match_id: str, candidates: Iterable[Row], targets: set[str]
 ) -> list[Row]:
-    """Put the jungler to try first at the front.
+    """Put the player in the cohort's role to try first at the front.
 
     Target champions go first, and a hash of the match decides ties. Nothing
     here may look at the result: choosing by who won would bias the win rate.
     """
 
-    def key(jungler: Row) -> tuple[bool, str]:
-        seed = f"{match_id}:{jungler['participant_id']}".encode()
-        return jungler["champion_name"] not in targets, hashlib.sha256(seed).hexdigest()
+    def key(candidate: Row) -> tuple[bool, str]:
+        seed = f"{match_id}:{candidate['participant_id']}".encode()
+        return candidate["champion_name"] not in targets, hashlib.sha256(seed).hexdigest()
 
-    return sorted(junglers, key=key)
+    return sorted(candidates, key=key)
 
 
-async def target_champions(session: AsyncSession) -> set[str]:
-    """The owner's jungle champions with enough games to compare.
+async def target_champions(
+    session: AsyncSession, role: str = "JUNGLE", puuid: str | None = None
+) -> set[str]:
+    """One player's champions in `role` with enough games to compare.
 
-    Only the owner's: other synced players' games must not decide what the
-    benchmark covers, or add up with the owner's to reach the floor.
+    The player is `puuid`, or the owner. Only theirs: other synced players'
+    games must not decide what the benchmark covers, or add up with theirs to
+    reach the floor.
     """
     rows = await session.execute(
         select(MatchParticipant.champion_name)
         .join(Match, Match.match_id == MatchParticipant.match_id)
         .join(Player, Player.puuid == MatchParticipant.puuid)
         .where(
-            Player.is_owner,
-            MatchParticipant.team_position == "JUNGLE",
+            Player.puuid == puuid if puuid else Player.is_owner,
+            MatchParticipant.team_position == role,
             Match.is_remake.is_(False),
         )
         .group_by(MatchParticipant.champion_name)
@@ -175,6 +185,35 @@ async def _queue_matches(
         await session.commit()
 
 
+async def _reuse_stored_matches(session: AsyncSession, name: str, cohort: Cohort) -> None:
+    """Queue other same-tier cohorts' checked matches that are still in the window."""
+    names = await session.scalars(select(ScanQueue.cohort).distinct())
+    same_tier = [
+        other
+        for other in names
+        if other != name and (found := get_cohort(other)) and found.tier == cohort.tier
+    ]
+    if not same_tier:
+        return
+    since_ms = (int(time.time()) - WINDOW_DAYS * 86400) * 1000
+    await session.execute(
+        text(
+            """
+            INSERT INTO scan_queue (cohort, match_id)
+            SELECT DISTINCT :name, q.match_id
+            FROM scan_queue q
+            JOIN raw_responses r ON r.match_id = q.match_id AND r.kind = 'match'
+            WHERE q.cohort = ANY(:others)
+              AND r.payload IS NOT NULL
+              AND (r.payload->'info'->>'gameStartTimestamp')::bigint >= :since_ms
+            ON CONFLICT DO NOTHING
+            """
+        ),
+        {"name": name, "others": same_tier, "since_ms": since_ms},
+    )
+    await session.commit()
+
+
 async def _load_quotas(session: AsyncSession, name: str) -> Quotas:
     quotas = Quotas()
     rows = await session.execute(
@@ -246,14 +285,14 @@ async def _check_match(
         return "remake"
     if skip & {p["puuid"] for p in participants}:
         return "tracked_player"
-    junglers = [p for p in participants if p["team_position"] == "JUNGLE"]
-    if len(junglers) != 2:
-        return "no_jungler_pair"
+    candidates = [p for p in participants if p["team_position"] == cohort.role]
+    if len(candidates) != 2:
+        return "no_role_pair"
 
-    for jungler in order_junglers(match_id, junglers, targets):
-        if not quotas.wants(jungler, targets):
+    for candidate in order_candidates(match_id, candidates, targets):
+        if not quotas.wants(candidate, targets):
             continue
-        if await _tier(session, riot, jungler["puuid"]) != cohort.tier:
+        if await _tier(session, riot, candidate["puuid"]) != cohort.tier:
             continue
         if await _raw_payload(session, riot, match_id, "timeline") is None:
             return "no_timeline"
@@ -265,16 +304,16 @@ async def _check_match(
             .values(
                 cohort=name,
                 match_id=match_id,
-                participant_id=jungler["participant_id"],
-                puuid=jungler["puuid"],
-                champion_name=jungler["champion_name"],
+                participant_id=candidate["participant_id"],
+                puuid=candidate["puuid"],
+                champion_name=candidate["champion_name"],
                 in_overall=in_overall,
             )
             .on_conflict_do_nothing()
         )
         quotas.overall += in_overall
-        quotas.per_champion[jungler["champion_name"]] += 1
-        quotas.per_player[(jungler["puuid"], jungler["champion_name"])] += 1
+        quotas.per_champion[candidate["champion_name"]] += 1
+        quotas.per_player[(candidate["puuid"], candidate["champion_name"])] += 1
         return "sampled"
     return "no_fit"
 
@@ -286,31 +325,51 @@ async def pull_cohort(
     max_matches: int,
     targets: set[str],
     skip_puuids: set[str],
+    until_overall: bool = False,
 ) -> dict[str, int]:
     """Check matches until the cohort has `max_matches` checked in total.
 
-    `skip_puuids` are the tracked players: they never join a cohort, and matches
-    they played in aren't used. RiotAuthError stops the pull. A failed match
-    stays in the queue for the next run.
+    With `until_overall`, it also stops as soon as the all-champion sample
+    reaches TARGET_OVERALL. `skip_puuids` are the tracked players: they never
+    join a cohort, and matches they played in aren't used. RiotAuthError stops
+    the pull. A failed match stays in the queue for the next run.
     """
-    cohort = COHORTS[name]
+    cohort = get_cohort(name)
+    if cohort is None:
+        raise ValueError(f"Unknown cohort: {name}")
     async with sessions() as session:
         checked = await session.scalar(
             select(func.count())
             .select_from(ScanQueue)
             .where(ScanQueue.cohort == name, ScanQueue.outcome.is_not(None))
         )
-        remaining = max_matches - checked
-        if remaining > 0:
-            await _queue_matches(session, riot, name, cohort, remaining, skip_puuids)
-            quotas = await _load_quotas(session, name)
-            queued = await session.scalars(
-                select(ScanQueue.match_id)
-                .where(ScanQueue.cohort == name, ScanQueue.outcome.is_(None))
-                .order_by(func.md5(ScanQueue.match_id))
-                .limit(remaining)
-            )
-            for match_id in queued.all():
+        await _reuse_stored_matches(session, name, cohort)
+        quotas = await _load_quotas(session, name)
+        failed: set[str] = set()
+
+        def done() -> bool:
+            return checked >= max_matches or (until_overall and quotas.overall >= TARGET_OVERALL)
+
+        while not done():
+            batch = min(BATCH, max_matches - checked)
+            await _queue_matches(session, riot, name, cohort, batch + len(failed), skip_puuids)
+            queued = (
+                await session.scalars(
+                    select(ScanQueue.match_id)
+                    .where(
+                        ScanQueue.cohort == name,
+                        ScanQueue.outcome.is_(None),
+                        ScanQueue.match_id.not_in(failed),
+                    )
+                    .order_by(func.md5(ScanQueue.match_id))
+                    .limit(batch)
+                )
+            ).all()
+            if not queued:
+                break  # the ladder gave no more matches
+            for match_id in queued:
+                if done():
+                    break
                 try:
                     outcome = await _check_match(
                         session,
@@ -325,6 +384,7 @@ async def pull_cohort(
                 except RiotRequestFailed:
                     logger.exception("%s: fetch failed", match_id)
                     await session.rollback()
+                    failed.add(match_id)
                     continue
                 except (KeyError, TypeError, ValueError):
                     logger.exception("%s: parse failed", match_id)
@@ -336,6 +396,7 @@ async def pull_cohort(
                     .values(outcome=outcome)
                 )
                 await session.commit()
+                checked += 1
 
         outcomes = await session.execute(
             select(ScanQueue.outcome, func.count())

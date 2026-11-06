@@ -18,6 +18,18 @@ function rank(player: Player): string {
   return player.main_role ? `${tier} · mostly ${ROLES[player.main_role] ?? player.main_role}` : tier;
 }
 
+const ROLE_PLACES: Record<string, string> = {
+  TOP: "in top lane",
+  JUNGLE: "in the jungle",
+  MIDDLE: "in mid lane",
+  BOTTOM: "in bot lane",
+  UTILITY: "as support",
+};
+
+function mainGames(player: Player): number {
+  return player.main_role ? player.role_games[player.main_role] ?? 0 : 0;
+}
+
 /** Who this report is about: Riot ID, rank, games covered, and the most played champions. */
 export function ProfileHeader({ player, coverage }: { player: Player; coverage: Coverage }) {
   const p = coverage.player;
@@ -30,7 +42,8 @@ export function ProfileHeader({ player, coverage }: { player: Player; coverage: 
           <span className="ml-1.5 font-sans text-[15px] font-normal tracking-normal text-ink3">#{player.tag_line}</span>
         </div>
         <div className="mt-2.5 text-[13px] text-ink2">
-          {rank(player)} · {p.jungle_games} of {p.games} ranked games in the jungle · {shortDate(p.first_game)} to{" "}
+          {rank(player)} · {mainGames(player)} of {p.games} ranked games {ROLE_PLACES[player.main_role ?? ""] ?? ""} ·{" "}
+          {shortDate(p.first_game)} to{" "}
           {shortDate(p.last_game)}
         </div>
       </div>

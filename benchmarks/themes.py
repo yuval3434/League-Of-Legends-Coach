@@ -51,6 +51,9 @@ def _no_verdict(rows: list[Row]) -> str:
     """Why a theme has nothing to judge, given its whole-game rows."""
     if not rows:
         return "no_margin"
+    if all(row.get("context_only") for row in rows):
+        # Shown beside the benchmark for this role, never judged.
+        return "context_only"
     if all(row["status"] == "no_benchmark" for row in rows):
         return "no_benchmark"
     if all(row["my_low_sample"] for row in rows):

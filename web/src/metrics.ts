@@ -1,7 +1,7 @@
 // Names, units and formatting for the comparison rows. Formatting shows a
 // value at its own precision; it never re-rounds a number into a new one.
 
-import type { CompareRow, Evidence } from "./api";
+import type { CompareRow, Evidence, Role } from "./api";
 
 export const THEME_NAMES: Record<string, string> = {
   economy: "Farm and gold",
@@ -28,8 +28,10 @@ const PHASES: Record<string, string> = {
   late: "after 25 min",
 };
 
-export function metricLabel(row: Key): string {
+/** A row's name. `role` names the opponent in gold and CS differences. */
+export function metricLabel(row: Key, role: Role = "JUNGLE"): string {
   const minute = row.minute ? `${row.minute} min` : "";
+  const opponent = role === "JUNGLE" ? "enemy jungler" : "lane opponent";
   const split = row.result && row.result !== "all" ? `, ${row.result}s only` : "";
   switch (row.value) {
     case "avg_gold":
@@ -39,9 +41,9 @@ export function metricLabel(row: Key): string {
     case "avg_cs_per_min":
       return "CS per minute";
     case "avg_gold_diff":
-      return `Gold vs enemy jungler, ${minute}${split}`;
+      return `Gold vs ${opponent}, ${minute}${split}`;
     case "avg_cs_diff":
-      return `CS vs enemy jungler, ${minute}${split}`;
+      return `CS vs ${opponent}, ${minute}${split}`;
     case "avg_placed_per_min":
       return "Wards placed per minute";
     case "avg_control_placed_per_min":
@@ -58,6 +60,20 @@ export function metricLabel(row: Key): string {
       return `Deaths per game, ${PHASES[row.phase ?? ""] ?? row.phase}`;
     case "avg_kill_participation_pct":
       return "Kill participation";
+    case "avg_solo_kills":
+      return "Solo kills per game";
+    case "avg_solo_kills_before_15":
+      return "Solo kills before 15 min";
+    case "avg_lane_plates":
+      return "Enemy plates in the lane, before 14 min";
+    case "avg_my_plates":
+      return "Plates last hit, before 14 min";
+    case "avg_damage_share_pct":
+      return "Share of the team's damage";
+    case "avg_roam_takedowns":
+      return "Takedowns away from mid, before 14 min";
+    case "avg_support_item_placed_per_min":
+      return "Support-item wards per minute";
     case "win_rate_pct":
       return "Win rate";
     case "team_share_pct":

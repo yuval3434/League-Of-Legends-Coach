@@ -1,4 +1,8 @@
-"""Jungle stats. Each one covers only games the player spent in the jungle.
+"""Stats from the match timeline, for the games a player spent in one role.
+
+Each stat takes a `role`: the one given, else the Scope's, else JUNGLE. First lane kill and objective share
+are jungle measures, so they always use jungle games. An opponent is the player
+in the same role on the other team.
 
 The rules in analytics/stats.py apply here too. DECISIONS.md explains why ward
 events are filtered, why neutral objective kills are dropped, and why there's
@@ -7,17 +11,29 @@ no "first gank" stat.
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from analytics.stats import Players, Row, fetch
+from analytics.stats import Players, Row, Scope, fetch
 
-# One row per player per game. No timeline means unknown events, not zero.
-JUNGLE_GAMES = """
-WITH jungle_games AS (
-    SELECT p.match_id, p.participant_id, p.team_id, p.kills, p.assists, m.duration_s
+JUNGLE = "JUNGLE"
+
+
+def _role(puuids: Players, role: str | None) -> str:
+    """The role to use: the one given, else the Scope's, else JUNGLE."""
+    if role:
+        return role
+    if isinstance(puuids, Scope) and puuids.role:
+        return puuids.role
+    return JUNGLE
+
+# One row per player per game in the role. No timeline means unknown events, not zero.
+ROLE_GAMES = """
+WITH role_games AS (
+    SELECT p.match_id, p.participant_id, p.team_id, p.team_position, p.kills, p.assists,
+           m.duration_s
     FROM match_participants p
     JOIN matches m ON m.match_id = p.match_id
     WHERE p.puuid = ANY(:puuids)
       AND NOT m.is_remake
-      AND p.team_position = 'JUNGLE'
+      AND p.team_position = :role
       AND EXISTS (SELECT 1 FROM timeline_frames f WHERE f.match_id = m.match_id)
 )
 """
@@ -33,7 +49,7 @@ objective_kills AS (
            END AS objective,
            (e.data->>'killerTeamId')::int = j.team_id AS by_my_team,
            e.actor_id = j.participant_id AS my_last_hit
-    FROM jungle_games j
+    FROM role_games j
     JOIN timeline_events e
       ON  e.match_id = j.match_id
       AND e.type = 'ELITE_MONSTER_KILL'
@@ -42,7 +58,7 @@ objective_kills AS (
 """
 
 OBJECTIVE_CONTROL = (
-    JUNGLE_GAMES
+    ROLE_GAMES
     + ","
     + OBJECTIVE_KILLS
     + """,
@@ -52,7 +68,7 @@ per_game AS (
            count(k.match_id) FILTER (WHERE k.by_my_team) AS team_taken,
            count(k.match_id) FILTER (WHERE NOT k.by_my_team) AS enemy_taken,
            count(k.match_id) FILTER (WHERE k.my_last_hit) AS my_last_hits
-    FROM jungle_games j
+    FROM role_games j
     CROSS JOIN (SELECT DISTINCT objective FROM objective_kills) o
     LEFT JOIN objective_kills k
       ON  k.match_id = j.match_id
@@ -85,13 +101,15 @@ async def objective_control(session: AsyncSession, puuids: Players) -> list[Row]
     """Objectives taken by the player's team vs. the enemy's, per objective.
 
     `objective` is Riot's monsterType, or ELDER_DRAGON. A new monster type gets
-    its own row. HORDE counts each void grub, not each group.
+    its own row. HORDE counts each void grub, not each group. Jungle games
+    only: objectives are the jungler's job, and for other roles the share would
+    measure the team.
     """
-    return await fetch(session, OBJECTIVE_CONTROL, puuids=puuids)
+    return await fetch(session, OBJECTIVE_CONTROL, puuids=puuids, role=JUNGLE)
 
 
 DEATHS_BEFORE_OBJECTIVE = (
-    JUNGLE_GAMES
+    ROLE_GAMES
     + ","
     + OBJECTIVE_KILLS
     + """,
@@ -104,7 +122,7 @@ moments AS (
     -- start to matter. It shows how often a death falls in any 60-second window.
     SELECT j.match_id, j.participant_id, j.team_id, f.timestamp_ms,
            'baseline', NULL
-    FROM jungle_games j
+    FROM role_games j
     JOIN timeline_frames f
       ON  f.match_id = j.match_id
       AND f.participant_id = j.participant_id
@@ -157,7 +175,7 @@ ORDER BY c.objective, c.taken_by
 
 
 async def deaths_before_objective(
-    session: AsyncSession, puuids: Players
+    session: AsyncSession, puuids: Players, role: str | None = None
 ) -> list[Row]:
     """How often deaths came in the 60 seconds before an objective was taken.
 
@@ -170,11 +188,11 @@ async def deaths_before_objective(
     `low_sample`. Void grubs die together, so one death can count for several
     HORDE rows. This shows the two happen together, not that one caused the other.
     """
-    return await fetch(session, DEATHS_BEFORE_OBJECTIVE, puuids=puuids)
+    return await fetch(session, DEATHS_BEFORE_OBJECTIVE, puuids=puuids, role=_role(puuids, role))
 
 
 KILL_PARTICIPATION = (
-    JUNGLE_GAMES
+    ROLE_GAMES
     + """,
 team_kills AS (
     SELECT match_id, team_id, sum(kills) AS kills
@@ -183,7 +201,7 @@ team_kills AS (
 ),
 per_game AS (
     SELECT 100.0 * (j.kills + j.assists) / t.kills AS kill_participation
-    FROM jungle_games j
+    FROM role_games j
     JOIN team_kills t ON t.match_id = j.match_id AND t.team_id = j.team_id
     WHERE t.kills > 0
 )
@@ -199,21 +217,23 @@ HAVING count(*) > 0
 )
 
 
-async def kill_participation(session: AsyncSession, puuids: Players) -> list[Row]:
+async def kill_participation(
+    session: AsyncSession, puuids: Players, role: str | None = None
+) -> list[Row]:
     """Share of the team's kills the player took part in, per game.
 
     Games where the team got no kills are left out, because the share is undefined.
     """
-    return await fetch(session, KILL_PARTICIPATION, puuids=puuids)
+    return await fetch(session, KILL_PARTICIPATION, puuids=puuids, role=_role(puuids, role))
 
 
 WARDS_PER_MINUTE = (
-    JUNGLE_GAMES
+    ROLE_GAMES
     + """,
 per_game AS (
     SELECT j.match_id,
            w.placed, w.control_placed, w.placed - w.control_placed AS trinket_placed,
-           w.destroyed,
+           w.destroyed, w.support_item_placed,
            p.vision_score,
            -- The trinket held at the end. Riot's item6 isn't parsed into a column,
            -- so it comes from the raw match response stored next to the parsed data.
@@ -223,7 +243,7 @@ per_game AS (
             WHERE r.match_id = j.match_id AND r.kind = 'match'
               AND (x->>'participantId')::int = j.participant_id) AS trinket,
            j.duration_s / 60.0 AS minutes
-    FROM jungle_games j
+    FROM role_games j
     JOIN match_participants p
       ON p.match_id = j.match_id AND p.participant_id = j.participant_id
     CROSS JOIN LATERAL (
@@ -231,6 +251,9 @@ per_game AS (
                count(*) FILTER (
                    WHERE e.type = 'WARD_PLACED' AND e.data->>'wardType' = 'CONTROL_WARD'
                ) AS control_placed,
+               count(*) FILTER (
+                   WHERE e.type = 'WARD_PLACED' AND e.data->>'wardType' = 'SIGHT_WARD'
+               ) AS support_item_placed,
                count(*) FILTER (WHERE e.type = 'WARD_KILL') AS destroyed
         FROM timeline_events e
         WHERE e.match_id = j.match_id
@@ -265,6 +288,7 @@ SELECT count(*) AS games,
        round(avg(vision_score / minutes), 2) AS avg_vision_score_per_min,
        round((1.96 * stddev(vision_score / minutes) / sqrt(count(*)))::numeric, 2)
            AS margin_vision_score_per_min,
+       round(avg(support_item_placed / minutes), 3) AS avg_support_item_placed_per_min,
        count(trinket)::int AS trinket_games,
        round(100.0 * count(*) FILTER (WHERE trinket = 3364) / nullif(count(trinket), 0), 1)
            AS oracle_lens_pct
@@ -274,7 +298,9 @@ HAVING count(*) > 0
 )
 
 
-async def wards_per_minute(session: AsyncSession, puuids: Players) -> list[Row]:
+async def wards_per_minute(
+    session: AsyncSession, puuids: Players, role: str | None = None
+) -> list[Row]:
     """Wards placed and destroyed per minute by the player, with vision context.
 
     Placed wards are split into control wards and trinket wards. Trinket wards
@@ -286,15 +312,11 @@ async def wards_per_minute(session: AsyncSession, puuids: Players) -> list[Row]:
     public. Leaves out Riot's UNDEFINED events and Teemo mushrooms, which don't
     count as wards in Riot's own end-of-game totals.
     """
-    return await fetch(session, WARDS_PER_MINUTE, puuids=puuids)
+    return await fetch(session, WARDS_PER_MINUTE, puuids=puuids, role=_role(puuids, role))
 
 
-FIRST_LANE_KILL = (
-    JUNGLE_GAMES
-    + """,
-kills AS (
-    SELECT j.match_id, j.participant_id, e.timestamp_ms, v.team_position AS victim_role,
-           -- Zones are checked against Riot's turret positions; see DECISIONS.md.
+# A kill's zone. Zones are checked against Riot's turret positions; see DECISIONS.md.
+ZONE = """
            CASE
                WHEN (e.position_x < 4700 AND e.position_y < 4700)
                  OR (e.position_x > 10200 AND e.position_y > 10200) THEN 'base'
@@ -304,8 +326,173 @@ kills AS (
                  OR (e.position_y < 5500 AND e.position_x > 9500) THEN 'bot'
                WHEN abs(e.position_x - e.position_y) < 2000 THEN 'mid'
                ELSE 'jungle'
-           END AS zone
-    FROM jungle_games j
+           END"""
+
+SOLO_KILLS = (
+    ROLE_GAMES
+    + """,
+per_game AS (
+    SELECT count(e.match_id) AS solo_kills,
+           count(e.match_id) FILTER (WHERE e.timestamp_ms < 900000) AS solo_kills_before_15
+    FROM role_games j
+    LEFT JOIN timeline_events e
+      ON  e.match_id = j.match_id
+      AND e.type = 'CHAMPION_KILL'
+      AND e.actor_id = j.participant_id
+      AND coalesce(jsonb_array_length(e.data->'assistingParticipantIds'), 0) = 0
+    GROUP BY j.match_id, j.participant_id
+)
+SELECT count(*) AS games,
+       round(avg(solo_kills), 2) AS avg_solo_kills,
+       round((1.96 * stddev(solo_kills) / sqrt(count(*)))::numeric, 2) AS margin_solo_kills,
+       round(avg(solo_kills_before_15), 2) AS avg_solo_kills_before_15,
+       round((1.96 * stddev(solo_kills_before_15) / sqrt(count(*)))::numeric, 2)
+           AS margin_solo_kills_before_15
+FROM per_game
+HAVING count(*) > 0
+"""
+)
+
+
+async def solo_kills(session: AsyncSession, puuids: Players, role: str | None = None) -> list[Row]:
+    """Kills the player made with no one assisting, per game, and before 15:00.
+
+    Counted from the timeline. A kill a turret or minion finished isn't the
+    player's, so it isn't counted.
+    """
+    return await fetch(session, SOLO_KILLS, puuids=puuids, role=_role(puuids, role))
+
+
+LANE_PLATES = (
+    ROLE_GAMES
+    + """,
+lanes(team_position, lane) AS (
+    VALUES ('TOP', 'TOP_LANE'), ('MIDDLE', 'MID_LANE'),
+           ('BOTTOM', 'BOT_LANE'), ('UTILITY', 'BOT_LANE')
+),
+per_game AS (
+    SELECT count(e.match_id) AS lane_plates,
+           count(e.match_id) FILTER (WHERE e.actor_id = j.participant_id) AS my_plates
+    FROM role_games j
+    JOIN lanes l ON l.team_position = j.team_position
+    LEFT JOIN timeline_events e
+      ON  e.match_id = j.match_id
+      AND e.type = 'TURRET_PLATE_DESTROYED'
+      AND e.timestamp_ms < 840000
+      AND e.data->>'laneType' = l.lane
+      -- The turret's team: plates of the enemy's turret are the ones taken.
+      AND (e.data->>'teamId')::int <> j.team_id
+    GROUP BY j.match_id, j.participant_id
+)
+SELECT count(*) AS games,
+       round(avg(lane_plates), 2) AS avg_lane_plates,
+       round((1.96 * stddev(lane_plates) / sqrt(count(*)))::numeric, 2) AS margin_lane_plates,
+       round(avg(my_plates), 2) AS avg_my_plates,
+       round((1.96 * stddev(my_plates) / sqrt(count(*)))::numeric, 2) AS margin_my_plates
+FROM per_game
+HAVING count(*) > 0
+"""
+)
+
+
+async def lane_plates(session: AsyncSession, puuids: Players, role: str | None = None) -> list[Row]:
+    """Enemy turret plates that fell in the player's lane before 14:00, per game.
+
+    Our stored timelines show plates falling all game, up to 15 per lane per
+    team, so only those before 14:00 count: the laning phase, as for roams.
+    `avg_lane_plates` counts every one, whoever took it: it's the lane's
+    pressure, shared with a lane partner and any jungler who helped.
+    `avg_my_plates` counts the ones the player last hit; minions take many, so
+    it's context. Jungle games have no lane, so no rows.
+    """
+    return await fetch(session, LANE_PLATES, puuids=puuids, role=_role(puuids, role))
+
+
+DAMAGE_SHARE = (
+    ROLE_GAMES
+    + """,
+team_damage AS (
+    SELECT match_id, team_id, sum(damage_to_champions) AS damage
+    FROM match_participants
+    GROUP BY match_id, team_id
+),
+per_game AS (
+    SELECT 100.0 * p.damage_to_champions / t.damage AS damage_share
+    FROM role_games j
+    JOIN match_participants p
+      ON p.match_id = j.match_id AND p.participant_id = j.participant_id
+    JOIN team_damage t ON t.match_id = j.match_id AND t.team_id = j.team_id
+    WHERE t.damage > 0
+)
+SELECT count(*) AS games,
+       round(avg(damage_share), 1) AS avg_damage_share_pct,
+       round((1.96 * stddev(damage_share) / sqrt(count(*)))::numeric, 1) AS margin_damage_share_pct,
+       round(percentile_cont(0.5) WITHIN GROUP (ORDER BY damage_share)::numeric, 1)
+           AS median_damage_share_pct
+FROM per_game
+HAVING count(*) > 0
+"""
+)
+
+
+async def damage_share(session: AsyncSession, puuids: Players, role: str | None = None) -> list[Row]:
+    """The player's share of their team's damage to champions, per game.
+
+    From Riot's end-of-game damage totals. Games where the team dealt none are
+    left out, because the share is undefined.
+    """
+    return await fetch(session, DAMAGE_SHARE, puuids=puuids, role=_role(puuids, role))
+
+
+ROAMS = (
+    ROLE_GAMES
+    + """,
+takedowns AS (
+    SELECT j.match_id, j.participant_id,"""
+    + ZONE
+    + """ AS zone
+    FROM role_games j
+    JOIN timeline_events e
+      ON  e.match_id = j.match_id
+      AND e.type = 'CHAMPION_KILL'
+      AND e.timestamp_ms < 840000
+      AND (e.actor_id = j.participant_id
+           OR e.data->'assistingParticipantIds' @> to_jsonb(j.participant_id))
+),
+per_game AS (
+    SELECT count(t.zone) FILTER (WHERE t.zone IN ('top', 'bot', 'jungle')) AS roams
+    FROM role_games j
+    LEFT JOIN takedowns t
+      ON t.match_id = j.match_id AND t.participant_id = j.participant_id
+    GROUP BY j.match_id, j.participant_id
+)
+SELECT count(*) AS games,
+       round(avg(roams), 2) AS avg_roam_takedowns,
+       round((1.96 * stddev(roams) / sqrt(count(*)))::numeric, 2) AS margin_roam_takedowns
+FROM per_game
+HAVING count(*) > 0
+"""
+)
+
+
+async def roams(session: AsyncSession, puuids: Players, role: str | None = None) -> list[Row]:
+    """Kills and assists before 14:00 away from mid and both bases, per game.
+
+    A mid laner's takedowns in a side lane or the jungle are roams that paid
+    off. Roams that got nothing don't show, because the timeline records only
+    kills. Context, not a judgement: roaming isn't good or bad on its own.
+    """
+    return await fetch(session, ROAMS, puuids=puuids, role=_role(puuids, role))
+
+
+FIRST_LANE_KILL = (
+    ROLE_GAMES
+    + """,
+kills AS (
+    SELECT j.match_id, j.participant_id, e.timestamp_ms, v.team_position AS victim_role,"""
+    + ZONE
+    + """ AS zone
+    FROM role_games j
     JOIN timeline_events e
       ON  e.match_id = j.match_id
       AND e.type = 'CHAMPION_KILL'
@@ -338,7 +525,7 @@ SELECT coalesce(f.zone, 'none') AS lane,
            (percentile_cont(0.5) WITHIN GROUP (ORDER BY f.timestamp_ms) / 60000)::numeric,
            1
        ) AS median_minute
-FROM jungle_games j
+FROM role_games j
 LEFT JOIN first_kills f
   ON f.match_id = j.match_id AND f.participant_id = j.participant_id
 GROUP BY f.zone, f.victim_role
@@ -353,9 +540,9 @@ async def first_lane_kill(session: AsyncSession, puuids: Players) -> list[Row]:
     One row per lane and victim role, plus lane 'none' for games with no such
     kill. Failed ganks don't appear, because the timeline records only kills, so
     'none' doesn't mean the player never ganked. `total_games` is every jungle
-    game with a timeline.
+    game with a timeline. Jungle games only: it measures ganks.
     """
-    return await fetch(session, FIRST_LANE_KILL, puuids=puuids)
+    return await fetch(session, FIRST_LANE_KILL, puuids=puuids, role=JUNGLE)
 
 
 # Each stretch runs from one timeline frame to another. Minute 0 is the start of
@@ -367,7 +554,7 @@ stretches(stretch, start_minute, end_minute) AS (
 """
 
 FARM_GAINED_BY_STRETCH = (
-    JUNGLE_GAMES
+    ROLE_GAMES
     + ","
     + STRETCHES
     + """,
@@ -375,7 +562,7 @@ gains AS (
     SELECT s.stretch, s.start_minute, s.end_minute,
            e.total_gold - b.total_gold AS gold,
            (e.lane_cs + e.jungle_cs) - (b.lane_cs + b.jungle_cs) AS cs
-    FROM jungle_games j
+    FROM role_games j
     CROSS JOIN stretches s
     JOIN timeline_frames b
       ON b.match_id = j.match_id AND b.participant_id = j.participant_id
@@ -399,7 +586,9 @@ ORDER BY start_minute
 )
 
 
-async def farm_gained_by_stretch(session: AsyncSession, puuids: Players) -> list[Row]:
+async def farm_gained_by_stretch(
+    session: AsyncSession, puuids: Players, role: str | None = None
+) -> list[Row]:
     """Gold and CS the player gained in each stretch: 0-10, 10-15 and 15-20 min.
 
     Each game's gain is its value at the stretch's end minus its value at the
@@ -407,19 +596,21 @@ async def farm_gained_by_stretch(session: AsyncSession, puuids: Players) -> list
     fall from one stretch to the next. These don't depend on the opponent, so
     they compare with any rank.
     """
-    return await fetch(session, FARM_GAINED_BY_STRETCH, puuids=puuids)
+    return await fetch(session, FARM_GAINED_BY_STRETCH, puuids=puuids, role=_role(puuids, role))
 
 
-FARM_VS_JUNGLER_BY_STRETCH = (
-    JUNGLE_GAMES
+FARM_VS_OPPONENT_BY_STRETCH = (
+    ROLE_GAMES
     + ","
     + STRETCHES
     + """,
 matchups AS (
     SELECT j.match_id, j.participant_id, j.duration_s, o.participant_id AS opp_id
-    FROM jungle_games j
+    FROM role_games j
     JOIN match_participants o
-      ON o.match_id = j.match_id AND o.team_position = 'JUNGLE' AND o.team_id <> j.team_id
+      ON  o.match_id = j.match_id
+     AND o.team_position = j.team_position
+     AND o.team_id <> j.team_id
 ),
 diffs AS (
     SELECT s.stretch, s.start_minute, s.end_minute,
@@ -462,12 +653,14 @@ ORDER BY start_minute
 )
 
 
-async def farm_vs_jungler_by_stretch(session: AsyncSession, puuids: Players) -> list[Row]:
-    """Gold and CS gained minus the enemy jungler's, in each stretch.
+async def farm_vs_opponent_by_stretch(
+    session: AsyncSession, puuids: Players, role: str | None = None
+) -> list[Row]:
+    """Gold and CS gained minus the opponent's in the same role, in each stretch.
 
-    Negative means the player fell further behind the enemy jungler in that
+    Negative means the player fell further behind their opponent in that
     stretch: what they lost to them. `clear_gold_diff` and `clear_cs_diff` are
     true when the average is further from zero than its margin, and empty with
-    one game. Games with no enemy jungler are left out.
+    one game. Games with no opponent in the role are left out.
     """
-    return await fetch(session, FARM_VS_JUNGLER_BY_STRETCH, puuids=puuids)
+    return await fetch(session, FARM_VS_OPPONENT_BY_STRETCH, puuids=puuids, role=_role(puuids, role))

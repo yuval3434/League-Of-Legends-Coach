@@ -5,11 +5,20 @@
 
 import { Fragment, useEffect, useId, useState } from "react";
 
-import { api, type Board, type DraftBoard, type DraftChampion, type EnemyComposition, type RiotNotes } from "../api";
+import {
+  api,
+  type Board,
+  type DraftBoard,
+  type DraftChampion,
+  type EnemyComposition,
+  type RiotNotes,
+  type Role,
+} from "../api";
 import { ChampionCardView } from "../components/ChampionCardView";
 import { ChampionIcon } from "../components/ChampionIcon";
 import { DraftOptions } from "../components/DraftOptions";
 import { Layout } from "../components/Layout";
+import { RoleTabs } from "../components/PullOffer";
 import {
   add,
   cantAdd,
@@ -23,6 +32,7 @@ import {
   type Side,
   winRateCell,
 } from "../draft";
+import { roleWord } from "../offers";
 import { usePlayer } from "../player";
 import { askCoach } from "../router";
 import { subjectOf } from "../subject";
@@ -197,6 +207,7 @@ function Results({
   player: string | null;
 }) {
   const noTeam = result.your_team.length === 0;
+  const role = roleWord(result.role);
   // The pool champion whose card is open, if any.
   const [open, setOpen] = useState<string | null>(null);
   return (
@@ -248,9 +259,9 @@ function Results({
 
       <section className="mt-14">
         <div className="smallcaps text-ink3">Your pool</div>
-        <h2 className="display mt-1.5 text-[30px] leading-[1.1]">Your jungle champions</h2>
+        <h2 className="display mt-1.5 text-[30px] leading-[1.1]">Your {role} champions</h2>
         {result.pool.length === 0 ? (
-          <p className="mt-4 text-[15px] text-ink2">No champion has 3 or more jungle games yet.</p>
+          <p className="mt-4 text-[15px] text-ink2">No champion has 3 or more {role} games yet.</p>
         ) : (
           <div className="relative mt-5 overflow-x-auto">
             <table className="w-full min-w-[600px] border-collapse text-[14px]">
@@ -303,7 +314,7 @@ function Results({
                     {isOpen && (
                       <tr>
                         <td colSpan={5} className="pb-4 pt-2">
-                          <ChampionCardView champion={p.champion} player={player} name={name} />
+                          <ChampionCardView champion={p.champion} player={player} name={name} role={result.role} />
                         </td>
                       </tr>
                     )}
@@ -327,6 +338,8 @@ export function Draft() {
   const { puuid, player, error: playerError } = usePlayer();
   const [champions, setChampions] = useState<DraftChampion[] | null>(null);
   const [board, setBoard] = useState<Board>(EMPTY);
+  // Null until the player picks one: the server then uses their main role.
+  const [role, setRole] = useState<Role | null>(null);
   const [result, setResult] = useState<DraftBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -340,13 +353,13 @@ export function Draft() {
   useEffect(() => {
     let current = true;
     api
-      .draft(board, puuid)
+      .draft(role ? { ...board, role } : board, puuid)
       .then((r) => current && (setResult(r), setError(null)))
       .catch((e: Error) => current && setError(e.message));
     return () => {
       current = false;
     };
-  }, [board, puuid]);
+  }, [board, role, puuid]);
 
   const failed = playerError ?? (champions === null ? error : null);
   if (failed || !player || !champions) {
@@ -369,8 +382,16 @@ export function Draft() {
         <p className="mt-5 max-w-[720px] text-[16px] text-ink2">
           Add the champions you see on screen. Nothing is read from the game client and no player is named: only
           champions. The page shows what {s.you ? "your" : "the"} team lacks and which of{" "}
-          {s.you ? "your" : `${s.name}'s`} jungle champions add it. It doesn't choose for {s.you ? "you" : s.name}.
+          {s.you ? "your" : `${s.name}'s`} champions in {s.you ? "your" : "their"} role add it. It doesn't choose for{" "}
+          {s.you ? "you" : s.name}.
         </p>
+        {result && (
+          <RoleTabs
+            roles={player.roles.includes(result.role) ? player.roles : [...player.roles, result.role]}
+            role={result.role}
+            onChange={setRole}
+          />
+        )}
       </div>
 
       <div className="mt-10 grid gap-x-10 gap-y-6 md:grid-cols-3">
@@ -390,7 +411,9 @@ export function Draft() {
       {error && <p className="mt-4 text-[14px] text-ink2">{error}</p>}
 
       {result && <Results result={result} name={name} player={puuid} />}
-      {result && result.pool.some((p) => !p.unavailable) && <DraftOptions board={board} player={puuid} />}
+      {result && result.pool.some((p) => !p.unavailable) && (
+        <DraftOptions board={{ ...board, role: result.role }} player={puuid} />
+      )}
 
       <div className="mt-10">
         <a

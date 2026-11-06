@@ -1,11 +1,21 @@
-"""The benchmark cohorts and the sample sizes they must reach."""
+"""The benchmark cohorts and the sample sizes they must reach.
 
+A cohort is one rank and one role, and its name says which: "gold_middle" is
+Gold mid laners. Silver and Emerald junglers came first and keep their short
+names. Any other cohort is peers: players of the same rank as the one it's
+compared with. A cohort exists once its sample has rows; nothing else records it.
+"""
+
+from collections.abc import Sequence
 from dataclasses import dataclass
+
+from analytics.stats import MIN_GAMES
 
 
 @dataclass(frozen=True)
 class Cohort:
     tier: str
+    role: str
     # Peers share the player's opponent level, so stats measured against the
     # opponent mean the same on both sides. Higher tiers get absolute stats only.
     relative_stats: bool
@@ -13,9 +23,15 @@ class Cohort:
     audience: str
 
 
-COHORTS = {
-    "silver": Cohort(tier="SILVER", relative_stats=True, audience="peers"),
-    "emerald": Cohort(tier="EMERALD", relative_stats=False, audience="target"),
+ROLES = ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY")
+ROLE_NAMES = {"TOP": "top", "JUNGLE": "jungle", "MIDDLE": "mid", "BOTTOM": "bot", "UTILITY": "support"}
+# How a group of players in each role is called in a sentence.
+ROLE_GROUPS = {
+    "TOP": "top laners",
+    "JUNGLE": "junglers",
+    "MIDDLE": "mid laners",
+    "BOTTOM": "bot laners",
+    "UTILITY": "supports",
 }
 
 TIERS = (
@@ -30,27 +46,77 @@ TIERS = (
     "GRANDMASTER",
     "CHALLENGER",
 )
-# Every cohort is made of junglers.
-BENCHMARK_ROLE = "JUNGLE"
+# The pull finds players on Riot's divided ladder, which stops at Diamond.
+# Master and above are one league each, behind a different endpoint.
+PULLABLE_TIERS = TIERS[: TIERS.index("DIAMOND") + 1]
+
+# The first two cohorts, with their original names.
+COHORTS = {
+    "silver": Cohort(tier="SILVER", role="JUNGLE", relative_stats=True, audience="peers"),
+    "emerald": Cohort(tier="EMERALD", role="JUNGLE", relative_stats=False, audience="target"),
+}
+# Emerald is a target for junglers only; outside the jungle, peers only.
+TARGET_COHORTS = {"JUNGLE": "emerald"}
+
+
+def peer_cohort(tier: str, role: str) -> str:
+    """The name of the cohort of `tier` players in `role`."""
+    for name, cohort in COHORTS.items():
+        if (cohort.tier, cohort.role, cohort.audience) == (tier, role, "peers"):
+            return name
+    return f"{tier}_{role}".lower()
+
+
+def get_cohort(name: str) -> Cohort | None:
+    """The cohort a name stands for, or None if it names none."""
+    if name in COHORTS:
+        return COHORTS[name]
+    tier, _, role = name.upper().partition("_")
+    if tier not in TIERS or role not in ROLES or peer_cohort(tier, role) != name:
+        return None
+    return Cohort(tier=tier, role=role, relative_stats=True, audience="peers")
+
+
+def cohorts_for(rank_tier: str | None, role: str) -> list[str]:
+    """The cohorts that could fit a player of this rank in this role: peers, then a target."""
+    names = []
+    if rank_tier is not None:
+        names.append(peer_cohort(rank_tier, role))
+    target = TARGET_COHORTS.get(role)
+    if target and target not in names:
+        names.append(target)
+    return names
+
+
+def offered_roles(role_games: dict[str, int], main_role: str | None) -> list[str]:
+    """The roles a player gets benchmarks in: their main role, and any with MIN_GAMES+ games."""
+    roles = [main_role] if main_role else []
+    for role, games in sorted(role_games.items(), key=lambda item: -item[1]):
+        if games >= MIN_GAMES and role not in roles:
+            roles.append(role)
+    return roles
 
 
 def why_no_benchmark(
-    cohort: str, rank_tier: str | None, main_role: str | None, rank_checked: bool = True
+    cohort: str, rank_tier: str | None, roles: Sequence[str], rank_checked: bool = True
 ) -> str | None:
     """Why a player can't be compared with `cohort`, or None if they can.
 
+    `roles` are the roles the player gets benchmarks in (see offered_roles).
     A cohort is never swapped for another one: a player it doesn't fit gets no
     benchmark at all.
     """
-    group = COHORTS[cohort]
+    group = get_cohort(cohort)
+    if group is None:
+        return f"There's no cohort called {cohort}."
     name = group.tier.capitalize()
-    if main_role is None:
+    if not roles:
         return "This player has no ranked games, so there's nothing to compare."
-    if main_role != BENCHMARK_ROLE:
-        role = {"MIDDLE": "mid", "BOTTOM": "bot", "UTILITY": "support"}.get(
-            main_role, main_role.lower()
+    if group.role not in roles:
+        return (
+            f"This benchmark is {ROLE_GROUPS[group.role]}, and this player has fewer than "
+            f"{MIN_GAMES} {ROLE_NAMES[group.role]} games."
         )
-        return f"The benchmarks are junglers, and this player mostly plays {role}."
     if not rank_checked:
         return "This player's rank hasn't been checked yet: sync them again."
     if rank_tier is None:
@@ -62,6 +128,22 @@ def why_no_benchmark(
         return f"{name} is a target for players ranked below it, and this player is {rank}."
     return None
 
+
+def cohort_fits(
+    rank_tier: str | None,
+    role_games: dict[str, int],
+    main_role: str | None,
+    rank_checked: bool = True,
+) -> dict[str, str | None]:
+    """The first two cohorts and every one for the player's roles, each with why
+    it doesn't fit the player, or None if it does."""
+    roles = offered_roles(role_games, main_role)
+    names = list(COHORTS)
+    for role in roles:
+        names += [n for n in cohorts_for(rank_tier, role) if n not in names]
+    return {name: why_no_benchmark(name, rank_tier, roles, rank_checked) for name in names}
+
+
 WINDOW_DAYS = 28
 TARGET_OVERALL = 500
 TARGET_PER_CHAMPION = 100
@@ -71,5 +153,5 @@ MAX_GAMES_PER_PLAYER_CHAMPION = 10
 MIN_BENCHMARK_GAMES = 30
 MIN_BENCHMARK_PLAYERS = 10
 
-# A champion needs this many jungle games from the tracked player to be a target.
+# A champion needs this many games in the role from the player to be a target.
 MIN_TARGET_CHAMPION_GAMES = 5

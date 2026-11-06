@@ -25,6 +25,11 @@ class Case:
     # Ask as the Draft page's "Options for this draft" does, for this board:
     # draft_board and riot_notes run first, then one capped call with no tools.
     options_board: dict | None = None
+    # Whose games: "owner", or "non_jungler", the first synced player whose main
+    # role isn't jungle. Chosen by rule, so no case names a player.
+    player: str = "owner"
+    # Pass only if every benchmark comparison used the player's own peer cohort.
+    right_cohort: bool = False
 
     @property
     def code_checks(self) -> tuple[str, ...]:
@@ -32,6 +37,7 @@ class Case:
             ALWAYS_CODE
             + (("says",) if self.says else ())
             + (("first_try",) if self.first_try else ())
+            + (("right_cohort",) if self.right_cohort else ())
         )
 
     @property
@@ -145,5 +151,14 @@ CASES = (
             r"\briot'?s (own )?(text|description|tips)\b",
         ),
         options_board=OPTIONS_BOARD,
+    ),
+    # A mid laner, asked as "you": the coach must find their own cohort, judge
+    # them on the mid measures, and not fall back on the jungle cohorts.
+    Case(
+        "mid_peers",
+        "What should I work on in my mid games?",
+        ("unit_comparison", "no_overclaim"),
+        player="non_jungler",
+        right_cohort=True,
     ),
 )

@@ -25,10 +25,23 @@ from agent.samples import summarize
 from agent.tools import TOOLS, ToolContext, run_tool
 from analytics.champion_card import champion_card, riot_notes
 from analytics.matches import match_detail, recent_matches
-from benchmarks.cohorts import COHORTS, why_no_benchmark
+from benchmarks.cohorts import (
+    MIN_BENCHMARK_GAMES,
+    MIN_BENCHMARK_PLAYERS,
+    PULLABLE_TIERS,
+    ROLES,
+    TARGET_OVERALL,
+    cohort_fits,
+    cohorts_for,
+    get_cohort,
+    offered_roles,
+    why_no_benchmark,
+)
 from benchmarks.compare import compare
+from benchmarks.own import own_numbers
+from benchmarks.estimate import PULL_MORE_MATCHES, SAFETY_MULTIPLE, pull_more, to_500
 from benchmarks.models import create_benchmark_engine
-from benchmarks.pull import pull_cohort, target_champions, tracked_puuids
+from benchmarks.pull import BATCH, pull_cohort, target_champions, tracked_puuids
 from benchmarks.stretches import farm_by_stretch
 from ingestion.auto_sync import SyncSettings, sync_round
 from ingestion.auto_sync import now as utc_now
@@ -55,6 +68,11 @@ logger = logging.getLogger(__name__)
 # Auto-sync's first round waits this long after startup.
 AUTO_SYNC_FIRST_DELAY_S = 60
 
+NOT_PULLABLE = (
+    "Master and above can't be pulled yet: their ladder is behind a different "
+    "Riot endpoint from the divided one the pull uses."
+)
+
 
 class SyncRequest(BaseModel):
     game_name: str
@@ -62,8 +80,17 @@ class SyncRequest(BaseModel):
 
 
 class PullRequest(BaseModel):
+    """A pull for one cohort. By default it stops at 500 games.
+
+    `more` checks PULL_MORE_MATCHES more, for champion benchmarks. `max_matches`
+    sets the total checked directly, for scripts. `player` is whose champions in
+    the cohort's role are the targets; the owner when not given.
+    """
+
     cohort: str
-    max_matches: int
+    max_matches: int | None = None
+    more: bool = False
+    player: str | None = None
 
 
 class DraftRequest(BaseModel):
@@ -73,6 +100,8 @@ class DraftRequest(BaseModel):
     allies: list[str] = Field(default_factory=list, max_length=4)
     enemies: list[str] = Field(default_factory=list, max_length=5)
     bans: list[str] = Field(default_factory=list, max_length=10)
+    # The player's role in this draft; their main role when not given.
+    role: str | None = None
 
 
 class OptionsRequest(DraftRequest):
@@ -289,22 +318,23 @@ def create_app(
                 "error": "Unexpected error; see the server log.",
             }
 
-    async def run_pull(request: PullRequest) -> None:
+    async def run_pull(
+        cohort: str, max_matches: int, until_overall: bool, targets: set[str]
+    ) -> None:
         try:
             async with app.state.sessions() as session:
-                targets = await target_champions(session)
                 skip = await tracked_puuids(session)
             outcomes = await pull_cohort(
                 app.state.benchmark_sessions,
                 app.state.riot,
-                request.cohort,
-                request.max_matches,
+                cohort,
+                max_matches,
                 targets,
                 skip,
+                until_overall,
             )
-            app.state.pull_status = {
+            app.state.pull_status = app.state.pull_status | {
                 "state": "done",
-                "cohort": request.cohort,
                 "outcomes": outcomes,
             }
         except RiotError as error:
@@ -336,14 +366,29 @@ def create_app(
         state = request.app.state
         return ToolContext(state.sessions, state.benchmark_sessions, (player.puuid,), player)
 
-    def benchmarks_for(
-        rank_tier: str | None, main_role: str | None, rank_checked: bool
-    ) -> dict[str, str | None]:
-        """Each cohort, with why it doesn't fit the player, or None if it does."""
-        return {
-            cohort: why_no_benchmark(cohort, rank_tier, main_role, rank_checked)
-            for cohort in COHORTS
-        }
+    def fits(player: SelectedPlayer) -> dict[str, str | None]:
+        return cohort_fits(
+            player.rank_tier, player.role_games, player.main_role, player.rank_checked
+        )
+
+    async def cohort_sizes(request: Request) -> dict[str, dict[str, int]]:
+        """Each cohort's all-champion games and players, and matches checked."""
+        async with request.app.state.benchmark_sessions() as session:
+            rows = await session.execute(
+                text(
+                    """
+                    SELECT c.cohort,
+                           (SELECT count(*) FROM scan_queue q
+                            WHERE q.cohort = c.cohort AND q.outcome IS NOT NULL) AS checked,
+                           (SELECT count(*) FROM sample s
+                            WHERE s.cohort = c.cohort AND s.in_overall) AS games,
+                           (SELECT count(DISTINCT s.puuid) FROM sample s
+                            WHERE s.cohort = c.cohort AND s.in_overall) AS players
+                    FROM (SELECT cohort FROM scan_queue UNION SELECT cohort FROM sample) c
+                    """
+                )
+            )
+            return {row.cohort: dict(row._mapping) for row in rows}
 
     @app.get("/settings/keys", dependencies=[Depends(local_only)])
     async def keys() -> dict[str, Any]:
@@ -414,19 +459,110 @@ def create_app(
 
     @app.post("/benchmarks/pull", status_code=202)
     async def start_pull(body: PullRequest, request: Request) -> dict[str, Any]:
-        """Check a cohort's matches until `max_matches` are checked in total."""
+        """Pull a cohort: to 500 games, `more` for champion benchmarks, or to
+        `max_matches` checked in total. Free, but it uses the Riot call budget."""
         if not settings.riot_api_key.get_secret_value():
             raise HTTPException(503, "RIOT_API_KEY is not set in .env")
-        if body.cohort not in COHORTS:
+        cohort = get_cohort(body.cohort)
+        if cohort is None:
             raise HTTPException(422, f"Unknown cohort: {body.cohort}")
+        if cohort.tier not in PULLABLE_TIERS:
+            raise HTTPException(422, NOT_PULLABLE)
         refuse_if_busy(request.app.state)
-        request.app.state.pull_status = {"state": "running", "cohort": body.cohort}
-        request.app.state.pull_task = asyncio.create_task(run_pull(body))
+        size = (await cohort_sizes(request)).get(body.cohort, {"checked": 0, "games": 0})
+        until_overall = False
+        if body.max_matches is not None:
+            max_matches, mode = body.max_matches, "matches"
+        elif body.more:
+            max_matches, mode = size["checked"] + PULL_MORE_MATCHES, "more"
+        else:
+            estimate = to_500(size["games"])
+            if not estimate["games_needed"]:
+                raise HTTPException(
+                    409, f"This cohort already has {TARGET_OVERALL} games: use Pull more."
+                )
+            max_matches = size["checked"] + max(estimate["matches"] * SAFETY_MULTIPLE, BATCH)
+            until_overall, mode = True, "to_500"
+        player = await selected(request, body.player)
+        async with request.app.state.sessions() as session:
+            targets = await target_champions(session, cohort.role, player.puuid)
+        request.app.state.pull_status = {
+            "state": "running",
+            "cohort": body.cohort,
+            "mode": mode,
+            "max_matches": max_matches,
+            "started_checked": size["checked"],
+        }
+        request.app.state.pull_task = asyncio.create_task(
+            run_pull(body.cohort, max_matches, until_overall, targets)
+        )
         return request.app.state.pull_status
 
     @app.get("/benchmarks/status")
     async def pull_status(request: Request) -> dict[str, Any]:
-        return request.app.state.pull_status
+        """The last pull, with its cohort's games and matches checked so far."""
+        status = request.app.state.pull_status
+        if "cohort" not in status:
+            return status
+        size = (await cohort_sizes(request)).get(status["cohort"], {})
+        return status | {"checked": size.get("checked", 0), "games": size.get("games", 0)}
+
+    @app.get("/own")
+    async def own(
+        request: Request,
+        role: str | None = Query(default=None),
+        player: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        """A player's own numbers in one role, all games and wins against losses.
+        For when no benchmark fits them yet. Free: no model call."""
+        chosen = await selected(request, player)
+        role = role or chosen.main_role
+        if role not in ROLES:
+            raise HTTPException(422, "Give a role: TOP, JUNGLE, MIDDLE, BOTTOM or UTILITY")
+        async with request.app.state.sessions() as session:
+            return await own_numbers(session, [chosen.puuid], role) | {
+                "games": chosen.role_games.get(role, 0)
+            }
+
+    @app.get("/benchmarks/offers")
+    async def offers(request: Request, player: str | None = Query(default=None)) -> dict[str, Any]:
+        """For each role the player gets benchmarks in, each cohort that could fit:
+        its size, whether it fits, and what a pull would take."""
+        chosen = await selected(request, player)
+        roles = offered_roles(chosen.role_games, chosen.main_role)
+        sizes = await cohort_sizes(request)
+        has_key = bool(settings.riot_api_key.get_secret_value())
+        result = []
+        for role in roles:
+            cohorts = []
+            for name in cohorts_for(chosen.rank_tier, role):
+                cohort = get_cohort(name)
+                size = sizes.get(name, {"games": 0, "players": 0, "checked": 0})
+                why_not = why_no_benchmark(name, chosen.rank_tier, roles, chosen.rank_checked)
+                why_no_pull = (
+                    why_not
+                    or (None if cohort.tier in PULLABLE_TIERS else NOT_PULLABLE)
+                    or (None if has_key else "Set a Riot API key in Settings to pull.")
+                )
+                cohorts.append(
+                    {
+                        "cohort": name,
+                        "tier": cohort.tier,
+                        "role": cohort.role,
+                        "audience": cohort.audience,
+                        "games": size["games"],
+                        "players": size["players"],
+                        "checked": size["checked"],
+                        "has_benchmark": size["games"] >= MIN_BENCHMARK_GAMES
+                        and size["players"] >= MIN_BENCHMARK_PLAYERS,
+                        "why_not": why_not,
+                        "why_no_pull": why_no_pull,
+                        "to_500": to_500(size["games"]),
+                        "pull_more": pull_more(),
+                    }
+                )
+            result.append({"role": role, "games": chosen.role_games.get(role, 0), "cohorts": cohorts})
+        return {"roles": result, "pull": await pull_status(request)}
 
     @app.get("/benchmarks/compare")
     async def compare_with_cohort(
@@ -436,11 +572,14 @@ def create_app(
         player: str | None = Query(default=None),
     ) -> dict[str, Any]:
         """Compare a player with a cohort, if it fits them, optionally on one champion."""
-        if cohort not in COHORTS:
+        if get_cohort(cohort) is None:
             raise HTTPException(422, f"Unknown cohort: {cohort}")
         chosen = await selected(request, player)
         reason = why_no_benchmark(
-            cohort, chosen.rank_tier, chosen.main_role, chosen.rank_checked
+            cohort,
+            chosen.rank_tier,
+            offered_roles(chosen.role_games, chosen.main_role),
+            chosen.rank_checked,
         )
         async with request.app.state.sessions() as my_session:
             async with request.app.state.benchmark_sessions() as benchmark_session:
@@ -458,7 +597,7 @@ def create_app(
                     my_session,
                     benchmark_session,
                     [chosen.puuid],
-                    benchmarks_for(chosen.rank_tier, chosen.main_role, chosen.rank_checked),
+                    fits(chosen),
                 )
 
     def has_anthropic_key() -> bool:
@@ -530,11 +669,17 @@ def create_app(
 
     @app.get("/draft/champion/{champion}")
     async def draft_champion(
-        request: Request, champion: str, player: str | None = Query(default=None)
+        request: Request,
+        champion: str,
+        player: str | None = Query(default=None),
+        role: str | None = Query(default=None),
     ) -> dict[str, Any]:
         """One champion's card: the player's stats on it next to their overall
         average, each fitting cohort's benchmark on it, and Riot's text about it."""
         chosen = await selected(request, player)
+        role = role or chosen.main_role or "JUNGLE"
+        if role not in ROLES:
+            raise HTTPException(422, "Give a role: TOP, JUNGLE, MIDDLE, BOTTOM or UTILITY")
         async with request.app.state.sessions() as my_session:
             version, champions = await load_champions(my_session)
             ids = {key.lower(): key for key in champions}
@@ -548,8 +693,9 @@ def create_app(
                     benchmark_session,
                     (chosen.puuid,),
                     champion,
-                    benchmarks_for(chosen.rank_tier, chosen.main_role, chosen.rank_checked),
+                    fits(chosen),
                     detail,
+                    role,
                 )
         if card is None:
             raise HTTPException(404, f"No games on {champion}")
@@ -562,7 +708,7 @@ def create_app(
         result = await run_tool(
             context,
             "draft_board",
-            {"allies": body.allies, "enemies": body.enemies, "bans": body.bans},
+            {"allies": body.allies, "enemies": body.enemies, "bans": body.bans, "role": body.role},
         )
         if result.is_error:
             raise HTTPException(422, result.content)
@@ -572,7 +718,7 @@ def create_app(
         if body.model not in BY_ID:
             raise HTTPException(422, f"Unknown model: {body.model}")
         context = context_for(request, await selected(request, body.player))
-        board = {"allies": body.allies, "enemies": body.enemies, "bans": body.bans}
+        board = {"allies": body.allies, "enemies": body.enemies, "bans": body.bans, "role": body.role}
         try:
             return context, await prepare(context, board)
         except ValueError as error:
@@ -688,9 +834,8 @@ def create_app(
         """One player's Riot ID, rank, main role and benchmarks, for the profile header."""
         chosen = await selected(request, player)
         return asdict(chosen) | {
-            "benchmarks": benchmarks_for(
-                chosen.rank_tier, chosen.main_role, chosen.rank_checked
-            )
+            "roles": offered_roles(chosen.role_games, chosen.main_role),
+            "benchmarks": fits(chosen),
         }
 
     @app.get("/players")
@@ -701,8 +846,11 @@ def create_app(
         return [
             row
             | {
-                "benchmarks": benchmarks_for(
-                    row["rank_tier"], row["main_role"], row["rank_checked_at"] is not None
+                "benchmarks": cohort_fits(
+                    row["rank_tier"],
+                    row["role_games"],
+                    row["main_role"],
+                    row["rank_checked_at"] is not None,
                 )
             }
             for row in rows

@@ -1,6 +1,6 @@
 """The champion card on the Draft page: the player's stats on one champion next
-to their overall jungle average, each cohort's benchmark on that champion, and
-Riot's text about it from Data Dragon.
+to their overall average in the same role, each of that role's cohorts'
+benchmark on that champion, and Riot's text about it from Data Dragon.
 
 Every number comes from the existing stat functions. The champion's games are
 part of the overall average, so the two are shown side by side and never
@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from analytics.jungle import kill_participation
+from analytics.timeline_stats import kill_participation
 from analytics.stats import (
     MIN_GAMES,
     Row,
@@ -24,13 +24,12 @@ from analytics.stats import (
     overall_cs_per_minute,
     win_rates,
 )
-from benchmarks.cohorts import COHORTS, MIN_BENCHMARK_GAMES, MIN_BENCHMARK_PLAYERS
+from benchmarks.cohorts import MIN_BENCHMARK_GAMES, MIN_BENCHMARK_PLAYERS, get_cohort
 from benchmarks.compare import SAMPLE_SIZE
 from analytics.draft import resolve
 from ingestion.ddragon import load_champions, load_details
 from ingestion.models import ChampionDetail
 
-ROLE = "JUNGLE"
 
 # Emerald players face Emerald opponents, so a win rate there says nothing about
 # how a lower-ranked player's games go. The same rule as compare_to_benchmark.
@@ -73,7 +72,7 @@ SELECT max(m.game_start_at)::date AS last_played
 FROM match_participants p
 JOIN matches m ON m.match_id = p.match_id
 WHERE p.puuid = ANY(:puuids) AND p.champion_name = :champion
-  AND p.team_position = 'JUNGLE' AND NOT m.is_remake
+  AND p.team_position = :role AND NOT m.is_remake
 """
 
 
@@ -89,11 +88,13 @@ def _side(rows: list[Row], stat: Stat) -> Row | None:
     }
 
 
-async def _mine(session: AsyncSession, puuids: tuple[str, ...], champion: str) -> list[Row]:
+async def _mine(
+    session: AsyncSession, puuids: tuple[str, ...], champion: str, role: str
+) -> list[Row]:
     rows = []
     for stat in STATS:
-        one = await stat.stat(session, Scope(puuids=puuids, role=ROLE, champion=champion))
-        everything = await stat.stat(session, Scope(puuids=puuids, role=ROLE))
+        one = await stat.stat(session, Scope(puuids=puuids, role=role, champion=champion))
+        everything = await stat.stat(session, Scope(puuids=puuids, role=role))
         rows.append(
             {
                 "stat": stat.id,
@@ -111,7 +112,7 @@ async def _benchmark(
     size = (await session.execute(text(SAMPLE_SIZE), {"cohort": cohort, "champion": champion})).one()
     result: Row = {
         "cohort": cohort,
-        "tier": COHORTS[cohort].tier,
+        "tier": get_cohort(cohort).tier,
         "benchmark_games": size.games,
         "benchmark_players": size.players,
     }
@@ -125,7 +126,7 @@ async def _benchmark(
                 f"{MIN_BENCHMARK_PLAYERS} players."
             ),
         }
-    scope = Scope(cohort=cohort, champion=champion, role=ROLE)
+    scope = Scope(cohort=cohort, champion=champion, role=get_cohort(cohort).role)
     cs = (await overall_cs_per_minute(session, scope))[0]
     result |= {
         "status": "ok",
@@ -184,26 +185,33 @@ async def champion_card(
     champion: str,
     not_for_player: dict[str, str | None],
     detail: ChampionDetail | None,
+    role: str = "JUNGLE",
 ) -> Row | None:
-    """One champion's card, or None if no game anywhere has this champion."""
+    """One champion's card in `role`, or None if no game anywhere has this champion.
+
+    `not_for_player` maps each cohort that could fit the player to why it
+    doesn't, or None; the card shows the ones in `role`.
+    """
     # Match data's spelling, which can differ from Data Dragon's (FiddleSticks).
     spelling = await my_session.scalar(text(SPELLING), {"champion": champion})
     if spelling is None:
         return None
-    rows = await _mine(my_session, puuids, spelling)
+    rows = await _mine(my_session, puuids, spelling, role)
     last = await my_session.scalar(
-        text(LAST_PLAYED), {"puuids": list(puuids), "champion": spelling}
+        text(LAST_PLAYED), {"puuids": list(puuids), "champion": spelling, "role": role}
     )
     games = next((r["champion"]["games"] for r in rows if r["stat"] == "cs_per_min" and r["champion"]), 0)
     return {
         "champion": spelling,
+        "role": role,
         "games": games,
         "low_sample": games < MIN_GAMES,
         "last_played": last,
         "rows": rows,
         "benchmarks": {
-            cohort: await _benchmark(benchmark_session, cohort, spelling, not_for_player[cohort])
-            for cohort in COHORTS
+            cohort: await _benchmark(benchmark_session, cohort, spelling, reason)
+            for cohort, reason in not_for_player.items()
+            if get_cohort(cohort).role == role
         },
         "riot": describe_detail(detail),
         "notes": [

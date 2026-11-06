@@ -4,7 +4,7 @@ The server always picks the player: a request names one by PUUID, or gets the
 owner. The model never sees or chooses a PUUID.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import text
@@ -30,6 +30,8 @@ class SelectedPlayer:
     rank_checked: bool
     # The role in most of their ranked games, or None with no games.
     main_role: str | None
+    # Ranked games per role.
+    role_games: dict[str, int] = field(default_factory=dict)
 
 
 PLAYERS = """
@@ -52,7 +54,11 @@ SELECT pl.puuid, pl.game_name, pl.tag_line, pl.is_owner, pl.rank_tier,
        coalesce(
            (SELECT games FROM roles a WHERE a.puuid = pl.puuid AND a.team_position = 'JUNGLE'),
            0
-       )::int AS jungle_games
+       )::int AS jungle_games,
+       coalesce(
+           (SELECT jsonb_object_agg(a.team_position, a.games) FROM roles a WHERE a.puuid = pl.puuid),
+           '{}'
+       ) AS role_games
 FROM players pl
 LEFT JOIN roles r ON r.puuid = pl.puuid AND r.place = 1
 ORDER BY pl.is_owner DESC, lower(pl.game_name)
@@ -76,5 +82,6 @@ async def load_player(session: AsyncSession, puuid: str | None = None) -> Select
                 rank_tier=row["rank_tier"],
                 rank_checked=row["rank_checked_at"] is not None,
                 main_role=row["main_role"],
+                role_games=row["role_games"],
             )
     return None
