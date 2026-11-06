@@ -45,7 +45,7 @@ async def test_a_role_tool_defaults_to_the_main_role(sessions, benchmark_session
             await add_frames(session, match_id, 1, {})
     context = mid_context(sessions, benchmark_sessions)
 
-    mid = await call(context, "kill_participation", champion=None, role=None)
+    mid = await call(context, "kill_participation", champion=None, role="MAIN")
     jungle = await call(context, "kill_participation", champion=None, role="JUNGLE")
 
     assert (mid["rows"][0]["games"], jungle["rows"][0]["games"]) == (1, 2)

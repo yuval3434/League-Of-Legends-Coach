@@ -17,7 +17,7 @@ from test_draft import champ, fake_ddragon
 ME = "me"
 # Lane plates has no rows for jungle games, which is all this test data has.
 BY_CHAMPION = [
-    t.name for t in TOOLS if "champion" in t.properties and t.name not in ("compare_to_benchmark", "lane_plates")
+    t.name for t in TOOLS if "champion" in t.properties and t.name not in ("compare_to_benchmark", "role_measures")
 ]
 
 
@@ -61,6 +61,22 @@ def test_every_tool_is_strict_and_requires_all_its_properties():
         assert tool["strict"] is True
         assert schema["additionalProperties"] is False
         assert set(schema["required"]) == set(schema["properties"])
+
+
+def test_the_api_accepts_this_many_strict_tools():
+    """Anthropic's API refuses a request with more than 20 strict tools."""
+    assert sum(1 for tool in tool_definitions() if tool["strict"]) <= 20
+
+
+def test_the_api_accepts_this_many_union_parameters():
+    """Strict tools may have at most 16 parameters with union types in all."""
+    unions = [
+        (tool["name"], name)
+        for tool in tool_definitions()
+        for name, spec in tool["input_schema"]["properties"].items()
+        if "anyOf" in spec or isinstance(spec.get("type"), list)
+    ]
+    assert len(unions) <= 16, unions
 
 
 def test_no_enum_sits_next_to_a_list_of_types():

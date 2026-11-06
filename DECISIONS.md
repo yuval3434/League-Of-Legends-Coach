@@ -798,9 +798,9 @@ take a `role`, and a null role means the player's main role, not jungle: before
 this, a mid laner asking about kill participation would have been given their
 jungle games. `compare_to_benchmark` takes any cohort name and checks it in
 code, because a fixed list can't hold cohorts pulled on demand. `data_coverage`
-lists the player's roles and every cohort that could fit them. New tools: solo
-kills, lane plates, damage share, roams, and `wins_and_losses` for a role with
-no benchmark, which the prompt says to present as how a measure moves with the
+lists the player's roles and every cohort that could fit them. New tools:
+`role_measures` (solo kills, lane plates, damage share and roams in one tool)
+and `wins_and_losses` for a role with no benchmark, which the prompt says to present as how a measure moves with the
 result, never as a finding. Objective share, first lane kill and farm by stretch
 stay jungle-only, and their descriptions say so.
 
@@ -810,3 +810,15 @@ check only if every benchmark comparison uses their own peer cohort. The case
 picks its player by rule (the first synced player whose main role isn't jungle)
 and shows them to the coach as the owner with a placeholder name, so no Riot ID
 reaches the prompt or the saved results.
+
+**Four stats, one tool.** Anthropic's API refuses a request with more than 20
+strict tools, and four separate tools would have made 23: the first eval run
+was refused before the model answered, at no cost. Strict mode stays on every
+tool, so the API keeps enforcing each schema, and a test now fails above 20.
+
+**"MAIN" instead of a nullable role.** Strict tools may also have at most 16
+parameters with union types in all, and the nullable roles made 22: the second
+run was refused too, also at no cost. A role measured in one role is now a plain
+choice that includes "MAIN", the player's main role, which brings the count to
+15. Code that calls a tool without a role, such as the API's stats endpoint,
+gets MAIN filled in. A test fails above 16.

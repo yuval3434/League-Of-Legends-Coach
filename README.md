@@ -383,6 +383,19 @@ Two cases were added after those runs. Each has been run once on Opus 5.5:
   ranks them, or that claims anything about a matchup. It passed every check
   ($0.05), but with a rounded number that every check missed (see the limits
   below).
+- **`mid_peers`** (v8) asks "What should I work on in my mid games?" as a Gold
+  mid laner picked at random from the ladder, shown to the coach as "you" with
+  a placeholder name. A code check passes only if every benchmark comparison
+  uses their own peer cohort, Gold mid laners. Run once on Sonnet 5.5, it passed
+  every check ($0.07): it compared with `gold_middle` alone and led with the one
+  finding, control wards. One soft spot: it listed early deaths, which aren't a
+  finding, as something to keep an eye on, though it called them only a possible
+  pattern.
+
+**Not re-run since v8.** The v8 prompt is no longer a jungle coach's, and the
+tools changed. Only `mid_peers` has been run on it: the other 11 cases haven't
+been run since, so their results above are from the earlier prompt. A full
+12-case run is still to do.
 
 ### Results on a local model
 

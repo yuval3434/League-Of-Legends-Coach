@@ -59,10 +59,13 @@ CHAMPION = {
 }
 BY_CHAMPION = {"champion": CHAMPION}
 ROLES = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
-# For stats measured in one role: null means the player's main role, not all roles.
+# For stats measured in one role. Not nullable: strict tools may have at most 16
+# union-typed parameters in all, so "MAIN" stands for the player's main role.
+MAIN = "MAIN"
 IN_ROLE = {
-    "anyOf": [{"type": "string", "enum": ROLES}, {"type": "null"}],
-    "description": "Games in this role. Null for the player's main role.",
+    "type": "string",
+    "enum": [MAIN, *ROLES],
+    "description": "Games in this role. MAIN for the player's main role.",
 }
 BY_CHAMPION_IN_ROLE = {"champion": CHAMPION, "role": IN_ROLE}
 ROLE = {
@@ -70,8 +73,9 @@ ROLE = {
     "description": "Keep only games in this role. Null for every role.",
 }
 DRAFT_ROLE = {
-    "anyOf": [{"type": "string", "enum": ROLES}, {"type": "null"}],
-    "description": "The player's role in this champion select. Null for their main role.",
+    "type": "string",
+    "enum": [MAIN, *ROLES],
+    "description": "The player's role in this champion select. MAIN for their main role.",
 }
 NO_ROWS_NOTE = "No games match. data_coverage lists the champions and their exact names."
 
@@ -120,18 +124,25 @@ def _main_role(context: ToolContext) -> str | None:
     return context.player.main_role if context.player else None
 
 
+def _in_role(context: ToolContext, role: str | None) -> str:
+    """The role a MAIN (or missing) role stands for: the main role, else jungle."""
+    if role in (None, MAIN):
+        return _main_role(context) or "JUNGLE"
+    return role
+
+
 def _stat_tool(
     name: str,
     stat: Callable[[AsyncSession, Scope], Awaitable[list[Row]]],
     description: str,
     properties: dict[str, Any] = BY_CHAMPION,
 ) -> Tool:
-    """A tool for one stat. With IN_ROLE, a null role is the player's main role."""
+    """A tool for one stat. With IN_ROLE, MAIN is the player's main role."""
 
     async def run(context: ToolContext, arguments: dict[str, Any]) -> Row:
         role = arguments.get("role")
         if properties.get("role") is IN_ROLE:
-            role = role or _main_role(context)
+            role = _in_role(context, role)
         scope = Scope(
             puuids=context.puuids,
             champion=arguments.get("champion"),
@@ -199,8 +210,21 @@ async def _farm_by_stretch(context: ToolContext, arguments: dict[str, Any]) -> R
         )
 
 
+async def _role_measures(context: ToolContext, arguments: dict[str, Any]) -> Row:
+    scope = Scope(
+        puuids=context.puuids,
+        champion=arguments.get("champion"),
+        role=_in_role(context, arguments.get("role")),
+    )
+    async with context.sessions() as session:
+        return {
+            stat.__name__: await stat(session, scope)
+            for stat in (solo_kills, lane_plates, damage_share, roams)
+        }
+
+
 async def _wins_and_losses(context: ToolContext, arguments: dict[str, Any]) -> Row:
-    role = arguments.get("role") or _main_role(context) or "JUNGLE"
+    role = _in_role(context, arguments.get("role"))
     async with context.sessions() as session:
         return await own_numbers(session, list(context.puuids), role)
 
@@ -228,7 +252,6 @@ async def _draft_board(context: ToolContext, arguments: dict[str, Any]) -> Row:
         if not champions:
             raise BadArguments("Champion data from Data Dragon isn't loaded yet.")
         try:
-            main_role = context.player.main_role if context.player else None
             board = await draft_board(
                 session,
                 context.puuids,
@@ -236,7 +259,7 @@ async def _draft_board(context: ToolContext, arguments: dict[str, Any]) -> Row:
                 arguments["allies"],
                 arguments["enemies"],
                 arguments["bans"],
-                arguments.get("role") or main_role or "JUNGLE",
+                _in_role(context, arguments.get("role")),
             )
         except ValueError as error:
             raise BadArguments(str(error)) from error
@@ -421,33 +444,18 @@ TOOLS = (
         "lane. This isn't gank data: a game with no such kill may still have had "
         "ganks, and failed ganks can't be seen. Jungle games only.",
     ),
-    _stat_tool(
-        "solo_kills",
-        solo_kills,
-        "Kills the player made with no one assisting, per game and before 15:00, "
-        "in one role.",
+    Tool(
+        "role_measures",
+        "Four measures for laners, each per game in one role with its own games "
+        "and margin. `solo_kills`: kills with no one assisting, and before 15:00. "
+        "`lane_plates`: enemy turret plates that fell in the player's lane before "
+        "14:00, every one, and the ones the player last hit (context, since minions "
+        "take many); no rows for jungle games. `damage_share`: the player's share "
+        "of their team's damage to champions. `roams`: kills and assists before "
+        "14:00 away from mid and both bases; only roams that paid off show, and "
+        "it's context, not a judgement.",
         BY_CHAMPION_IN_ROLE,
-    ),
-    _stat_tool(
-        "lane_plates",
-        lane_plates,
-        "Enemy turret plates that fell in the player's lane before 14:00, per game, "
-        "in one role: every one, and the ones the player last hit (context, since "
-        "minions take many). No rows for jungle games.",
-        BY_CHAMPION_IN_ROLE,
-    ),
-    _stat_tool(
-        "damage_share",
-        damage_share,
-        "The player's share of their team's damage to champions, per game, in one role.",
-        BY_CHAMPION_IN_ROLE,
-    ),
-    _stat_tool(
-        "roams",
-        roams,
-        "Kills and assists before 14:00 away from mid and both bases, per game, in "
-        "one role. Only roams that paid off show. Context, not a judgement.",
-        BY_CHAMPION_IN_ROLE,
+        _role_measures,
     ),
     Tool(
         "wins_and_losses",
@@ -529,6 +537,11 @@ async def run_tool(
     tool = _BY_NAME.get(name)
     if tool is None:
         return ToolResult(f"There is no tool called {name}.", is_error=True)
+    # The API and the Draft page may leave a role out; for the model it's required.
+    arguments = dict(arguments)
+    for key, spec in tool.properties.items():
+        if spec in (IN_ROLE, DRAFT_ROLE) and arguments.get(key) is None:
+            arguments[key] = MAIN
     problem = _problem(tool, arguments)
     if problem:
         return ToolResult(problem, is_error=True)
