@@ -1,13 +1,26 @@
 import { useEffect, useState } from "react";
 
-import { api, type CompareRow, type Comparison, type Coverage, type Player, type Theme } from "../api";
+import {
+  api,
+  type CohortOffer,
+  type CompareRow,
+  type Comparison,
+  type Coverage,
+  type Offers,
+  type PullStatus,
+  type Role,
+  type RoleOffer,
+  type Theme,
+} from "../api";
 import { Layout } from "../components/Layout";
 import { MeasureCard } from "../components/MeasureCard";
 import { ProfileHeader } from "../components/ProfileHeader";
+import { PullOffer, RoleTabs } from "../components/PullOffer";
 import { Marker, type State } from "../components/Verdict";
 import { headline } from "../headline";
 import { fmt, metricLabel } from "../metrics";
-import { mainCohort, usePlayer } from "../player";
+import { comparedWith, groupName, peers, roleWord } from "../offers";
+import { usePlayer } from "../player";
 import { href } from "../router";
 import { stateOf, themeState } from "../state";
 import { subjectOf, type Subject, verb, who, whoLower, whose, Whose } from "../subject";
@@ -237,12 +250,25 @@ function range(values: string[]): string {
   return values.length === 1 ? values[0] : `${values[0]}–${values[values.length - 1]}`;
 }
 
-/** No cohort fits this player: say why, in the server's words, and never show another's. */
-function NoBenchmark({ player, s }: { player: Player; s: Subject }) {
-  const reasons = [...new Set(Object.values(player.benchmarks).filter((r): r is string => r !== null))];
+/** Why a cohort gives no comparison: it doesn't fit, or it's too small so far. */
+function reasonFor(c: CohortOffer): string {
+  if (c.why_not) return c.why_not;
+  const group = groupName(c.tier, c.role);
+  if (!c.games) return `No benchmark of ${group} has been pulled yet.`;
+  return `The benchmark of ${group} has ${c.games} games from ${c.players} players so far; it needs 30 games from 10 players.`;
+}
+
+/** No cohort fits this player in this role: say why, in the server's words, and never show another's. */
+function NoBenchmark({ offer, s }: { offer: RoleOffer | null; s: Subject }) {
+  const reasons = offer
+    ? [...new Set(offer.cohorts.map(reasonFor))]
+    : ["This player has no ranked games, so there's nothing to compare."];
   return (
     <div className="pt-12">
-      <h1 className="display max-w-[920px] text-[50px] leading-[1.02]">No benchmark fits {whoLower(s)} yet</h1>
+      <h1 className="display max-w-[920px] text-[50px] leading-[1.02]">
+        No benchmark fits {whoLower(s)}
+        {offer ? ` in ${roleWord(offer.role)}` : ""} yet
+      </h1>
       <ul className="mt-5 max-w-[700px] space-y-1 text-[16px] text-ink2">
         {reasons.map((reason) => (
           <li key={reason}>{reason}</li>
@@ -259,20 +285,69 @@ function NoBenchmark({ player, s }: { player: Player; s: Subject }) {
   );
 }
 
+// How often a running pull's progress is checked.
+const PULL_POLL_MS = 15_000;
+
 export function Overview() {
   const { puuid, player, error: playerError } = usePlayer();
-  const [data, setData] = useState<{ coverage: Coverage; comparison: Comparison | null } | null>(null);
+  const [base, setBase] = useState<{ coverage: Coverage; offers: Offers } | null>(null);
+  const [role, setRole] = useState<Role | null>(null);
+  // undefined while loading; null when no cohort can be compared with.
+  const [comparison, setComparison] = useState<Comparison | null | undefined>(undefined);
+  const [status, setStatus] = useState<PullStatus>({ state: "idle" });
+  const [pullError, setPullError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const cohort = player ? mainCohort(player) : null;
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!player) return;
-    setData(null);
     setError(null);
-    Promise.all([api.coverage(puuid), cohort ? api.compare(cohort, puuid) : Promise.resolve(null)])
-      .then(([coverage, comparison]) => setData({ coverage, comparison }))
+    Promise.all([api.coverage(puuid), api.offers(puuid)])
+      .then(([coverage, offers]) => {
+        setBase({ coverage, offers });
+        setStatus(offers.pull);
+      })
       .catch((e: Error) => setError(e.message));
-  }, [player, puuid, cohort]);
+  }, [player, puuid, reload]);
+
+  const roles = base?.offers.roles ?? [];
+  const offer = roles.find((r) => r.role === role) ?? roles[0] ?? null;
+  const cohort = offer ? comparedWith(offer)?.cohort ?? null : null;
+
+  useEffect(() => {
+    if (!base) return;
+    setComparison(undefined);
+    if (!cohort) {
+      setComparison(null);
+      return;
+    }
+    api.compare(cohort, puuid).then(setComparison).catch((e: Error) => setError(e.message));
+  }, [base, cohort, puuid]);
+
+  // While a pull runs, check on it; when it ends, reload what can be compared.
+  useEffect(() => {
+    if (status.state !== "running") return;
+    const timer = setInterval(() => {
+      api
+        .pullStatus()
+        .then((next) => {
+          setStatus(next);
+          if (next.state !== "running") setReload((n) => n + 1);
+        })
+        .catch(() => undefined);
+    }, PULL_POLL_MS);
+    return () => clearInterval(timer);
+  }, [status.state]);
+
+  const startPull = (c: CohortOffer, more: boolean) => {
+    setPullError(null);
+    api.pull(c.cohort, puuid, more).then(setStatus).catch((e: Error) => setPullError(e.message));
+  };
+  const peer = offer ? peers(offer) : null;
+  const pullOffer = peer && !peer.why_not && (
+    <PullOffer offer={peer} status={status} error={pullError} onStart={(more) => startPull(peer, more)} />
+  );
+  const tabs = offer && <RoleTabs roles={roles.map((r) => r.role)} role={offer.role} onChange={setRole} />;
 
   const failed = playerError ?? error;
   if (failed) {
@@ -282,7 +357,7 @@ export function Overview() {
       </Layout>
     );
   }
-  if (!player || !data) {
+  if (!player || !base || comparison === undefined) {
     return (
       <Layout active="overview">
         <p className="mt-16 font-mono text-[12px] text-ink3">Loading games…</p>
@@ -291,18 +366,21 @@ export function Overview() {
   }
 
   const s = subjectOf(player);
-  const { coverage, comparison } = data;
+  const { coverage } = base;
   if (!comparison || comparison.status !== "ok") {
     return (
       <Layout active="overview">
         <ProfileHeader player={player} coverage={coverage} />
-        <NoBenchmark player={player} s={s} />
+        {tabs}
+        <NoBenchmark offer={offer} s={s} />
+        {pullOffer}
       </Layout>
     );
   }
 
   const name = comparison.tier.charAt(0) + comparison.tier.slice(1).toLowerCase();
-  const w: Words = { cohort: name, group: `${name} junglers`, s };
+  const games = `${roleWord(comparison.role)} games`;
+  const w: Words = { cohort: name, group: groupName(comparison.tier, comparison.role), s };
   const { themes, rows } = comparison;
   // Findings first, then the rest in a fixed order.
   const order = (t: Theme) => (t.status === "finding" ? 0 : t.status === "worth_watching" ? 1 : 2);
@@ -315,11 +393,12 @@ export function Overview() {
   return (
     <Layout active="overview">
       <ProfileHeader player={player} coverage={coverage} />
+      {tabs}
 
       <div className="pt-12">
         <h1 className="display max-w-[920px] text-[50px] leading-[1.02]">{headline(themes, w.group, s)}</h1>
         <p className="mt-5 max-w-[700px] text-[16px] text-ink2">
-          Up to {theirGames} of {whose(s)} jungle games on patches {range(comparison.benchmark_patches)}, against{" "}
+          Up to {theirGames} of {whose(s)} {games} on patches {range(comparison.benchmark_patches)}, against{" "}
           {comparison.benchmark_games} games from {comparison.benchmark_players} {w.group} on the same patches.
           {target && ` ${name} is a target, a rank above, not ${whose(s)} peers.`} A difference only counts as clear when
           it's bigger than chance would explain. Hover any measure for its exact margin.
@@ -348,11 +427,11 @@ export function Overview() {
         <div className="smallcaps text-ink3">What this covers</div>
         <div className="max-w-[720px] space-y-2">
           <p>
-            {coverage.player.games} ranked games, {coverage.player.jungle_games} of them in the jungle, on patches{" "}
+            {coverage.player.games} ranked games, {offer?.games ?? 0} of them {games}, on patches{" "}
             {range(coverage.player.patches)}. Remakes are left out everywhere.
           </p>
           <p>
-            Comparisons use only {whose(s)} jungle games on the benchmark's patches, so a measure can rest on fewer games
+            Comparisons use only {whose(s)} {games} on the benchmark's patches, so a measure can rest on fewer games
             than {whose(s)} total. Anything on fewer than 10 of {whose(s)} games says "Too early to tell".
           </p>
           {!s.you && (
@@ -361,6 +440,7 @@ export function Overview() {
               at.
             </p>
           )}
+          {pullOffer}
         </div>
       </section>
     </Layout>

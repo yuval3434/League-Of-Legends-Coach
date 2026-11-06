@@ -1,6 +1,6 @@
 """Stats from the match timeline, for the games a player spent in one role.
 
-Each stat takes a `role`, JUNGLE by default. First lane kill and objective share
+Each stat takes a `role`: the one given, else the Scope's, else JUNGLE. First lane kill and objective share
 are jungle measures, so they always use jungle games. An opponent is the player
 in the same role on the other team.
 
@@ -11,9 +11,18 @@ no "first gank" stat.
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from analytics.stats import Players, Row, fetch
+from analytics.stats import Players, Row, Scope, fetch
 
 JUNGLE = "JUNGLE"
+
+
+def _role(puuids: Players, role: str | None) -> str:
+    """The role to use: the one given, else the Scope's, else JUNGLE."""
+    if role:
+        return role
+    if isinstance(puuids, Scope) and puuids.role:
+        return puuids.role
+    return JUNGLE
 
 # One row per player per game in the role. No timeline means unknown events, not zero.
 ROLE_GAMES = """
@@ -166,7 +175,7 @@ ORDER BY c.objective, c.taken_by
 
 
 async def deaths_before_objective(
-    session: AsyncSession, puuids: Players, role: str = JUNGLE
+    session: AsyncSession, puuids: Players, role: str | None = None
 ) -> list[Row]:
     """How often deaths came in the 60 seconds before an objective was taken.
 
@@ -179,7 +188,7 @@ async def deaths_before_objective(
     `low_sample`. Void grubs die together, so one death can count for several
     HORDE rows. This shows the two happen together, not that one caused the other.
     """
-    return await fetch(session, DEATHS_BEFORE_OBJECTIVE, puuids=puuids, role=role)
+    return await fetch(session, DEATHS_BEFORE_OBJECTIVE, puuids=puuids, role=_role(puuids, role))
 
 
 KILL_PARTICIPATION = (
@@ -209,13 +218,13 @@ HAVING count(*) > 0
 
 
 async def kill_participation(
-    session: AsyncSession, puuids: Players, role: str = JUNGLE
+    session: AsyncSession, puuids: Players, role: str | None = None
 ) -> list[Row]:
     """Share of the team's kills the player took part in, per game.
 
     Games where the team got no kills are left out, because the share is undefined.
     """
-    return await fetch(session, KILL_PARTICIPATION, puuids=puuids, role=role)
+    return await fetch(session, KILL_PARTICIPATION, puuids=puuids, role=_role(puuids, role))
 
 
 WARDS_PER_MINUTE = (
@@ -286,7 +295,7 @@ HAVING count(*) > 0
 
 
 async def wards_per_minute(
-    session: AsyncSession, puuids: Players, role: str = JUNGLE
+    session: AsyncSession, puuids: Players, role: str | None = None
 ) -> list[Row]:
     """Wards placed and destroyed per minute by the player, with vision context.
 
@@ -299,7 +308,7 @@ async def wards_per_minute(
     public. Leaves out Riot's UNDEFINED events and Teemo mushrooms, which don't
     count as wards in Riot's own end-of-game totals.
     """
-    return await fetch(session, WARDS_PER_MINUTE, puuids=puuids, role=role)
+    return await fetch(session, WARDS_PER_MINUTE, puuids=puuids, role=_role(puuids, role))
 
 
 FIRST_LANE_KILL = (
@@ -413,7 +422,7 @@ ORDER BY start_minute
 
 
 async def farm_gained_by_stretch(
-    session: AsyncSession, puuids: Players, role: str = JUNGLE
+    session: AsyncSession, puuids: Players, role: str | None = None
 ) -> list[Row]:
     """Gold and CS the player gained in each stretch: 0-10, 10-15 and 15-20 min.
 
@@ -422,7 +431,7 @@ async def farm_gained_by_stretch(
     fall from one stretch to the next. These don't depend on the opponent, so
     they compare with any rank.
     """
-    return await fetch(session, FARM_GAINED_BY_STRETCH, puuids=puuids, role=role)
+    return await fetch(session, FARM_GAINED_BY_STRETCH, puuids=puuids, role=_role(puuids, role))
 
 
 FARM_VS_OPPONENT_BY_STRETCH = (
@@ -480,7 +489,7 @@ ORDER BY start_minute
 
 
 async def farm_vs_opponent_by_stretch(
-    session: AsyncSession, puuids: Players, role: str = JUNGLE
+    session: AsyncSession, puuids: Players, role: str | None = None
 ) -> list[Row]:
     """Gold and CS gained minus the opponent's in the same role, in each stretch.
 
@@ -489,4 +498,4 @@ async def farm_vs_opponent_by_stretch(
     true when the average is further from zero than its margin, and empty with
     one game. Games with no opponent in the role are left out.
     """
-    return await fetch(session, FARM_VS_OPPONENT_BY_STRETCH, puuids=puuids, role=role)
+    return await fetch(session, FARM_VS_OPPONENT_BY_STRETCH, puuids=puuids, role=_role(puuids, role))

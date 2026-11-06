@@ -13,7 +13,7 @@ from analytics.stats import Scope, gold_cs_at_minute, overall_cs_per_minute
 from benchmarks.compare import compare
 from benchmarks.models import Base as BenchmarkBase
 from benchmarks.models import PlayerRank, Sample, ScanQueue, create_benchmark_engine
-from benchmarks.pull import Quotas, order_junglers, pull_cohort, target_champions
+from benchmarks.pull import Quotas, order_candidates, pull_cohort, target_champions
 from factories import make_match, make_timeline
 from ingestion.models import Base, Match, MatchParticipant, Player, RawResponse
 from ingestion.riot_client import RiotAuthError, RiotNotFound, RiotRequestFailed
@@ -111,17 +111,17 @@ def jungler(participant_id, champion="Ornn", puuid=None):
 
 def test_a_target_champion_goes_first():
     junglers = [jungler(2, "Ornn"), jungler(7, "Viego")]
-    assert order_junglers("EUW1_1", junglers, TARGETS)[0]["participant_id"] == 7
+    assert order_candidates("EUW1_1", junglers, TARGETS)[0]["participant_id"] == 7
 
 
 def test_ties_are_stable_and_vary_by_match():
     junglers = [jungler(2), jungler(7)]
     picks = [
-        order_junglers(f"EUW1_{n}", junglers, TARGETS)[0]["participant_id"]
+        order_candidates(f"EUW1_{n}", junglers, TARGETS)[0]["participant_id"]
         for n in range(40)
     ]
     assert picks == [
-        order_junglers(f"EUW1_{n}", reversed(junglers), TARGETS)[0]["participant_id"]
+        order_candidates(f"EUW1_{n}", reversed(junglers), TARGETS)[0]["participant_id"]
         for n in range(40)
     ]
     assert set(picks) == {2, 7}
@@ -131,8 +131,8 @@ def test_the_choice_cannot_depend_on_who_won():
     won = [jungler(2) | {"win": True}, jungler(7) | {"win": False}]
     lost = [jungler(2) | {"win": False}, jungler(7) | {"win": True}]
     assert (
-        order_junglers("EUW1_1", won, TARGETS)[0]["participant_id"]
-        == order_junglers("EUW1_1", lost, TARGETS)[0]["participant_id"]
+        order_candidates("EUW1_1", won, TARGETS)[0]["participant_id"]
+        == order_candidates("EUW1_1", lost, TARGETS)[0]["participant_id"]
     )
 
 
@@ -283,6 +283,55 @@ async def test_only_the_last_28_days_are_listed(benchmark_sessions, monkeypatch)
     await run_pull(benchmark_sessions, riot)
 
     assert riot.last_start_time == 10_000_000 - 28 * 86400
+
+
+async def test_a_mid_cohort_samples_a_mid_laner(benchmark_sessions):
+    # Mid laners are participants 3 and 8; only 8 is Silver.
+    riot = FakeRiot([riot_match("EUW1_1")], silver={"puuid-8"})
+
+    outcomes = await pull_cohort(benchmark_sessions, riot, "silver_middle", 100, set(), {ME})
+
+    assert outcomes == {"sampled": 1}
+    rows = await sample_rows(benchmark_sessions)
+    assert [(r.cohort, r.participant_id) for r in rows] == [("silver_middle", 8)]
+
+
+async def test_a_pull_to_the_overall_target_stops_there(benchmark_sessions, monkeypatch):
+    monkeypatch.setattr(pull, "TARGET_OVERALL", 2)
+    riot = FakeRiot([riot_match(f"EUW1_{n}") for n in range(6)])
+
+    outcomes = await pull_cohort(
+        benchmark_sessions, riot, SILVER, 100, TARGETS, {ME}, until_overall=True
+    )
+
+    assert outcomes == {"sampled": 2}
+
+
+async def test_a_new_cohort_starts_on_stored_lobbies_of_its_tier(benchmark_sessions, monkeypatch):
+    # Inside the 28 days of the factory's game start.
+    monkeypatch.setattr(pull.time, "time", lambda: 1_700_000_100)
+    stored = [riot_match(f"EUW1_{n}") for n in range(3)]
+    await run_pull(benchmark_sessions, FakeRiot(stored), max_matches=3)
+
+    riot = FakeRiot([], silver={"puuid-3", "puuid-8"})
+    outcomes = await pull_cohort(benchmark_sessions, riot, "silver_middle", 3, set(), {ME})
+
+    # No match was listed or fetched: all three came from the Silver jungle queue.
+    assert outcomes == {"sampled": 3}
+    assert not hasattr(riot, "last_start_time")
+
+
+async def test_stored_lobbies_outside_the_window_arent_reused(benchmark_sessions, monkeypatch):
+    monkeypatch.setattr(pull.time, "time", lambda: 1_700_000_100 + 29 * 86400)
+    await run_pull(benchmark_sessions, FakeRiot([riot_match("EUW1_1")]), max_matches=1)
+
+    await pull_cohort(benchmark_sessions, FakeRiot([]), "silver_middle", 1, set(), {ME})
+
+    async with benchmark_sessions() as session:
+        queued = await session.scalar(
+            select(func.count()).select_from(ScanQueue).where(ScanQueue.cohort == "silver_middle")
+        )
+    assert queued == 0
 
 
 async def test_the_tracked_player_is_never_a_seed(benchmark_sessions):
@@ -854,3 +903,117 @@ async def test_no_percentage_where_it_would_mislead(sessions, benchmark_sessions
     for row in result["rows"]:
         if row["value"].endswith(("_diff", "_pct")):
             assert row["difference_pct"] is None, row["value"]
+
+
+# Benchmarks on demand
+
+
+async def gold_mid_owner(sessions):
+    """The owner is Gold: 12 mid games (5 on Ahri, under 5 on the rest) and 10 in the jungle."""
+    from test_players import add_player
+
+    async with sessions() as session:
+        await add_player(session, ME, "Me", owner=True, tier="GOLD")
+        for n in range(12):
+            champion = "Ahri" if n < 5 else "Lux" if n < 9 else "Syndra"
+            await add_game(session, f"EUW1_M{n}", role="MIDDLE", champion=champion)
+        for n in range(10):
+            await add_game(session, f"EUW1_J{n}", champion="Viego")
+
+
+@pytest.fixture
+def recorded_pulls(monkeypatch):
+    """Replaces the pull itself, so the API can be tested without calling Riot."""
+    import main
+
+    calls = []
+
+    async def fake_pull(sessions, riot, name, max_matches, targets, skip, until_overall=False):
+        calls.append(
+            {"cohort": name, "max_matches": max_matches, "targets": targets, "until_overall": until_overall}
+        )
+        return {}
+
+    monkeypatch.setattr(main, "pull_cohort", fake_pull)
+    return calls
+
+
+def finished(client):
+    """Wait for the background pull task, then return its status."""
+
+    async def wait():
+        await client.app.state.pull_task
+
+    client.portal.call(wait)
+    return client.get("/benchmarks/status").json()
+
+
+async def test_offers_list_each_role_with_its_cohorts_and_the_time_a_pull_takes(
+    sessions, benchmark_sessions, client
+):
+    await gold_mid_owner(sessions)
+
+    offers = client.get("/benchmarks/offers").json()
+
+    assert [r["role"] for r in offers["roles"]] == ["MIDDLE", "JUNGLE"]
+    mid, jungle = offers["roles"]
+    assert mid["games"] == 12
+    assert [c["cohort"] for c in mid["cohorts"]] == ["gold_middle"]
+    assert [c["cohort"] for c in jungle["cohorts"]] == ["gold_jungle", "emerald"]
+    offer = mid["cohorts"][0]
+    assert (offer["games"], offer["has_benchmark"], offer["why_not"], offer["why_no_pull"]) == (0, False, None, None)
+    # The measured Silver rate: 500 games from 683 matches in 91 minutes.
+    assert offer["to_500"] == {"games_needed": 500, "matches": 683, "minutes": 91}
+    assert offer["pull_more"] == {"matches": 2000, "minutes": 42}
+
+
+async def test_a_pull_stops_at_500_by_default_with_the_players_champions_as_targets(
+    sessions, benchmark_sessions, client, recorded_pulls
+):
+    await gold_mid_owner(sessions)
+
+    response = client.post("/benchmarks/pull", json={"cohort": "gold_middle"})
+
+    assert response.status_code == 202
+    assert response.json()["mode"] == "to_500"
+    assert finished(client)["state"] == "done"
+    # Up to three times the 683 matches expected, in case Gold mids are rarer.
+    assert recorded_pulls == [
+        {"cohort": "gold_middle", "max_matches": 2049, "targets": {"Ahri"}, "until_overall": True}
+    ]
+
+
+async def test_pull_more_checks_2000_more_matches(sessions, benchmark_sessions, client, recorded_pulls):
+    await gold_mid_owner(sessions)
+    async with benchmark_sessions() as session:
+        await session.execute(
+            insert(ScanQueue), [{"cohort": "gold_middle", "match_id": "EUW1_1", "outcome": "no_fit"}]
+        )
+        await session.commit()
+
+    client.post("/benchmarks/pull", json={"cohort": "gold_middle", "more": True})
+    status = finished(client)
+
+    assert (status["mode"], status["checked"], status["started_checked"]) == ("more", 1, 1)
+    assert (recorded_pulls[0]["max_matches"], recorded_pulls[0]["until_overall"]) == (2001, False)
+
+
+async def test_a_full_cohort_is_pointed_to_pull_more(
+    sessions, benchmark_sessions, client, recorded_pulls, monkeypatch
+):
+    import benchmarks.estimate as estimate
+
+    monkeypatch.setattr(estimate, "TARGET_OVERALL", 1)
+    await gold_mid_owner(sessions)
+    async with benchmark_sessions() as bench:
+        await add_sampled_game(bench, "EUW1_B1", "someone", cohort="gold_middle")
+
+    response = client.post("/benchmarks/pull", json={"cohort": "gold_middle"})
+
+    assert response.status_code == 409 and "Pull more" in response.json()["detail"]
+    assert recorded_pulls == []
+
+
+def test_master_and_above_cant_be_pulled_yet(client):
+    response = client.post("/benchmarks/pull", json={"cohort": "master_middle"})
+    assert response.status_code == 422 and "Master" in response.json()["detail"]

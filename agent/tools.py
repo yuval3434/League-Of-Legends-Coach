@@ -34,7 +34,7 @@ from analytics.stats import (
     win_rate_by_gold_diff,
     win_rates,
 )
-from benchmarks.cohorts import COHORTS, why_no_benchmark
+from benchmarks.cohorts import COHORTS, offered_roles, why_no_benchmark
 from benchmarks.compare import compare, coverage
 from benchmarks.stretches import farm_by_stretch
 from benchmarks.themes import THEMES
@@ -83,7 +83,8 @@ def _not_for_player(context: ToolContext, cohort: str) -> str | None:
     player = context.player
     if player is None:
         return None
-    return why_no_benchmark(cohort, player.rank_tier, player.main_role, player.rank_checked)
+    roles = offered_roles(player.role_games, player.main_role)
+    return why_no_benchmark(cohort, player.rank_tier, roles, player.rank_checked)
 
 
 @dataclass(frozen=True)

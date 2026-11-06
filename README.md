@@ -206,18 +206,27 @@ are current solo/duo ranks, because match data doesn't record rank per game.
 
 ## Benchmarks
 
-Compare your jungle stats with real Silver and Emerald games:
+A cohort is one rank and one role: `silver` and `emerald` are junglers, and any
+other is named like `gold_middle`, Gold mid laners. Each player gets their
+peers' cohort in their main role and in any role with 10+ games, and junglers
+below Emerald also get Emerald as a target. When a cohort has no benchmark yet,
+the Overview offers to pull one, with the time it takes:
 
 ```sh
+curl "localhost:8000/benchmarks/offers"                 # each role, its cohorts, the estimate
 curl -X POST localhost:8000/benchmarks/pull -H "Content-Type: application/json" \
-  -d '{"cohort": "silver", "max_matches": 500}'
+  -d '{"cohort": "gold_middle"}'                         # stops at 500 games
+curl -X POST localhost:8000/benchmarks/pull -H "Content-Type: application/json" \
+  -d '{"cohort": "gold_middle", "more": true}'           # 2,000 more matches, for champions
 curl localhost:8000/benchmarks/status
-curl "localhost:8000/benchmarks/compare?cohort=silver"
+curl "localhost:8000/benchmarks/compare?cohort=gold_middle"
 curl "localhost:8000/benchmarks/compare?cohort=emerald&champion=Viego"
 ```
 
-`max_matches` is the cohort's running total, so raise it to carry on. A pull saves
-its progress as it goes and can be started again after a key expires. It can't
+A pull to 500 games takes about 1½ hours on a development key. Scripts can still
+pass `max_matches`, the cohort's running total of matches checked. Master and
+above can't be pulled yet. A pull saves its progress as it goes and can be
+started again after a key expires. It can't
 run alongside a sync, because they share one call budget. Benchmark data stays in
 the `benchmark` schema. [DECISIONS.md](DECISIONS.md) explains the rules.
 

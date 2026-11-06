@@ -67,6 +67,7 @@ export type Theme = {
 export type Comparison = {
   cohort: string;
   tier: string;
+  role: Role;
   status: "ok" | "no_benchmark";
   benchmark_games: number;
   benchmark_players: number;
@@ -143,9 +144,44 @@ export type Player = {
   rank_tier: string | null;
   rank_checked: boolean;
   main_role: string | null;
+  // Ranked games per role, and the roles they get benchmarks in: main first.
+  role_games: Record<string, number>;
+  roles: Role[];
   // Each cohort, with why it doesn't fit this player, or null if it does.
   benchmarks: Record<string, string | null>;
 };
+
+/** One cohort that could fit a player in one role, and what pulling it takes. */
+export type CohortOffer = {
+  cohort: string;
+  tier: string;
+  role: Role;
+  audience: "peers" | "target";
+  games: number;
+  players: number;
+  checked: number;
+  has_benchmark: boolean;
+  // Why it doesn't fit the player, and why it can't be pulled now: null if it can.
+  why_not: string | null;
+  why_no_pull: string | null;
+  to_500: { games_needed: number; matches: number; minutes: number };
+  pull_more: { matches: number; minutes: number };
+};
+
+export type RoleOffer = { role: Role; games: number; cohorts: CohortOffer[] };
+
+export type PullStatus = {
+  state: "idle" | "running" | "done" | "failed";
+  cohort?: string;
+  mode?: "to_500" | "more" | "matches";
+  max_matches?: number;
+  started_checked?: number;
+  checked?: number;
+  games?: number;
+  error?: string;
+};
+
+export type Offers = { roles: RoleOffer[]; pull: PullStatus };
 
 /** A row of the player switcher. */
 export type PlayerRow = Omit<Player, "rank_checked"> & {
@@ -420,7 +456,7 @@ export const api = {
   coverage: (player: string | null) => get<Coverage>(`/stats/data_coverage${query({ player })}`),
   champions: (role: Role | null, player: string | null) =>
     get<{ rows: ChampionRow[] }>(`/stats/champion_stats${query({ role, player })}`).then((r) => r.rows),
-  compare: (cohort: "silver" | "emerald", player: string | null) =>
+  compare: (cohort: string, player: string | null) =>
     get<Comparison>(`/benchmarks/compare${query({ cohort, player })}`),
   stretches: (player: string | null) => get<Stretches>(`/benchmarks/stretches${query({ player })}`),
   matches: (player: string | null, offset = 0) =>
@@ -451,6 +487,12 @@ export const api = {
     get<SyncStatus>("/sync", { ...JSON_POST, body: JSON.stringify({ game_name, tag_line }) }),
   syncStatus: () => get<SyncStatus>("/sync/status"),
   autoSync: () => get<AutoSync>("/sync/auto"),
+  /** Each of the player's roles, its cohorts, and what a pull would take. Free. */
+  offers: (player: string | null) => get<Offers>(`/benchmarks/offers${query({ player })}`),
+  /** Starts a pull: free, but it uses the Riot call budget for an hour or more. */
+  pull: (cohort: string, player: string | null, more: boolean) =>
+    get<PullStatus>("/benchmarks/pull", { ...JSON_POST, body: JSON.stringify({ cohort, player, more }) }),
+  pullStatus: () => get<PullStatus>("/benchmarks/status"),
   keys: () => get<Record<KeyName, KeyInfo>>("/settings/keys", { headers: SETTINGS }),
   /** Tests the key with one cheap call; it's only saved if that works. */
   setKey: (name: KeyName, key: string) =>

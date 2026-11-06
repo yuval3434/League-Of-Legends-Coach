@@ -12,7 +12,7 @@ from test_benchmarks import EMERALD, add_sampled_game, benchmark_sessions, fill_
 
 from agent.coach import ask_coach
 from agent.tools import ToolContext, run_tool
-from benchmarks.cohorts import why_no_benchmark
+from benchmarks.cohorts import cohorts_for, get_cohort, offered_roles, why_no_benchmark
 from ingestion.models import Player
 from ingestion.players import list_players, load_player
 from main import create_app
@@ -58,35 +58,72 @@ async def two_players(sessions, friend_tier="GOLD", friend_role="JUNGLE"):
 
 
 @pytest.mark.parametrize(
-    ("cohort", "tier", "role", "fits"),
+    ("cohort", "tier", "roles", "fits"),
     [
-        ("silver", "SILVER", "JUNGLE", True),
-        ("silver", "GOLD", "JUNGLE", False),
-        ("silver", "BRONZE", "JUNGLE", False),
-        ("emerald", "SILVER", "JUNGLE", True),
-        ("emerald", "IRON", "JUNGLE", True),
-        ("emerald", "PLATINUM", "JUNGLE", True),
-        ("emerald", "EMERALD", "JUNGLE", False),
-        ("emerald", "DIAMOND", "JUNGLE", False),
-        ("silver", "SILVER", "MIDDLE", False),
-        ("emerald", "SILVER", "UTILITY", False),
-        ("silver", None, "JUNGLE", False),
-        ("silver", "SILVER", None, False),
+        ("silver", "SILVER", ["JUNGLE"], True),
+        ("silver", "GOLD", ["JUNGLE"], False),
+        ("silver", "BRONZE", ["JUNGLE"], False),
+        ("emerald", "SILVER", ["JUNGLE"], True),
+        ("emerald", "IRON", ["JUNGLE"], True),
+        ("emerald", "PLATINUM", ["JUNGLE"], True),
+        ("emerald", "EMERALD", ["JUNGLE"], False),
+        ("emerald", "DIAMOND", ["JUNGLE"], False),
+        ("silver", "SILVER", ["MIDDLE"], False),
+        ("emerald", "SILVER", ["UTILITY"], False),
+        ("silver", None, ["JUNGLE"], False),
+        ("silver", "SILVER", [], False),
+        # A second role with 10+ games gets its benchmarks too.
+        ("silver", "SILVER", ["MIDDLE", "JUNGLE"], True),
+        ("gold_middle", "GOLD", ["MIDDLE"], True),
+        ("gold_middle", "SILVER", ["MIDDLE"], False),
+        ("gold_middle", "GOLD", ["JUNGLE"], False),
     ],
 )
-def test_a_cohort_fits_only_its_audience(cohort, tier, role, fits):
-    assert (why_no_benchmark(cohort, tier, role) is None) == fits
+def test_a_cohort_fits_only_its_audience(cohort, tier, roles, fits):
+    assert (why_no_benchmark(cohort, tier, roles) is None) == fits
 
 
 def test_an_unchecked_rank_isnt_called_unranked():
-    reason = why_no_benchmark("silver", None, "JUNGLE", rank_checked=False)
+    reason = why_no_benchmark("silver", None, ["JUNGLE"], rank_checked=False)
     assert "hasn't been checked" in reason
 
 
 def test_the_reason_names_the_role_and_rank():
-    assert "mostly plays mid" in why_no_benchmark("silver", "SILVER", "MIDDLE")
-    assert "this player is Gold" in why_no_benchmark("silver", "GOLD", "JUNGLE")
-    assert "unranked" in why_no_benchmark("emerald", None, "JUNGLE")
+    assert "fewer than 10 jungle games" in why_no_benchmark("silver", "SILVER", ["MIDDLE"])
+    assert "this player is Gold" in why_no_benchmark("silver", "GOLD", ["JUNGLE"])
+    assert "unranked" in why_no_benchmark("emerald", None, ["JUNGLE"])
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("silver", ("SILVER", "JUNGLE", "peers")),
+        ("emerald", ("EMERALD", "JUNGLE", "target")),
+        ("gold_middle", ("GOLD", "MIDDLE", "peers")),
+        ("iron_utility", ("IRON", "UTILITY", "peers")),
+        # Silver junglers already have a name, so no second cohort can mean them.
+        ("silver_jungle", None),
+        ("gold_mid", None),
+        ("wood_top", None),
+    ],
+)
+def test_a_cohort_is_known_by_its_name(name, expected):
+    cohort = get_cohort(name)
+    assert (cohort and (cohort.tier, cohort.role, cohort.audience)) == expected
+
+
+def test_a_player_gets_peers_in_each_role_and_a_target_only_in_the_jungle():
+    assert cohorts_for("GOLD", "MIDDLE") == ["gold_middle"]
+    assert cohorts_for("SILVER", "JUNGLE") == ["silver", "emerald"]
+    assert cohorts_for(None, "JUNGLE") == ["emerald"]
+
+
+def test_roles_are_the_main_one_and_any_with_ten_games():
+    games = {"MIDDLE": 40, "TOP": 10, "UTILITY": 9, "JUNGLE": 12}
+    assert offered_roles(games, "MIDDLE") == ["MIDDLE", "JUNGLE", "TOP"]
+    # The main role counts even under 10 games.
+    assert offered_roles({"BOTTOM": 3}, "BOTTOM") == ["BOTTOM"]
+    assert offered_roles({}, None) == []
 
 
 # Who a request is about
@@ -162,7 +199,7 @@ async def test_a_non_jungler_gets_no_benchmark(test_settings, sessions, benchmar
         mine = client.get("/benchmarks/compare", params={"cohort": "silver"}).json()
 
     assert result["status"] == "no_benchmark"
-    assert any("mostly plays mid" in n for n in result["notes"])
+    assert any("fewer than 10 jungle games" in n for n in result["notes"])
     # The owner's own comparison is untouched.
     assert mine["status"] == "ok"
 

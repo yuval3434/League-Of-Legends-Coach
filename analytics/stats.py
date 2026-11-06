@@ -307,14 +307,19 @@ ORDER BY b.position
 
 
 async def win_rate_by_gold_diff(
-    session: AsyncSession, puuids: Players, role: str = "JUNGLE"
+    session: AsyncSession, puuids: Players, role: str | None = None
 ) -> list[Row]:
     """Win rate in `role` by gold difference vs. the lane opponent at minute 10.
+
+    The role is the one given, else the Scope's, else JUNGLE.
 
     Every bucket is returned, with `win_rate_pct` null if it has no games.
     Exactly -500 is 'behind 0-500', 0 is 'ahead 0-500' and 500 is 'ahead 500+'.
     """
-    return await fetch(session, WIN_RATE_BY_GOLD_DIFF, puuids=puuids, role=role)
+    scope_role = puuids.role if isinstance(puuids, Scope) else None
+    return await fetch(
+        session, WIN_RATE_BY_GOLD_DIFF, puuids=puuids, role=role or scope_role or "JUNGLE"
+    )
 
 
 AFTER_LOSS_STREAK = """

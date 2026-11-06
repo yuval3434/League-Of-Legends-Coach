@@ -679,3 +679,39 @@ would have meant no new games for the 5 or more hours a pull can take.
 **Limits:** nothing syncs while the computer sleeps or Docker is closed, and a
 development key still expires every 24 hours, after which auto-sync waits for
 a new one.
+
+## Benchmarks on demand, for any rank and role
+
+**Decision:** a cohort is one rank and one role, and its name says which:
+`gold_middle` is Gold mid laners. Silver and Emerald junglers keep their names.
+A cohort exists once its sample has rows; there's no table of cohorts to keep in
+step with the data. Each player gets their peers' cohort in their main role and
+in every role with 10+ games. Outside the jungle there are peers only; Emerald
+stays a target for junglers. When a cohort has no benchmark, the Overview offers
+a pull with its time, which stops at 500 games. "Pull more" checks 2,000 more
+matches for champion benchmarks.
+
+**Same rules as before:** 500 games, 30 games and 10 players before a benchmark
+exists, one player per match per cohort, 28 days, at most 10 games per player
+per champion, nothing substituted. The targets for champion benchmarks are the
+champions the requesting player has 5+ games on in that role.
+
+**The estimate comes from measured pulls.** The first Silver jungle pull
+sampled 500 games from 683 checked matches in 91 minutes, so 500 games are
+offered as about 683 matches and 1 hour 31 minutes. Past 500, only target
+champions are rank-checked; the Emerald Dr. Mundo pull checked 3,584 matches in
+75 minutes, so "Pull more" is about 42 minutes.
+
+**Stored lobbies are reused, but not counted on.** A new cohort first queues
+the stored matches of other cohorts at the same rank still inside the window:
+they are lobbies of that rank, and checking them costs no match call. That
+should be faster, but no pull has measured it, so the estimate assumes the
+fresh rate.
+
+**Master and above can't be pulled yet.** The pull finds players on Riot's
+divided ladder, which stops at Diamond; the apex leagues are behind other
+endpoints.
+
+**Tested on a real player:** a random Gold mid laner from the ladder, picked by
+9 of their last 10 ranked games being mid. Their Riot ID stays out of the docs
+and screenshots.

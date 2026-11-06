@@ -25,9 +25,15 @@ from analytics.stats import (
     player_coverage,
     win_rates,
 )
-from benchmarks.cohorts import COHORTS, MIN_BENCHMARK_GAMES, MIN_BENCHMARK_PLAYERS
+from benchmarks.cohorts import (
+    MIN_BENCHMARK_GAMES,
+    MIN_BENCHMARK_PLAYERS,
+    ROLE_GROUPS,
+    get_cohort,
+)
 from benchmarks.themes import summarize_themes
 
+# The stretch rows, which are still about the jungle only.
 ROLE = "JUNGLE"
 
 # A lone gap this many times its margin is too big to put down to chance.
@@ -121,10 +127,10 @@ RELATIVE_METRICS = (
     ),
 )
 
-def zero_sum_note(cohort: str) -> str:
+def zero_sum_note(tier: str, role: str) -> str:
     """Why same-rank win rate and gold difference say little across all champions."""
     return (
-        f"Win rate and gold difference against {cohort.capitalize()} junglers always "
+        f"Win rate and gold difference against {tier.capitalize()} {ROLE_GROUPS[role]} always "
         "come out near 50% and 0 overall, because every game has one winner — so "
         "they only tell you something per champion."
     )
@@ -294,7 +300,7 @@ async def compare(
     champion: str | None = None,
     not_for_player: str | None = None,
 ) -> dict[str, Any]:
-    """Compare jungle stats with `cohort`, for one champion or all of them.
+    """Compare stats in the cohort's role with `cohort`, for one champion or all of them.
 
     Every row shows the sample size on both sides. All-champion comparisons use
     the player's games on the benchmark's patches. Champion comparisons use all
@@ -308,11 +314,12 @@ async def compare(
         )
     ).one()
     patches = sorted(size.patches or [], key=_patch_order)
+    group = get_cohort(cohort)
     result: dict[str, Any] = {
         "cohort": cohort,
-        "tier": COHORTS[cohort].tier,
+        "tier": group.tier,
         "champion": champion,
-        "role": ROLE,
+        "role": group.role,
         "benchmark_games": size.games,
         "benchmark_players": size.players,
         "benchmark_patches": patches,
@@ -338,10 +345,10 @@ async def compare(
     result["status"] = "ok"
     result["notes"].append(VISION_NOTE)
     metrics = ABSOLUTE_METRICS
-    if COHORTS[cohort].relative_stats:
+    if group.relative_stats:
         metrics += RELATIVE_METRICS
         if champion is None:
-            result["notes"].append(zero_sum_note(cohort))
+            result["notes"].append(zero_sum_note(group.tier, group.role))
     else:
         result["not_comparable"] = [m.name for m in RELATIVE_METRICS]
         result["notes"].append(
@@ -356,11 +363,11 @@ async def compare(
 
     my_scope = Scope(
         puuids=tuple(puuids),
-        role=ROLE,
+        role=group.role,
         champion=champion,
         patches=None if champion else tuple(patches),
     )
-    benchmark_scope = Scope(cohort=cohort, role=ROLE, champion=champion)
+    benchmark_scope = Scope(cohort=cohort, role=group.role, champion=champion)
     for metric in metrics:
         result["rows"] += _compare_metric(
             metric,
