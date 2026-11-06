@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CoachTool } from "./api";
-import { costWords, restsOnFewGames, sampleWords, toolLabel } from "./coach";
+import { citationFor, costWords, restsOnFewGames, sampleWords, toolLabel } from "./coach";
 
 const tool = (name: string, args: Record<string, unknown>, extra: Partial<CoachTool> = {}): CoachTool => ({
   name,
@@ -43,5 +43,19 @@ describe("cost", () => {
     expect(costWords({ cost_usd: 0.08027, cost_is_upper_bound: false })).toBe("$0.080");
     expect(costWords({ cost_usd: 0.12, cost_is_upper_bound: true })).toBe("At most $0.120");
     expect(costWords({ cost_usd: null, cost_is_upper_bound: false })).toBe("Cost unknown");
+  });
+});
+
+describe("citations", () => {
+  const citations = [{ number: "184", target: "2.14.avg_gold_diff", label: "lane_diff: minute 10 → avg_gold_diff" }];
+
+  it("finds the source of a cite link", () => {
+    expect(citationFor("cite:0", citations)).toBe("lane_diff: minute 10 → avg_gold_diff = 184");
+  });
+
+  it("ignores other links and unknown citations", () => {
+    expect(citationFor("https://example.com", citations)).toBeNull();
+    expect(citationFor("cite:7", citations)).toBeNull();
+    expect(citationFor(undefined, citations)).toBeNull();
   });
 });

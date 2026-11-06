@@ -17,6 +17,8 @@ from typing import Any
 from agent.coach import ToolLog
 from agent.llm import AnthropicModel, ModelClient
 from agent.pricing import price_of
+from agent.citations import PROMPT as CITATION_PROMPT
+from agent.citations import label
 from agent.prompt import SYSTEM_PROMPT
 from agent.tools import ToolContext, run_tool
 from benchmarks.cohorts import ROLE_NAMES
@@ -57,8 +59,11 @@ def _names(champions: list[str]) -> str:
     return ", ".join(champions) if champions else "none yet"
 
 
-async def prepare(context: ToolContext, board: dict[str, Any]) -> Prepared:
-    """Run the two tools for this board. Raises ValueError on a board they refuse."""
+async def prepare(context: ToolContext, board: dict[str, Any], cite: bool = False) -> Prepared:
+    """Run the two tools for this board. Raises ValueError on a board they refuse.
+
+    With `cite`, both results get refs (calls 1 and 2) for a model that cites numbers.
+    """
     arguments: dict[str, Any] = {key: board.get(key, []) for key in ("allies", "enemies", "bans")}
     arguments["role"] = board.get("role")
     board_result = await run_tool(context, "draft_board", arguments)
@@ -79,9 +84,12 @@ async def prepare(context: ToolContext, board: dict[str, Any]) -> Prepared:
     notes_result = await run_tool(context, "riot_notes", notes_arguments)
     if notes_result.is_error:
         raise ValueError(notes_result.content)
+    board_content, notes_content = board_result.content, notes_result.content
+    if cite:
+        board_content, notes_content = label(board_content, 1), label(notes_content, 2)
     logs = (
-        ToolLog("draft_board", arguments, board_result.content, False),
-        ToolLog("riot_notes", notes_arguments, notes_result.content, False),
+        ToolLog("draft_board", arguments, board_content, False),
+        ToolLog("riot_notes", notes_arguments, notes_content, False),
     )
     results = "\n\n".join(f"{log.name}:\n{log.content}" for log in logs)
     question = QUESTION.format(
@@ -110,7 +118,8 @@ async def cost_ceiling(model: ModelClient, model_id: str, prepared: Prepared) ->
         raise KeyError(model_id)
     if not isinstance(model, AnthropicModel):
         return {"input_tokens": None, "max_output_tokens": None, "max_cost_usd": 0.0}
-    input_tokens = await model.count_input_tokens(SYSTEM_PROMPT, [], messages(prepared))
+    system = SYSTEM_PROMPT + (CITATION_PROMPT if model.cites else "")
+    input_tokens = await model.count_input_tokens(system, [], messages(prepared))
     per_input = max(price["input"], price["write"]) / 1_000_000
     per_output = price["output"] / 1_000_000
     first = input_tokens * per_input + OPTIONS_MAX_TOKENS * per_output

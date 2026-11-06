@@ -87,7 +87,7 @@ async def _ask(model: ModelClient, context: ToolContext, case: Case) -> CoachAns
     """A plain question, or an options board the way the Draft page's button asks it."""
     if case.options_board is None:
         return await ask_coach(model, context, case.question, case.hidden_tools)
-    prepared = await prepare(context, case.options_board)
+    prepared = await prepare(context, case.options_board, getattr(model, "cites", False))
     return await ask_coach(
         model,
         context,
@@ -144,6 +144,7 @@ async def _run_case(
         "tools_called": answer.tools_called,
         "caught_numbers": answer.caught_numbers,
         "tool_log": [asdict(log) for log in answer.tool_log],
+        "citations": answer.citations,
         "usage": asdict(answer.usage),
         "coach_cost": cost(answer.usage, model_id),
         "seconds": round(time.monotonic() - started, 1),
@@ -164,6 +165,12 @@ async def _run_case(
         check = run_code_check(name, answer, case.says, peer)
         row["checks"][name] = {"by": "code", "passed": check.passed, "detail": check.detail}
     outputs = format_tool_outputs(row["tool_log"])
+    if answer.citations:
+        # Where each number in the reply was copied from, for the wrong-stat check.
+        cited = "\n".join(f"{c['number']}: {c['label']}" for c in answer.citations)
+        outputs += (
+            "\n\nCitations: each number in the reply and the field it was copied from.\n" + cited
+        )
     judged, judge_usage = await _judge_checks(client, judge_model, case, answer, outputs)
     row["checks"] |= judged
     row["judge_model"] = judge_model

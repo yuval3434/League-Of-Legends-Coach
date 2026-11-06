@@ -277,8 +277,14 @@ export type CoachModel = {
 
 export type CoachStatus = "verified" | "unverified" | "refused" | "truncated" | "gave_up";
 
+/** Where one cited number came from: the tool-result field, and its label for the hover. */
+export type Citation = { number: string; target: string; label: string };
+
 export type CoachAnswer = {
   text: string;
+  // With citations: the reply with cited numbers as [number](cite:i) links.
+  linked_text?: string;
+  citations?: Citation[];
   status: CoachStatus;
   caught_numbers: string[];
   models: string[];

@@ -3,12 +3,11 @@
 // only counts the tokens (free) and shows the most it can cost; the second sends.
 
 import { useEffect, useState } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
 import { api, type Board, type CoachAnswer, type CoachModel, type OptionsEstimate } from "../api";
 import { estimateWords } from "../card";
-import { MARKDOWN, Receipt } from "../pages/Coach";
+import { Receipt } from "../pages/Coach";
+import { CoachReply } from "./CoachReply";
 import { ModelPicker } from "./ModelPicker";
 
 // The button's default; the picker can change it for this page.
@@ -107,9 +106,7 @@ export function DraftOptions({ board, player }: { board: Board; player: string |
       {answer && (
         <article className="mt-8 max-w-[760px] border-t border-rule pt-5">
           <div className="text-[15px] leading-relaxed text-ink2">
-            <Markdown remarkPlugins={[remarkGfm]} components={MARKDOWN}>
-              {answer.text}
-            </Markdown>
+            <CoachReply answer={answer} />
           </div>
           <Receipt answer={answer} />
         </article>

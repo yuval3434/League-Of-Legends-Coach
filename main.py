@@ -719,8 +719,10 @@ def create_app(
             raise HTTPException(422, f"Unknown model: {body.model}")
         context = context_for(request, await selected(request, body.player))
         board = {"allies": body.allies, "enemies": body.enemies, "bans": body.bans, "role": body.role}
+        # A model that cites numbers needs refs in the two results it's given.
+        cite = BY_ID[body.model].provider == "anthropic"
         try:
-            return context, await prepare(context, board)
+            return context, await prepare(context, board, cite)
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
 

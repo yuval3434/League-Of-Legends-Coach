@@ -61,6 +61,10 @@ class ModelReply:
 
 
 class ModelClient(Protocol):
+    # Whether replies cite each number's field (agent/citations.py). A model
+    # without it gets the plain number check.
+    cites: bool
+
     async def send(
         self,
         system: str,
@@ -71,6 +75,8 @@ class ModelClient(Protocol):
 
 
 class AnthropicModel:
+    cites = True
+
     def __init__(self, client: AsyncAnthropic, model: str, effort: str) -> None:
         self._client = client
         self._model = model
@@ -208,6 +214,9 @@ class OllamaModel:
     Ollama doesn't enforce tool schemas the way strict mode does, so a call can
     carry a wrong argument; run_tool rejects it and the model sees the error.
     """
+
+    # A small local model can't be relied on to cite, so it keeps the plain check.
+    cites = False
 
     def __init__(self, url: str, model: str, http: httpx.AsyncClient | None = None) -> None:
         self._url = url.rstrip("/")

@@ -171,7 +171,7 @@ async def test_an_options_case_is_asked_the_way_the_button_asks(monkeypatch):
 
     boards = []
 
-    async def fake_prepare(context, board):
+    async def fake_prepare(context, board, cite=False):
         boards.append(board)
         log = ToolLog("draft_board", board, '{"pool": []}', False)
         return Prepared("Options for this draft. [results]", (log,), ["DrMundo"])

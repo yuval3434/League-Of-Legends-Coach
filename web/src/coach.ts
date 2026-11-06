@@ -2,7 +2,14 @@
 // rested on, whether its numbers checked out, and what it cost. All of it
 // comes from the server; the model's own text is never parsed here.
 
-import type { CoachAnswer, CoachStatus, CoachTool } from "./api";
+import type { Citation, CoachAnswer, CoachStatus, CoachTool } from "./api";
+
+/** The source of a [number](cite:i) link, for its hover; null for any other link. */
+export function citationFor(href: string | undefined, citations: Citation[]): string | null {
+  const match = /^cite:(\d+)$/.exec(href ?? "");
+  const citation = match ? citations[Number(match[1])] : undefined;
+  return citation ? `${citation.label} = ${citation.number}` : null;
+}
 
 const TOOL_NAMES: Record<string, string> = {
   data_coverage: "What data there is",
