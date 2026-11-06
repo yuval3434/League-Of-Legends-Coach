@@ -162,7 +162,8 @@ async def _run_case(
         return row, None
 
     for name in case.code_checks:
-        check = run_code_check(name, answer, case.says, peer)
+        main_role = context.player.main_role if context and context.player else None
+        check = run_code_check(name, answer, case.says, peer, case.role, main_role, case.avoids)
         row["checks"][name] = {"by": "code", "passed": check.passed, "detail": check.detail}
     outputs = format_tool_outputs(row["tool_log"])
     if answer.citations:
@@ -334,13 +335,13 @@ def estimate(models: list[str], cases: list[Case], reps: int, calibration_reps: 
     return lines
 
 
-async def non_jungler(sessions: Any, players: list[dict[str, Any]]) -> SelectedPlayer | None:
-    """The first synced player who mains a role other than jungle, shown to the
-    coach as the owner, so it says "you" and the saved results never name them."""
-    row = next(
-        (p for p in players if not p["is_owner"] and p["main_role"] not in (None, "JUNGLE")),
-        None,
-    )
+async def maining(
+    sessions: Any, players: list[dict[str, Any]], role: str
+) -> SelectedPlayer | None:
+    """The first synced player, other than the owner, whose main role is `role`,
+    shown to the coach as the owner, so it says "you" and the saved results
+    never name them."""
+    row = next((p for p in players if not p["is_owner"] and p["main_role"] == role), None)
     if row is None:
         return None
     async with sessions() as session:
@@ -393,12 +394,12 @@ async def main() -> int:
             print("No owner synced yet: run POST /sync first.")
             return 1
         contexts = {"owner": ToolContext(sessions, benchmark, (owner.puuid,), owner)}
-        if any(case.player == "non_jungler" for case in cases):
-            other = await non_jungler(sessions, others)
+        for role in sorted({case.player for case in cases} - {"owner"}):
+            other = await maining(sessions, others, role)
             if other is None:
-                print("No synced player mains a role other than jungle: sync one first.")
+                print(f"No synced player other than the owner mains {role}: sync one first.")
                 return 1
-            contexts["non_jungler"] = ToolContext(sessions, benchmark, (other.puuid,), other)
+            contexts[role] = ToolContext(sessions, benchmark, (other.puuid,), other)
         model = create_model(settings, model_id)
         # Windows paths can't hold the ":" in a local model's name, such as qwen3:4b.
         name = f"local-{settings.local_model}" if model_id == "local" else model_id

@@ -10,7 +10,8 @@ from agent.coach import CoachAnswer, ToolLog
 from agent.tools import ToolContext, run_tool
 from eval.cases import CASES
 from eval.checks import right_cohort
-from eval.run import non_jungler
+from eval.checks import avoids, role_args
+from eval.run import maining
 from ingestion.players import SelectedPlayer, list_players
 
 ME = "me"
@@ -99,10 +100,10 @@ def test_right_cohort_needs_only_the_players_peers():
 
 def test_the_mid_case_checks_the_cohort_and_names_no_one():
     case = next(c for c in CASES if c.id == "mid_peers")
-    assert (case.player, "right_cohort" in case.code_checks) == ("non_jungler", True)
+    assert (case.player, "right_cohort" in case.code_checks) == ("MIDDLE", True)
 
 
-async def test_the_non_jungler_is_shown_to_the_coach_as_you(sessions):
+async def test_a_player_maining_a_role_is_shown_to_the_coach_as_you(sessions):
     async with sessions() as session:
         await add_player(session, ME, "Me", owner=True)
         await add_player(session, "friend", "RealName", tier="GOLD")
@@ -110,7 +111,58 @@ async def test_the_non_jungler_is_shown_to_the_coach_as_you(sessions):
             await add_game(session, f"EUW1_{n}", role="MIDDLE", puuid="friend")
         players = await list_players(session)
 
-    player = await non_jungler(sessions, players)
+    player = await maining(sessions, players, "MIDDLE")
+    assert await maining(sessions, players, "UTILITY") is None
 
     assert (player.puuid, player.main_role, player.is_owner) == ("friend", "MIDDLE", True)
     assert "RealName" not in (player.game_name, player.tag_line)
+
+
+# The role cases
+
+
+def answer_with(*logs):
+    answer = CoachAnswer("", "verified")
+    answer.tool_log = [ToolLog(name, args, "{}", False) for name, args in logs]
+    return answer
+
+
+def test_role_args_passes_only_when_every_role_taking_call_uses_the_role():
+    bot = answer_with(("data_coverage", {}), ("wins_and_losses", {"role": "BOTTOM"}), ("lane_diff", {"champion": None}))
+    assert role_args(bot, "BOTTOM", "MIDDLE").passed
+    # MAIN is the player's main role, which isn't bot.
+    assert not role_args(answer_with(("wins_and_losses", {"role": "MAIN"})), "BOTTOM", "MIDDLE").passed
+    assert role_args(answer_with(("wins_and_losses", {"role": "MAIN"})), "MIDDLE", "MIDDLE").passed
+    # A null role that means every role isn't the one asked about.
+    assert not role_args(answer_with(("champion_stats", {"champion": None, "role": None})), "TOP", "MIDDLE").passed
+
+
+def test_role_args_checks_the_cohorts_role_and_jungle_only_tools():
+    assert role_args(answer_with(("compare_to_benchmark", {"cohort": "gold_top"})), "TOP", "MIDDLE").passed
+    assert not role_args(answer_with(("compare_to_benchmark", {"cohort": "gold_middle"})), "TOP", "MIDDLE").passed
+    jungle_tool = answer_with(("kill_participation", {"role": "TOP"}), ("objective_control", {"champion": None}))
+    assert role_args(jungle_tool, "TOP", "MIDDLE").detail == "wrong: ['objective_control is jungle-only']"
+
+
+def test_role_args_needs_at_least_one_role_taking_call():
+    assert not role_args(answer_with(("data_coverage", {})), "TOP", "MIDDLE").passed
+
+
+def test_avoids_fails_on_a_forbidden_phrase():
+    assert avoids(CoachAnswer("You lose 200 gold to your lane opponent.", "verified"), (r"\benemy jungler\b",)).passed
+    assert not avoids(CoachAnswer("You lose gold to the Enemy Jungler.", "verified"), (r"\benemy jungler\b",)).passed
+
+
+def test_the_new_cases_name_their_player_and_role_but_no_one():
+    by_id = {c.id: c for c in CASES}
+    expected = {
+        "bot_no_benchmark": ("MIDDLE", "BOTTOM"),
+        "top_lane": ("MIDDLE", "TOP"),
+        "mid_stretch": ("MIDDLE", "MIDDLE"),
+        "support_vision": ("UTILITY", "UTILITY"),
+    }
+    for case_id, (player, role) in expected.items():
+        case = by_id[case_id]
+        assert (case.player, case.role, "role_args" in case.code_checks) == (player, role, True)
+    assert "avoids" in by_id["mid_stretch"].code_checks
+    assert len(CASES) == 16

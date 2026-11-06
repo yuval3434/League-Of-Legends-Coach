@@ -28,7 +28,7 @@ DEFAULT_MODEL = "claude-sonnet-5-5"
 
 # About 300 words for each of up to 10 champions, with room to spare. The local
 # model isn't capped: it's free.
-OPTIONS_MAX_TOKENS = 6_000
+OPTIONS_MAX_TOKENS = 8_000
 
 QUESTION = """\
 Options for this draft. My team: {allies}. Enemy team: {enemies}. Bans: {bans}.
