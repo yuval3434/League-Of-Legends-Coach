@@ -118,6 +118,22 @@ async def test_a_player_maining_a_role_is_shown_to_the_coach_as_you(sessions):
     assert "RealName" not in (player.game_name, player.tag_line)
 
 
+async def test_the_player_with_most_games_in_the_role_is_chosen_whatever_the_order(sessions):
+    # A second mid player synced later, with fewer mid games, mustn't replace the first.
+    async with sessions() as session:
+        await add_player(session, ME, "Me", owner=True)
+        await add_player(session, "zzz-many", "Many", tier="GOLD")
+        await add_player(session, "aaa-few", "Few", tier="SILVER")
+        for n in range(4):
+            await add_game(session, f"EUW1_{n}", role="MIDDLE", puuid="zzz-many")
+        for n in range(4, 6):
+            await add_game(session, f"EUW1_{n}", role="MIDDLE", puuid="aaa-few")
+        players = await list_players(session)
+
+    for order in (players, players[::-1]):
+        assert (await maining(sessions, order, "MIDDLE")).puuid == "zzz-many"
+
+
 # The role cases
 
 
