@@ -269,6 +269,12 @@ def check_citations(
         problem, where = _resolve(target, value, found, descriptions)
         if minute and not number.endswith(":00"):
             problem = f"{number} isn't a whole minute"
+        # A second marker straight after the first would be dropped unchecked, and
+        # which source the number came from would be unclear.
+        extra = MARKER.match(reply, cite.end())
+        while extra:
+            problem = f"{number} has more than one citation"
+            cite, extra = extra, MARKER.match(reply, extra.end())
         plain.append(number)
         if problem:
             checked.problems.append(problem)

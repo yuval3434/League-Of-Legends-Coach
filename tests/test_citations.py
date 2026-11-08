@@ -78,6 +78,14 @@ def test_an_inline_numbered_list_needs_no_citation():
     assert result.problems == ["92 has no citation"]
 
 
+def test_a_number_with_two_citations_in_a_row_fails_and_neither_is_kept():
+    for reply in ("92[[1.1.games]][[1.7.games]] games.", "92[[1.1.games]][[1.1.games]] games."):
+        result = check(reply, ROWS)
+        assert result.problems == ["92 has more than one citation"]
+        assert result.citations == []
+        assert result.text == "92 games."
+
+
 def test_a_citation_to_nothing_fails():
     assert check("92[[1.7.games]] games.", ROWS).problems == [
         "92 cites 1.7.games, which isn't a field of any tool result"
