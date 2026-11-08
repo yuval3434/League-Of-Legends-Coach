@@ -29,6 +29,10 @@ in its answer appears in a tool result.
 - **Coach:** an LLM agent with one tool per stat. Code checks every number in
   its reply against the tool results. Runs on Opus, Sonnet, Haiku or a free
   local model.
+- **Number citations** (v9): on Claude models, every number in the coach's
+  reply names the tool-result field it was copied from, and code checks it
+  equals that field exactly. Hovering a number on the Coach page shows where it
+  came from.
 - **Champion select** (v4): what your team lacks and which of your champions add
   it. It never picks for you, and it has no matchup data.
 - **Enemy composition** (v5): the enemy's damage mix and frontline, by the same
@@ -86,15 +90,17 @@ the sort puts them, and only champions with enough games offer "Ask the coach".
 
 ![The Champions page: a sortable table, with champions under 10 games hatched](docs/screens/champions.png)
 
-**Compare:** Silver and Emerald at once. Gold and CS at 10, 15 and 20 minutes,
-with your likely range shaded, then every theme's verdict against both ranks.
+**Compare:** each of your roles against its cohorts at once: players of your
+rank, and for junglers below Emerald, Emerald junglers as a target. Gold and CS
+at 10, 15 and 20 minutes, with your likely range shaded, then every theme's
+verdict against each.
 
 ![The Compare page: gold and CS by minute against Silver and Emerald](docs/screens/compare.png)
 
 Below the charts, **Where farm is lost** splits the early game into 0 to 10, 10
 to 15 and 15 to 20 minutes. It shows the gold or CS gained in each stretch
-against the enemy jungler in the same games, and against what Silver and
-Emerald junglers gain. Each cell has its margin and both sample sizes, and says
+against your lane opponent in the same games, the enemy player in the same
+position, and against what each of the role's cohorts gains. Each cell has its margin and both sample sizes, and says
 "could be chance" inside the margin or "too few games" under 10. These rows
 never make a finding. `GET /benchmarks/stretches` and the coach's
 `farm_by_stretch` tool return the same data.
@@ -245,8 +251,18 @@ the old key.
 ## Coach
 
 The coach is an LLM agent with one tool per stat. Every number it states must
-appear in a tool result, and code checks that after each reply: a reply with an
-unsupported number gets one retry, then is shown with a warning. To see the check
+come from a tool result, and code checks that after each reply: a reply that
+fails gets one retry, then is shown with a warning.
+
+On Claude models the check is by citation. Every object in a tool result gets a
+`ref`, such as `2.14`, and the coach writes each number followed by the field
+it copied, as in `184[[2.14.avg_gold_diff]]`. Code checks that the number equals
+that field exactly, with no rounding, and fails any uncited number except list
+numbering, "1 in 20" and minute labels such as "at minute 15", which are checked
+against the minutes the results define. The markers are removed before the
+reply is shown, and on the Coach page hovering a number shows its source. The
+local model keeps the older check, that each number appears somewhere in the
+results. To see the check
 catch a made-up number, with a scripted model and no paid calls:
 
 ```sh
@@ -312,7 +328,7 @@ restart keeps the old environment.
 
 ## Eval
 
-The eval asks the real coach 12 questions and grades each answer. Checks that code
+The eval asks the real coach 16 questions and grades each answer. Checks that code
 can do exactly are code: the number check passed, a tool was called, and the reply
 says "no benchmark" for Dr. Mundo and "not enough data" for Viego. The rest are
 graded by a model, Haiku 5.5, one call per property: a real number attached to the
@@ -421,6 +437,92 @@ That reading is mine; the table keeps the grader's verdicts. The two coach
 failures aren't fixed: they're more cases of two known gaps, listed under the
 limits below.
 
+### The full run with citations
+
+The first run with number citations, on 2026-11-07: all 16 cases on Opus 5.5,
+with four new cases outside the jungle. It cost $2.72: $2.56 for the coach and
+$0.16 for the grader. 12 of the 16 replies needed a citation retry, which is
+most of why it cost more than v8's $1.68.
+
+| Check | How | Passed |
+|---|---|---|
+| A tool was called | Code | 16 / 16 |
+| The number check passed | Code | 15 / 16 |
+| Role-taking tools used the role asked about | Code | 4 / 4 |
+| Compared with the player's own peer cohort | Code | 1 / 1 |
+| Never says "enemy jungler" about mid lane | Code | 1 / 1 |
+| Says the expected words | Code | 5 / 7 |
+| No number the retry had to fix | Code | 0 / 1 |
+| A real number on the wrong stat | Model | 16 / 16 |
+| Numbers in words | Code, then model | 15 / 16 |
+| Claims the tools don't support | Model | 14 / 16 |
+| Win-only or loss-only rows as findings | Model | 2 / 5 |
+| Ranking gaps in different units | Model | 5 / 5 |
+| Nothing computed between minutes | Model | 3 / 3 |
+| No pick chosen | Model | 2 / 2 |
+| No matchup claim | Model | 1 / 2 |
+| Presents both Silver findings | Model | 1 / 1 |
+| No relative stats compared against Emerald | Model | 1 / 1 |
+| **Total** | | **102 / 113** |
+
+Reading each of the 11 failures against the replies and tool results: four are
+the coach's, three the grader's, and four were problems in my checks or cases.
+
+- **Coach, `bot_no_benchmark`:** it said none of the stretch gaps was beyond its
+  margin, then made "the 15–20 minute stretch" the first thing to work on.
+- **Coach, `wins`, twice:** it stated "getting ahead helps you win" as a fact,
+  presented lane differences split by result as facts, and built a weakness on
+  mid-game deaths per 10 minutes, a row with no margin.
+- **Coach, `draft_options`:** "one gap" and "two physical ranged carries" are
+  counts from the board written as words.
+- **Grader, `bot_no_benchmark` and `support_vision`:** both failed the
+  wins-and-losses check for differences that `wins_and_losses` marks clear
+  (early deaths 2.09 in 11 wins against 3.71 in 17 losses; the support's deaths
+  in all three phases), stated as links, not causes. That check was written for
+  rows split by result inside a comparison, which are only ever a suggestion;
+  the v8 tool reports clear differences between wins and losses on purpose.
+- **Grader, `draft_options`:** "effective against tanks such as Darius and
+  Malphite" applies Riot's tip to the board: how to play, not who wins.
+- **My checks, `farming`:** the citation check didn't read "20:00:" at the end
+  of a bold heading as a time, so it failed "20" and "00" twice. Fixed.
+- **My check, `stretch_no_tool`:** the first reply left a minute range without
+  the word "minute", which my minute pattern doesn't cover; the retry fixed it.
+  The check is meant to catch a computed number on the first try, and a
+  citation slip now fails it too.
+- **My case, `bot_no_benchmark`:** the reply said "no Gold bot lane benchmark",
+  and my pattern allowed only two words between "no" and "benchmark". Fixed.
+- **My case, `mundo`:** it expects "no benchmark", but Dr. Mundo has had a
+  Silver benchmark since the overnight pulls (32 games from 29 players), so the
+  coach rightly compared with it.
+
+Two of the four new cases passed every check (`top_lane`, `mid_stretch`), and
+every role-taking call used the role the question named.
+
+**After the fixes**, on 2026-11-08. The prompt now says never to pick a gap
+without a verdict as something to work on. The grader's wins-and-losses check
+now passes a difference that `wins_and_losses` marks clear, when it's stated as
+a link and not a cause. `mundo` now checks the coach compared with Silver on Dr.
+Mundo. `first_try` now fails only on a number found in no tool result.
+
+- **Calibration:** with three new examples from a real support's result, the
+  grader agreed on all 108 gradings ($0.15).
+- **`bot_no_benchmark`, `wins` and `mundo` re-run on Opus 5.5** ($0.48):
+  `bot_no_benchmark` and `mundo` passed every check, and the coach failures from
+  the full run were gone.
+- **`wins` failed two checks:**
+  - **Coach:** it gave the dragon samples as "177 vs 54", then corrected itself
+    to 227 later in the reply. The 54 is the Baron losses sample, cited
+    correctly to that field: another case of the right-field, wrong-sentence
+    limit below.
+  - **Grader:** it read the minute-20 differences as not clear. The rows mark
+    them clear, but the citations pointed at each row's wins and losses sides,
+    which don't carry the flag.
+- **A fix not yet re-run:** both `wins` failures came partly from how a
+  citation to a nested object was labelled: "value 16.7 → sample", with no sign
+  it was Barons, losses. Labels now name the row and side ("objective
+  BARON_NASHOR, losses → sample"), for the hover and for the grader. No re-run
+  has tested the fixed labels yet.
+
 ### Newer cases
 
 Two cases were added after those runs. Each has been run once on Opus 5.5:
@@ -475,7 +577,13 @@ different failures, so both are needed (see DECISIONS.md).
 
 **Limits:**
 - **The number check proves a number exists, not that it belongs to that
-  stat.** The local model's three wrong answers above are one case of this.
+  stat.** Citations (v9) close most of this on Claude models: a cited number
+  must equal its own field. What they can't catch is a number from the right
+  field in a wrong sentence, such as `mundo`'s "8 or fewer games each" cited to
+  the losses' 8 when the wins had 9. The v9 re-run of `wins` gave another: the
+  dragon samples as "177 vs 54", with 54 cited correctly to the Baron losses
+  sample. The local model still has the whole gap.
+  The local model's three wrong answers above are one case of this.
   Another came from Opus on the `draft` case. It wrote that the win rates have
   "margins of around ±25 points", rounding the 24.5 and 24.7 in its own table.
   That breaks the rule against rounding, but it passed, because 25 is in the

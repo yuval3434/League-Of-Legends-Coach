@@ -87,7 +87,7 @@ async def _ask(model: ModelClient, context: ToolContext, case: Case) -> CoachAns
     """A plain question, or an options board the way the Draft page's button asks it."""
     if case.options_board is None:
         return await ask_coach(model, context, case.question, case.hidden_tools)
-    prepared = await prepare(context, case.options_board)
+    prepared = await prepare(context, case.options_board, getattr(model, "cites", False))
     return await ask_coach(
         model,
         context,
@@ -144,6 +144,7 @@ async def _run_case(
         "tools_called": answer.tools_called,
         "caught_numbers": answer.caught_numbers,
         "tool_log": [asdict(log) for log in answer.tool_log],
+        "citations": answer.citations,
         "usage": asdict(answer.usage),
         "coach_cost": cost(answer.usage, model_id),
         "seconds": round(time.monotonic() - started, 1),
@@ -161,9 +162,18 @@ async def _run_case(
         return row, None
 
     for name in case.code_checks:
-        check = run_code_check(name, answer, case.says, peer)
+        main_role = context.player.main_role if context and context.player else None
+        check = run_code_check(
+            name, answer, case.says, peer, case.role, main_role, case.avoids, case.compares
+        )
         row["checks"][name] = {"by": "code", "passed": check.passed, "detail": check.detail}
     outputs = format_tool_outputs(row["tool_log"])
+    if answer.citations:
+        # Where each number in the reply was copied from, for the wrong-stat check.
+        cited = "\n".join(f"{c['number']}: {c['label']}" for c in answer.citations)
+        outputs += (
+            "\n\nCitations: each number in the reply and the field it was copied from.\n" + cited
+        )
     judged, judge_usage = await _judge_checks(client, judge_model, case, answer, outputs)
     row["checks"] |= judged
     row["judge_model"] = judge_model
@@ -327,13 +337,13 @@ def estimate(models: list[str], cases: list[Case], reps: int, calibration_reps: 
     return lines
 
 
-async def non_jungler(sessions: Any, players: list[dict[str, Any]]) -> SelectedPlayer | None:
-    """The first synced player who mains a role other than jungle, shown to the
-    coach as the owner, so it says "you" and the saved results never name them."""
-    row = next(
-        (p for p in players if not p["is_owner"] and p["main_role"] not in (None, "JUNGLE")),
-        None,
-    )
+async def maining(
+    sessions: Any, players: list[dict[str, Any]], role: str
+) -> SelectedPlayer | None:
+    """The first synced player, other than the owner, whose main role is `role`,
+    shown to the coach as the owner, so it says "you" and the saved results
+    never name them."""
+    row = next((p for p in players if not p["is_owner"] and p["main_role"] == role), None)
     if row is None:
         return None
     async with sessions() as session:
@@ -386,12 +396,12 @@ async def main() -> int:
             print("No owner synced yet: run POST /sync first.")
             return 1
         contexts = {"owner": ToolContext(sessions, benchmark, (owner.puuid,), owner)}
-        if any(case.player == "non_jungler" for case in cases):
-            other = await non_jungler(sessions, others)
+        for role in sorted({case.player for case in cases} - {"owner"}):
+            other = await maining(sessions, others, role)
             if other is None:
-                print("No synced player mains a role other than jungle: sync one first.")
+                print(f"No synced player other than the owner mains {role}: sync one first.")
                 return 1
-            contexts["non_jungler"] = ToolContext(sessions, benchmark, (other.puuid,), other)
+            contexts[role] = ToolContext(sessions, benchmark, (other.puuid,), other)
         model = create_model(settings, model_id)
         # Windows paths can't hold the ":" in a local model's name, such as qwen3:4b.
         name = f"local-{settings.local_model}" if model_id == "local" else model_id

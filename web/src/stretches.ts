@@ -1,8 +1,8 @@
-// Words for the stretch table on the Compare page: gold and CS lost to the enemy
-// jungler, and against each cohort, from 0-10, 10-15 and 15-20 minutes. It words
+// Words for the stretch table on the Compare page: gold and CS lost to the lane
+// opponent, and against each cohort, from 0-10, 10-15 and 15-20 minutes. It words
 // the API's numbers; it computes none.
 
-import type { CohortStretch, JunglerStretch, StretchCohort } from "./api";
+import type { CohortStretch, OpponentStretch, StretchCohort } from "./api";
 import { fmt, rowDecimals } from "./metrics";
 
 export const STRETCHES = [
@@ -31,8 +31,8 @@ function tooFew(n: number): Cell {
 
 const NONE: Cell = { main: "No benchmark", detail: "", tone: "low" };
 
-/** "Lost 219 gold", give or take 111, on 85 games: against the enemy jungler. */
-export function junglerCell(row: JunglerStretch | undefined, unit: Unit): Cell {
+/** "Lost 219 gold", give or take 111, on 85 games: against the lane opponent. */
+export function opponentCell(row: OpponentStretch | undefined, unit: Unit): Cell {
   if (!row) return { main: "No games", detail: "", tone: "low" };
   if (row.low_sample) return tooFew(row.games);
   const value = unit === "gold" ? row.avg_gold_diff : row.avg_cs_diff;

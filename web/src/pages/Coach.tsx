@@ -4,11 +4,10 @@
 // here sends a question without the player pressing the button.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import Markdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
 
 import { api, type CoachAnswer, type CoachModel } from "../api";
 import { CHECK, costWords, restsOnFewGames, sampleWords, toolLabel } from "../coach";
+import { CoachReply } from "../components/CoachReply";
 import { Layout } from "../components/Layout";
 import { ModelPicker } from "../components/ModelPicker";
 import { Marker } from "../components/Verdict";
@@ -34,7 +33,7 @@ function starters(s: Subject): string[] {
   if (s.you) {
     return [
       "What's the one thing I should work on first?",
-      "How does my farming compare with Silver junglers?",
+      "How does my farming compare with players of my rank?",
       "Do I die more than I should before objectives?",
     ];
   }
@@ -70,27 +69,6 @@ function saveThread(thread: Exchange[]) {
   }
 }
 
-/** The coach writes Markdown; these give it the page's type and rules. Raw HTML isn't rendered. */
-export const MARKDOWN: Components = {
-  p: ({ children }) => <p className="mt-3 first:mt-0">{children}</p>,
-  strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
-  ul: ({ children }) => <ul className="mt-3 list-disc space-y-1.5 pl-5 marker:text-ink3">{children}</ul>,
-  ol: ({ children }) => <ol className="mt-3 list-decimal space-y-1.5 pl-5 marker:text-ink3">{children}</ol>,
-  h1: ({ children }) => <h3 className="mt-5 text-[17px] font-semibold text-ink">{children}</h3>,
-  h2: ({ children }) => <h3 className="mt-5 text-[17px] font-semibold text-ink">{children}</h3>,
-  h3: ({ children }) => <h4 className="mt-4 text-[16px] font-semibold text-ink">{children}</h4>,
-  table: ({ children }) => (
-    <div className="mt-4 overflow-x-auto">
-      <table className="w-full border-collapse text-[14px]">{children}</table>
-    </div>
-  ),
-  th: ({ children }) => (
-    <th className="smallcaps border-b border-rule px-3 pb-2 text-left font-normal text-ink3 first:pl-0">{children}</th>
-  ),
-  td: ({ children }) => <td className="border-b border-rule/60 px-3 py-2 first:pl-0">{children}</td>,
-  code: ({ children }) => <code className="font-mono text-[13px] text-ink">{children}</code>,
-  a: ({ children }) => <span className="text-ink">{children}</span>,
-};
 
 /** The number check's own mark, so it isn't read as a verdict marker. */
 function CheckMark({ tone }: { tone: "ok" | "warn" | "plain" }) {
@@ -164,9 +142,7 @@ function ExchangeView({ exchange }: { exchange: Exchange }) {
       {exchange.answer && (
         <>
           <div className="mt-6 max-w-[760px] text-[15px] leading-relaxed text-ink2">
-            <Markdown remarkPlugins={[remarkGfm]} components={MARKDOWN}>
-              {exchange.answer.text}
-            </Markdown>
+            <CoachReply answer={exchange.answer} />
           </div>
           <Receipt answer={exchange.answer} seconds={exchange.seconds} />
         </>

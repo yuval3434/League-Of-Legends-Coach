@@ -43,6 +43,7 @@ def load_examples() -> list[Example]:
     r3, q3 = replies["deaths"]["text"], replies["deaths"]["question"]
     emerald_q = "Do I win my jungle matchup as well as Emerald junglers do?"
     wins_q = "How do my wins compare with my losses?"
+    support_q = "Do I ward enough as a support?"
     weakest_q = "What is my single weakest area?"
     stretch_q = "How much gold do I lose to the enemy jungler between minutes 10 and 15?"
     draft_q = DRAFT_QUESTION
@@ -274,6 +275,37 @@ def load_examples() -> list[Example]:
             "when you fall behind.",
             False,
             wins_q,
+        ),
+        # wins_and_losses marks its differences clear or not, from a real support's
+        # result: a clear one may be stated as a link, never as a cause, and one
+        # that isn't clear stays a suggestion.
+        ex(
+            "clear_wins_losses_as_link",
+            "split_as_finding",
+            "Deaths move with the result: in the mid game you average 1.74 deaths in wins "
+            "(39 games) and 2.84 in losses (50 games), and the early and late game show "
+            "the same. That's a link with the result, not proof that deaths cause losses.",
+            True,
+            support_q,
+            "support_wins",
+        ),
+        ex(
+            "clear_wins_losses_as_cause",
+            "split_as_finding",
+            "You lose because you die too much: 1.74 deaths in the mid game in wins "
+            "(39 games) against 2.84 in losses (50 games).",
+            False,
+            support_q,
+            "support_wins",
+        ),
+        ex(
+            "unclear_wins_losses_as_fact",
+            "split_as_finding",
+            "You place more wards in your wins: 1.094 a minute in wins (41 games) against "
+            "1.088 in losses (50 games).",
+            False,
+            support_q,
+            "support_wins",
         ),
         # Asked for a stretch with no stretch tool: the gaps at 10 and 15 are in
         # lane_diff, but anything between them would be the coach's own sum.

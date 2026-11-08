@@ -25,11 +25,18 @@ class Case:
     # Ask as the Draft page's "Options for this draft" does, for this board:
     # draft_board and riot_notes run first, then one capped call with no tools.
     options_board: dict | None = None
-    # Whose games: "owner", or "non_jungler", the first synced player whose main
-    # role isn't jungle. Chosen by rule, so no case names a player.
+    # Whose games: "owner", or a role such as "MIDDLE": the first synced player,
+    # other than the owner, whose main role it is. Chosen by rule, so no case
+    # names a player.
     player: str = "owner"
     # Pass only if every benchmark comparison used the player's own peer cohort.
     right_cohort: bool = False
+    # The role the question names: every role-taking tool must use it.
+    role: str | None = None
+    # The reply must match none of these patterns, in lower case.
+    avoids: tuple[str, ...] = ()
+    # A (cohort, champion) the coach must compare with.
+    compares: tuple[str, str] | None = None
 
     @property
     def code_checks(self) -> tuple[str, ...]:
@@ -38,6 +45,9 @@ class Case:
             + (("says",) if self.says else ())
             + (("first_try",) if self.first_try else ())
             + (("right_cohort",) if self.right_cohort else ())
+            + (("role_args",) if self.role else ())
+            + (("avoids",) if self.avoids else ())
+            + (("compares",) if self.compares else ())
         )
 
     @property
@@ -85,7 +95,8 @@ CASES = (
         "mundo",
         "How do I play Dr. Mundo compared with Silver junglers?",
         ("no_overclaim",),
-        says=(r"\bno (\w+ ){0,2}benchmark", r"\bnot (\w+ )?a benchmark", r"doesn't have a benchmark"),
+        # Dr. Mundo has had a Silver benchmark since the overnight pulls.
+        compares=("silver", "DrMundo"),
     ),
     Case(
         "viego",
@@ -158,7 +169,43 @@ CASES = (
         "mid_peers",
         "What should I work on in my mid games?",
         ("unit_comparison", "no_overclaim"),
-        player="non_jungler",
+        player="MIDDLE",
         right_cohort=True,
+    ),
+    # Outside the main role, with no benchmark pulled for it: the coach must say
+    # so, use bot games only, and present wins against losses as no finding.
+    Case(
+        "bot_no_benchmark",
+        "How is my farming in bot lane?",
+        ("split_as_finding", "no_overclaim"),
+        says=(r"\bno (\w+ ){0,4}benchmark", r"\bnot (\w+ )?a benchmark", r"doesn't have a benchmark"),
+        player="MIDDLE",
+        role="BOTTOM",
+    ),
+    # Top games only, and no jungle-only tool.
+    Case(
+        "top_lane",
+        "Do I win my lane in top?",
+        ("no_computed", "no_overclaim"),
+        player="MIDDLE",
+        role="TOP",
+    ),
+    # The stretch tool in mid: against the lane opponent, never "the enemy jungler".
+    Case(
+        "mid_stretch",
+        "When do I lose farm in mid lane?",
+        ("no_computed", "no_overclaim"),
+        player="MIDDLE",
+        role="MIDDLE",
+        avoids=(r"\benemy jungler\b",),
+    ),
+    # A support, whose vision is judged on every ward placed; no benchmark yet.
+    Case(
+        "support_vision",
+        "Do I ward enough as a support?",
+        ("split_as_finding", "no_overclaim"),
+        says=(r"\bno (\w+ ){0,4}benchmark", r"\bnot (\w+ )?a benchmark", r"doesn't have a benchmark"),
+        player="UTILITY",
+        role="UTILITY",
     ),
 )

@@ -2,10 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import type { ChampionRow, CompareRow, Comparison, Theme } from "./api";
 import { rangeWords } from "./champions";
-import { compareHeadline } from "./compare";
+import { type Compared, compareHeadline } from "./compare";
 import { headline } from "./headline";
 import { href, parseRoute } from "./router";
 import { subjectOf, verb, YOU } from "./subject";
+
+/** The Compare page's two jungle cohorts: Silver as peers, Emerald as a target. */
+function jungleCohorts(peers: Comparison, target: Comparison): Compared[] {
+  return [
+    { slot: "peers", short: "Silver", group: "Silver junglers", comparison: peers },
+    { slot: "target", short: "Emerald", group: "Emerald junglers", comparison: target },
+  ];
+}
 
 const ANA = subjectOf({ is_owner: false, game_name: "Ana" });
 
@@ -51,13 +59,13 @@ describe("compare headline with one cohort", () => {
   const none = (cohort: string): Comparison => ({ ...ok(cohort, []), status: "no_benchmark" });
 
   it("names only the cohort that fits", () => {
-    expect(compareHeadline(none("silver"), ok("emerald", [cs(-21)]), ANA)).toBe(
+    expect(compareHeadline(jungleCohorts(none("silver"), ok("emerald", [cs(-21)])), ANA)).toBe(
       "At 20 minutes Ana has 21% less CS than Emerald junglers",
     );
   });
 
   it("says when no cohort fits", () => {
-    expect(compareHeadline(none("silver"), none("emerald"), ANA)).toBe("No benchmark fits Ana yet");
+    expect(compareHeadline(jungleCohorts(none("silver"), none("emerald")), ANA)).toBe("No benchmark fits Ana yet");
   });
 });
 

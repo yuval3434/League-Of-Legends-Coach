@@ -38,6 +38,9 @@ def calls(*tools: tuple[str, dict[str, Any]]) -> ModelReply:
 class FakeModel:
     """Plays back its replies in order and keeps what it was sent."""
 
+    # Like the local model: the plain number check. CitingModel cites.
+    cites = False
+
     def __init__(self, *replies: ModelReply) -> None:
         self.replies = list(replies)
         self.sent: list[list[dict[str, Any]]] = []
@@ -57,3 +60,9 @@ class FakeModel:
         self.max_tokens.append(max_tokens)
         self.sent.append(list(messages))
         return self.replies.pop(0)
+
+
+class CitingModel(FakeModel):
+    """A scripted model that cites its numbers, like an Anthropic model."""
+
+    cites = True

@@ -1,19 +1,17 @@
-// Gold or CS by stretch of the game, against the enemy jungler and each cohort.
+// Gold or CS by stretch of the game, against the lane opponent and each cohort.
 // A cell with too few games says so instead of giving an amount, and a cohort
 // that doesn't fit the player says "No benchmark". Never part of a finding.
 
 import { useState } from "react";
 
 import type { Stretches } from "../api";
-import { cohortCell, type Cell, junglerCell, STRETCHES, type Tone, type Unit } from "../stretches";
+import { cohortCell, type Cell, opponentCell, STRETCHES, type Tone, type Unit } from "../stretches";
 
 const TONE: Record<Tone, string> = { clear: "text-ink", unclear: "text-ink2", low: "text-ink3" };
 
-const COLUMNS = [
-  { key: "jungler", name: "Against the enemy jungler" },
-  { key: "silver", name: "Against Silver" },
-  { key: "emerald", name: "Against Emerald" },
-] as const;
+function rank(tier: string): string {
+  return tier.charAt(0) + tier.slice(1).toLowerCase();
+}
 
 function CellView({ cell }: { cell: Cell }) {
   return (
@@ -26,11 +24,18 @@ function CellView({ cell }: { cell: Cell }) {
 
 export function StretchTable({ data }: { data: Stretches }) {
   const [unit, setUnit] = useState<Unit>("gold");
-  const jungler = new Map(data.vs_enemy_jungler.map((row) => [row.stretch, row]));
-  const cell = (column: (typeof COLUMNS)[number]["key"], stretch: string): Cell =>
-    column === "jungler"
-      ? junglerCell(jungler.get(stretch), unit)
-      : cohortCell(data.benchmarks[column], stretch, unit, column === "silver" ? "Silver" : "Emerald");
+  const opponent = new Map(data.vs_opponent.map((row) => [row.stretch, row]));
+  // The opponent first, then peers before a target.
+  const cohorts = Object.values(data.benchmarks).sort((a, b) => (a.audience === "peers" ? -1 : 1) - (b.audience === "peers" ? -1 : 1));
+  const columns = [
+    { key: "opponent", name: data.role === "JUNGLE" ? "Against the enemy jungler" : "Against the lane opponent" },
+    ...cohorts.map((c) => ({ key: c.cohort, name: `Against ${rank(c.tier)}` })),
+  ];
+  const cell = (column: string, stretch: string): Cell => {
+    if (column === "opponent") return opponentCell(opponent.get(stretch), unit);
+    const cohort = data.benchmarks[column];
+    return cohortCell(cohort, stretch, unit, rank(cohort.tier));
+  };
 
   return (
     <div>
@@ -56,7 +61,7 @@ export function StretchTable({ data }: { data: Stretches }) {
               <th scope="col" className="smallcaps border-b border-rule pb-2 text-left font-normal text-ink3">
                 Stretch
               </th>
-              {COLUMNS.map(({ key, name }) => (
+              {columns.map(({ key, name }) => (
                 <th key={key} scope="col" className="smallcaps border-b border-rule pb-2 text-left font-normal text-ink3">
                   {name}
                 </th>
@@ -69,7 +74,7 @@ export function StretchTable({ data }: { data: Stretches }) {
                 <th scope="row" className="py-3 pr-6 text-left text-[14px] font-normal text-ink">
                   {label}
                 </th>
-                {COLUMNS.map(({ key }) => (
+                {columns.map(({ key }) => (
                   <td key={key} className="py-3 pr-6">
                     <CellView cell={cell(key, id)} />
                   </td>

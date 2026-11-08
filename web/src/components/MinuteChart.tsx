@@ -1,4 +1,4 @@
-// A value by minute for you, Silver and Emerald: a line for each average and a
+// A value by minute for you and each cohort: a line for each average and a
 // shaded band for your 95% margin. Hovering a minute gives the exact numbers
 // and the gaps in words.
 
@@ -24,10 +24,10 @@ type ChartLine = { key: Series; label: string; color: string; dash?: string; wid
  * The lines to draw: the player, then each cohort that has a benchmark for
  * them. A cohort that doesn't fit gets no line at all, never a stand-in.
  */
-export function seriesFor(subject: Subject, cohorts: { silver: boolean; emerald: boolean }): ChartLine[] {
+export function seriesFor(subject: Subject, names: { peers?: string; target?: string }): ChartLine[] {
   const lines: ChartLine[] = [{ key: "you", label: who(subject), color: "var(--color-ink)", width: 2.5 }];
-  if (cohorts.emerald) lines.push({ key: "emerald", label: "Emerald", color: "var(--color-ink2)", dash: "6 4", width: 2 });
-  if (cohorts.silver) lines.push({ key: "silver", label: "Silver", color: "var(--color-ink3)", width: 2 });
+  if (names.target) lines.push({ key: "target", label: names.target, color: "var(--color-ink2)", dash: "6 4", width: 2 });
+  if (names.peers) lines.push({ key: "peers", label: names.peers, color: "var(--color-ink3)", width: 2 });
   return lines;
 }
 
@@ -53,12 +53,18 @@ export function SeriesKey({ series, subject }: { series: ChartLine[]; subject: S
   );
 }
 
-function MinuteTooltip({ active, payload, subject }: TooltipProps<number, string> & { subject: Subject }) {
+function MinuteTooltip({
+  active,
+  payload,
+  subject,
+  series,
+}: TooltipProps<number, string> & { subject: Subject; series: ChartLine[] }) {
   const point = payload?.[0]?.payload as MinutePoint | undefined;
   if (!active || !point) return null;
-  const mine = point.silverRow ?? point.emeraldRow;
+  const label = (key: Series) => series.find((s) => s.key === key)?.label ?? key;
+  const mine = point.peersRow ?? point.targetRow;
   // Keep each value's own precision: 106.0, not 106.
-  const d = mine ? Math.max(rowDecimals(mine), point.emeraldRow ? rowDecimals(point.emeraldRow) : 0) : undefined;
+  const d = mine ? Math.max(rowDecimals(mine), point.targetRow ? rowDecimals(point.targetRow) : 0) : undefined;
   return (
     <div className="rounded-[3px] border border-rule bg-panel px-3 py-2 text-[13px] leading-relaxed text-ink2 shadow-lg shadow-black/40">
       <div className="smallcaps text-ink3">{point.minute} min</div>
@@ -68,19 +74,19 @@ function MinuteTooltip({ active, payload, subject }: TooltipProps<number, string
         </span>
         {mine && <span className="text-ink3"> · {mine.my_sample} games</span>}
       </div>
-      {point.silverRow && (
+      {point.peersRow && (
         <div>
-          Silver {fmt(point.silver, d)}{" "}
+          {label("peers")} {fmt(point.peers, d)}{" "}
           <span className="text-ink3">
-            · {subject.you ? "you're" : whoIs(subject)} {gapWords(point.silverRow, "Silver")}
+            · {subject.you ? "you're" : whoIs(subject)} {gapWords(point.peersRow, label("peers"))}
           </span>
         </div>
       )}
-      {point.emeraldRow && (
+      {point.targetRow && (
         <div>
-          Emerald {fmt(point.emerald, d)}{" "}
+          {label("target")} {fmt(point.target, d)}{" "}
           <span className="text-ink3">
-            · {subject.you ? "you're" : whoIs(subject)} {gapWords(point.emeraldRow, "Emerald")}
+            · {subject.you ? "you're" : whoIs(subject)} {gapWords(point.targetRow, label("target"))}
           </span>
         </div>
       )}
@@ -137,7 +143,7 @@ export function MinuteChart({
             tickLine={false}
             tick={{ fill: "var(--color-ink3)", fontSize: 12 }}
           />
-          <Tooltip content={<MinuteTooltip subject={subject} />} cursor={{ stroke: "var(--color-ink3)", strokeDasharray: "2 3" }} />
+          <Tooltip content={<MinuteTooltip subject={subject} series={series} />} cursor={{ stroke: "var(--color-ink3)", strokeDasharray: "2 3" }} />
           {/* Only your band: the benchmarks rest on ~500 games, so theirs are a hairline. */}
           <Area
             dataKey="youBand"
