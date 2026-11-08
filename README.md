@@ -498,6 +498,31 @@ the coach's, three the grader's, and four were problems in my checks or cases.
 Two of the four new cases passed every check (`top_lane`, `mid_stretch`), and
 every role-taking call used the role the question named.
 
+**After the fixes**, on 2026-11-08. The prompt now says never to pick a gap
+without a verdict as something to work on. The grader's wins-and-losses check
+now passes a difference that `wins_and_losses` marks clear, when it's stated as
+a link and not a cause. `mundo` now checks the coach compared with Silver on Dr.
+Mundo. `first_try` now fails only on a number found in no tool result.
+
+- **Calibration:** with three new examples from a real support's result, the
+  grader agreed on all 108 gradings ($0.15).
+- **`bot_no_benchmark`, `wins` and `mundo` re-run on Opus 5.5** ($0.48):
+  `bot_no_benchmark` and `mundo` passed every check, and the coach failures from
+  the full run were gone.
+- **`wins` failed two checks:**
+  - **Coach:** it gave the dragon samples as "177 vs 54", then corrected itself
+    to 227 later in the reply. The 54 is the Baron losses sample, cited
+    correctly to that field: another case of the right-field, wrong-sentence
+    limit below.
+  - **Grader:** it read the minute-20 differences as not clear. The rows mark
+    them clear, but the citations pointed at each row's wins and losses sides,
+    which don't carry the flag.
+- **A fix not yet re-run:** both `wins` failures came partly from how a
+  citation to a nested object was labelled: "value 16.7 → sample", with no sign
+  it was Barons, losses. Labels now name the row and side ("objective
+  BARON_NASHOR, losses → sample"), for the hover and for the grader. No re-run
+  has tested the fixed labels yet.
+
 ### Newer cases
 
 Two cases were added after those runs. Each has been run once on Opus 5.5:
@@ -555,7 +580,9 @@ different failures, so both are needed (see DECISIONS.md).
   stat.** Citations (v9) close most of this on Claude models: a cited number
   must equal its own field. What they can't catch is a number from the right
   field in a wrong sentence, such as `mundo`'s "8 or fewer games each" cited to
-  the losses' 8 when the wins had 9. The local model still has the whole gap.
+  the losses' 8 when the wins had 9. The v9 re-run of `wins` gave another: the
+  dragon samples as "177 vs 54", with 54 cited correctly to the Baron losses
+  sample. The local model still has the whole gap.
   The local model's three wrong answers above are one case of this.
   Another came from Opus on the `draft` case. It wrote that the win rates have
   "margins of around ±25 points", rounding the 24.5 and 24.7 in its own table.
