@@ -140,6 +140,26 @@ def test_a_refused_key_isnt_saved(test_settings, env, caplog):
     assert NEW_RIOT_KEY not in caplog.text
 
 
+@pytest.mark.parametrize("bad", ["RGAPI-1111 2222-3333", "RGAPI-1111\n2222-3333", "RGAPI-1111=2222"])
+def test_a_malformed_key_is_refused_before_its_test_call(test_settings, env, bad):
+    tested = []
+
+    async def tester(key):
+        tested.append(key)
+
+    app = create_app(test_settings, env_path=env, key_testers={"riot": tester, "anthropic": tester})
+    with TestClient(app, base_url="http://localhost") as client:
+        response = client.put("/settings/keys/riot", json={"key": bad}, headers=HEADERS)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "A key can't contain spaces, line breaks or \"=\". The Riot key wasn't saved."
+    )
+    assert bad not in response.text
+    assert tested == []
+    assert read_env(env)["RIOT_API_KEY"] == "old-key-0000"
+
+
 def test_the_new_key_is_used_without_a_restart(test_settings, env):
     with client_for(test_settings, env) as client:
         old = client.app.state.riot

@@ -55,7 +55,7 @@ from ingestion.ddragon import (
     refresh_champion_details,
     refresh_champions,
 )
-from ingestion.keys import KEYS, describe, key_value, save_key
+from ingestion.keys import KEYS, describe, key_problem, key_value, save_key
 from ingestion.rate_limiter import RateLimiter
 from ingestion.players import SelectedPlayer, list_players, load_player
 from ingestion.riot_client import RiotAuthError, RiotClient, RiotError, RiotNotFound
@@ -391,6 +391,8 @@ def create_app(
         if name == "riot":
             refuse_if_busy(state)
         key = body.key.strip()
+        if problem := key_problem(key):
+            raise HTTPException(422, f"{problem} The {name.capitalize()} key wasn't saved.")
         try:
             await testers[name](key)
         except (RiotError, anthropic.AuthenticationError, anthropic.PermissionDeniedError) as error:
