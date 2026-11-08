@@ -49,6 +49,16 @@ export function duration(minutes: number): string {
 }
 
 /** What pressing the button will do: reach 500 games, or "Pull more" past them. */
+/**
+ * Whether to offer a benchmark pull at all. A pull needs a Riot key, so with none
+ * set, as for a demo visitor, the offer is only noise. While the settings
+ * endpoint hasn't answered, or can't, `riotKeySet` is null and the offer shows:
+ * it then says itself that a key is needed.
+ */
+export function pullOfferShown(riotKeySet: boolean | null): boolean {
+  return riotKeySet !== false;
+}
+
 export function pullPlan(c: CohortOffer): { button: string; text: string; more: boolean } {
   const group = groupName(c.tier, c.role);
   if (c.to_500.games_needed > 0) {

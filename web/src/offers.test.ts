@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import type { CohortOffer, RoleOffer } from "./api";
-import { comparedWith, duration, groupName, peers, pullPlan, pullProgress } from "./offers";
+import { comparedWith, duration, groupName, peers, pullOfferShown, pullPlan, pullProgress } from "./offers";
+
+describe("pullOfferShown", () => {
+  it("hides the pull offer when no Riot key is set", () => {
+    expect(pullOfferShown(false)).toBe(false);
+  });
+  it("shows it when a key is set", () => {
+    expect(pullOfferShown(true)).toBe(true);
+  });
+  it("shows it while the key settings are unknown", () => {
+    expect(pullOfferShown(null)).toBe(true);
+  });
+});
 
 function offer(over: Partial<CohortOffer> = {}): CohortOffer {
   return {

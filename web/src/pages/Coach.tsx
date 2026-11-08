@@ -10,6 +10,7 @@ import { CHECK, costWords, restsOnFewGames, sampleWords, toolLabel } from "../co
 import { CoachReply } from "../components/CoachReply";
 import { Layout } from "../components/Layout";
 import { ModelPicker } from "../components/ModelPicker";
+import { LOCAL_EVAL_URL, LOCAL_LIMITS } from "../models";
 import { Marker } from "../components/Verdict";
 import { useChampionNames } from "../ddragon";
 import { costWords as estimateWords, MODEL_STORE, pickModel } from "../models";
@@ -314,6 +315,22 @@ export function Coach({ question: carried }: { question: string }) {
         </div>
         {models && models.length > 0 && (
           <ModelPicker models={models} value={modelId} onChange={choose} disabled={pending !== null} />
+        )}
+        {chosen?.id === "local" && (
+          <div className="mt-4 border-l-2 border-rule pl-4 text-[13px] text-ink2">
+            <p className="text-ink">What the local model got wrong in its eval runs:</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {LOCAL_LIMITS.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <p className="mt-1">
+              <a href={LOCAL_EVAL_URL} className="underline decoration-rule underline-offset-4 hover:text-ink">
+                Read the eval results
+              </a>
+              . Claude models made fewer of these mistakes on the same questions.
+            </p>
+          </div>
         )}
         {thread.length === 0 && !pending && (
           <div className="mt-8">

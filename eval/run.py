@@ -340,12 +340,17 @@ def estimate(models: list[str], cases: list[Case], reps: int, calibration_reps: 
 async def maining(
     sessions: Any, players: list[dict[str, Any]], role: str
 ) -> SelectedPlayer | None:
-    """The first synced player, other than the owner, whose main role is `role`,
-    shown to the coach as the owner, so it says "you" and the saved results
-    never name them."""
-    row = next((p for p in players if not p["is_owner"] and p["main_role"] == role), None)
-    if row is None:
+    """The synced player, other than the owner, with the most games in `role`
+    among those who main it, shown to the coach as the owner, so it says "you"
+    and the saved results never name them.
+
+    A fixed rule, not the first one listed: syncing another player in the same
+    role mustn't change who a case asks about.
+    """
+    candidates = [p for p in players if not p["is_owner"] and p["main_role"] == role]
+    if not candidates:
         return None
+    row = max(candidates, key=lambda p: ((p["role_games"] or {}).get(role, 0), p["puuid"]))
     async with sessions() as session:
         player = await load_player(session, row["puuid"])
     return replace(player, is_owner=True, game_name="Player", tag_line="EVAL")

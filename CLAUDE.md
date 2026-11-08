@@ -1,19 +1,27 @@
 # LoL Coach
 
 Personal League of Legends coach. Pulls match data from the Riot API,
-computes stats in SQL, and uses an LLM agent with tools to explain
-them in plain language.
+computes stats in SQL, compares them with benchmark cohorts of other
+players, and uses an LLM agent with tools to explain them in plain
+language.
 
 ## Stack
-Python 3.12 · FastAPI · PostgreSQL · ChromaDB · Gradio · Docker
+- Backend: Python 3.12 · FastAPI · PostgreSQL · Alembic · Docker
+- Web app: React · TypeScript · Vite · Tailwind · Recharts
+- Coach: Claude models, or a local model through Ollama
 
 ## Structure
-- `ingestion/`  Riot API client, rate limiting, storage
+- `ingestion/`  Riot API client, rate limiting, storage, players, keys
 - `analytics/`  stat functions — each one becomes an agent tool
-- `rag/`        document loading, chunking, embedding, search
-- `agent/`      LLM agent, tool definitions, system prompt
-- `eval/`       evaluation questions and scoring
-- `ui/`         Gradio app
+- `benchmarks/` cohort pulls and comparisons against them
+- `agent/`      LLM agent, tool definitions, system prompt, number check, citations
+- `eval/`       evaluation questions, code checks and the model grader
+- `demo/`       anonymized demo dataset: export and load
+- `web/`        React web app (the UI)
+- `ui/`         older Gradio app, kept working
+- `alembic/`    database migrations
+- `scripts/`    backups and one-off checks
+- `main.py`     the FastAPI app
 
 ## Rules
 - The LLM never computes a number. Every number comes from a tool.

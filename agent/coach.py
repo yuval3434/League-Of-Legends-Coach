@@ -33,6 +33,7 @@ STOPPED = {
     "refused": "The coach couldn't answer this question.",
     "truncated": "The coach's answer was cut off, so it wasn't shown. Try a narrower question.",
     "gave_up": "The coach couldn't finish this answer. Try a narrower question.",
+    "no_answer": "The local model didn't answer; try again or use Claude.",
 }
 
 
@@ -46,7 +47,7 @@ class ToolLog:
 
 @dataclass
 class CoachAnswer:
-    """`status` is verified, unverified, refused, truncated or gave_up."""
+    """`status` is verified, unverified, refused, truncated, gave_up or no_answer."""
 
     text: str
     status: str
@@ -157,6 +158,11 @@ async def ask_coach(
             ]
             messages.append(_results_message(reply.tool_calls, results))
             continue
+
+        # A model that needs a tool to answer and called none hasn't answered, and
+        # its text may be its own reasoning. Not when no tools were offered.
+        if getattr(model, "needs_a_tool", False) and tools and not answer.tools_called:
+            return _stopped(answer, "no_answer")
 
         if cite:
             checked = check_citations(

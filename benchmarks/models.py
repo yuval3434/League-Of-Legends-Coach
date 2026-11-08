@@ -6,7 +6,10 @@ ingestion tables it shares with the public schema, in `benchmark`.
 
 from datetime import datetime
 
+from typing import Any
+
 from sqlalchemy import DateTime, Index, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -66,6 +69,18 @@ class Sample(Base):
     puuid: Mapped[str] = mapped_column(Text)
     champion_name: Mapped[str] = mapped_column(Text)
     in_overall: Mapped[bool]
+
+
+class Snapshot(Base):
+    """One part of a cohort's benchmark kept without its games: its size, or one
+    metric's aggregated rows. Only the demo database has any (see snapshot.py)."""
+
+    __tablename__ = "snapshot"
+
+    cohort: Mapped[str] = mapped_column(Text, primary_key=True)
+    # "size", or a metric's name.
+    part: Mapped[str] = mapped_column(Text, primary_key=True)
+    data: Mapped[Any] = mapped_column(JSONB)
 
 
 def create_benchmark_engine(settings: Settings) -> AsyncEngine:

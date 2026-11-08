@@ -21,7 +21,7 @@ import { PullOffer, RoleTabs } from "../components/PullOffer";
 import { Marker, type State } from "../components/Verdict";
 import { headline } from "../headline";
 import { fmt, metricLabel } from "../metrics";
-import { comparedWith, groupName, peers, roleWord } from "../offers";
+import { comparedWith, groupName, peers, pullOfferShown, roleWord } from "../offers";
 import { usePlayer } from "../player";
 import { href } from "../router";
 import { stateOf, themeState } from "../state";
@@ -352,6 +352,15 @@ export function Overview() {
   const [pullError, setPullError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  // Whether a Riot key is set; null until known. With none, no pull is offered.
+  const [riotKey, setRiotKey] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    api
+      .keys()
+      .then((keys) => setRiotKey(keys.riot.set))
+      .catch(() => setRiotKey(null));
+  }, []);
 
   useEffect(() => {
     if (!player) return;
@@ -407,7 +416,7 @@ export function Overview() {
     api.pull(c.cohort, puuid, more).then(setStatus).catch((e: Error) => setPullError(e.message));
   };
   const peer = offer ? peers(offer) : null;
-  const pullOffer = peer && !peer.why_not && (
+  const pullOffer = peer && !peer.why_not && pullOfferShown(riotKey) && (
     <PullOffer offer={peer} status={status} error={pullError} onStart={(more) => startPull(peer, more)} />
   );
   const tabs = offer && <RoleTabs roles={roles.map((r) => r.role)} role={offer.role} onChange={setRole} />;

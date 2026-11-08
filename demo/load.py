@@ -4,6 +4,10 @@ Run with `uv run python -m demo.load` while the `db` container is up. It always
 loads into `lolcoach_demo`, never the real database, and can be run again: it
 replaces the demo data. The raw responses are stored and then parsed by the same
 code a real sync uses.
+
+The benchmark comes as a snapshot (benchmark.json): each cohort's aggregated
+numbers, with none of the games behind them. The demo player gets the rank the
+snapshot was made for, so a visitor, who has no Riot key, is never asked to sync.
 """
 
 import asyncio
@@ -12,17 +16,21 @@ import json
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import delete, insert, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from benchmarks.models import create_benchmark_engine
+from benchmarks.snapshot import save
 from ingestion.config import Settings
 from ingestion.models import Match, Player, RawResponse
 from ingestion.sync import parse_stored_match
 
 DEMO_DB = "lolcoach_demo"
 DATASET = Path(__file__).parent / "matches.json.gz"
+SNAPSHOT = Path(__file__).parent / "benchmark.json"
 ROOT = Path(__file__).parent.parent
 
 
@@ -48,6 +56,7 @@ def migrate() -> None:
 
 async def load(settings: Settings) -> int:
     data = json.loads(gzip.decompress(DATASET.read_bytes()))
+    benchmark = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     sessions = async_sessionmaker(create_async_engine(settings.database_url))
     async with sessions() as session:
         await session.execute(delete(RawResponse).where(RawResponse.match_id.like("DEMO1_%")))
@@ -62,6 +71,8 @@ async def load(settings: Settings) -> int:
                 region="euw1",
                 raw_account=player,
                 is_owner=True,
+                rank_tier=benchmark["rank"],
+                rank_checked_at=datetime.now(UTC),
             )
         )
         for m in data["matches"]:
@@ -76,6 +87,8 @@ async def load(settings: Settings) -> int:
         await session.commit()
         for m in data["matches"]:
             await parse_stored_match(session, m["match"]["metadata"]["matchId"])
+    async with async_sessionmaker(create_benchmark_engine(settings))() as session:
+        await save(session, benchmark["snapshots"])
     return len(data["matches"])
 
 

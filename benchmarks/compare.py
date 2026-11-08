@@ -39,6 +39,7 @@ from benchmarks.cohorts import (
     ROLE_GROUPS,
     get_cohort,
 )
+from benchmarks import snapshot
 from benchmarks.themes import summarize_themes
 
 # A lone gap this many times its margin is too big to put down to chance.
@@ -258,6 +259,29 @@ ORDER BY cohort, champion NULLS FIRST
 """
 
 
+COHORT_SIZES = """
+SELECT c.cohort,
+       (SELECT count(*) FROM scan_queue q
+        WHERE q.cohort = c.cohort AND q.outcome IS NOT NULL) AS checked,
+       (SELECT count(*) FROM sample s
+        WHERE s.cohort = c.cohort AND s.in_overall) AS games,
+       (SELECT count(DISTINCT s.puuid) FROM sample s
+        WHERE s.cohort = c.cohort AND s.in_overall) AS players
+FROM (SELECT cohort FROM scan_queue UNION SELECT cohort FROM sample) c
+"""
+
+
+async def cohort_sizes(benchmark_session: AsyncSession) -> dict[str, dict[str, int]]:
+    """Each cohort's all-champion games and players, and matches checked. A
+    cohort with no games of its own takes its snapshot's size, if it has one."""
+    rows = await benchmark_session.execute(text(COHORT_SIZES))
+    found = {row.cohort: dict(row._mapping) for row in rows}
+    for cohort, size in (await snapshot.sizes(benchmark_session)).items():
+        if not found.get(cohort, {}).get("games"):
+            found[cohort] = {"cohort": cohort, "checked": 0, **size}
+    return found
+
+
 def _patch_order(patch: str) -> list[int]:
     return [int(part) for part in patch.split(".")]
 
@@ -370,13 +394,19 @@ async def coverage(
     rows = await benchmark_session.execute(
         text(BENCHMARK_COVERAGE), {"champions": [c["champion"] for c in champions]}
     )
+    found = [dict(row) for row in rows.mappings()]
+    # A cohort kept only as a snapshot has its all-champion size, and no champions.
+    sampled = {row["cohort"] for row in found}
+    for cohort, size in (await snapshot.sizes(benchmark_session)).items():
+        if cohort not in sampled:
+            found.append({"cohort": cohort, "champion": None, **size})
     benchmarks = [
         {
             **row,
             "has_benchmark": row["games"] >= MIN_BENCHMARK_GAMES
             and row["players"] >= MIN_BENCHMARK_PLAYERS,
         }
-        for row in rows.mappings()
+        for row in sorted(found, key=lambda r: (r["cohort"], r["champion"] is not None, r["champion"] or ""))
     ]
     return {"player": player, "champions": champions, "benchmarks": benchmarks}
 
@@ -397,20 +427,25 @@ async def compare(
     a note says so. `not_for_player` is why this cohort doesn't fit the player
     (see cohorts.why_no_benchmark): then there's no benchmark, never another one.
     """
-    size = (
+    sampled = (
         await benchmark_session.execute(
             text(SAMPLE_SIZE), {"cohort": cohort, "champion": champion}
         )
     ).one()
-    patches = sorted(size.patches or [], key=_patch_order)
+    size = {"games": sampled.games, "players": sampled.players, "patches": sampled.patches}
+    # With no games of its own, an all-champion benchmark may be kept as a snapshot.
+    kept = None if sampled.games or champion else await snapshot.read(benchmark_session, cohort)
+    if kept:
+        size = kept[snapshot.SIZE]
+    patches = sorted(size["patches"] or [], key=_patch_order)
     group = get_cohort(cohort)
     result: dict[str, Any] = {
         "cohort": cohort,
         "tier": group.tier,
         "champion": champion,
         "role": group.role,
-        "benchmark_games": size.games,
-        "benchmark_players": size.players,
+        "benchmark_games": size["games"],
+        "benchmark_players": size["players"],
         "benchmark_patches": patches,
         "rows": [],
         "themes": [],
@@ -423,7 +458,7 @@ async def compare(
             "Don't substitute another cohort or another player's comparison."
         )
         return result
-    if size.games < MIN_BENCHMARK_GAMES or size.players < MIN_BENCHMARK_PLAYERS:
+    if size["games"] < MIN_BENCHMARK_GAMES or size["players"] < MIN_BENCHMARK_PLAYERS:
         result["status"] = "no_benchmark"
         result["notes"].append(
             f"A benchmark needs {MIN_BENCHMARK_GAMES} games and "
@@ -461,10 +496,11 @@ async def compare(
     )
     benchmark_scope = Scope(cohort=cohort, role=group.role, champion=champion)
     for metric in metrics:
-        result["rows"] += _compare_metric(
-            metric,
-            await metric.stat(my_session, my_scope),
-            await metric.stat(benchmark_session, benchmark_scope),
+        theirs = (
+            kept["metrics"][metric.name]
+            if kept
+            else await metric.stat(benchmark_session, benchmark_scope)
         )
+        result["rows"] += _compare_metric(metric, await metric.stat(my_session, my_scope), theirs)
     result["themes"] = summarize_themes(result["rows"])
     return result

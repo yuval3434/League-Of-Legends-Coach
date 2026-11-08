@@ -59,6 +59,12 @@ def test_numbers_not_in_a_result_are_caught(reply, caught):
     assert unsupported(reply) == caught
 
 
+def test_a_game_time_off_the_minute_is_caught_even_when_the_minute_is_in_a_result():
+    # The result has minute 15, which supports 15:00 but not 15:30.
+    assert unsupported("By 15:00 you're behind.") == []
+    assert unsupported("By 15:30 you're behind.") == ["15:30"]
+
+
 def test_a_reply_that_skipped_the_tools_has_no_support():
     assert unsupported("You win 46.7% of games.", outputs=[]) == ["46.7"]
 
@@ -90,6 +96,34 @@ def test_list_numbers_and_the_prompt_phrase_are_exempt(reply):
 
 def test_a_list_number_is_still_checked_inside_the_line():
     assert unsupported("1. You died 9 times.", outputs=[]) == ["9"]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Work on 1) CSing, 2) warding and 3) dying less.",
+        "Two things: 1) CSing and 2) warding.\nThen: 1) Baron and 2) Dragon.",
+    ],
+)
+def test_an_inline_numbered_list_is_exempt(reply):
+    assert unsupported(reply, outputs=[]) == []
+
+
+@pytest.mark.parametrize(
+    ("reply", "caught"),
+    [
+        # A number in brackets, not a list.
+        ("You died (about 3) times.", ["3"]),
+        # One "1)" alone isn't a list.
+        ("Work on 1) CSing.", ["1"]),
+        # Out of order, so not a list.
+        ("Work on 2) CSing and 3) warding.", ["2", "3"]),
+        # The run is exempt, the numbers in it aren't.
+        ("1) CSing, down 12 a game, 2) warding.", ["12"]),
+    ],
+)
+def test_numbers_that_only_look_like_inline_markers_are_checked(reply, caught):
+    assert unsupported(reply, outputs=[]) == caught
 
 
 def test_digits_inside_words_are_ignored():

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from ingestion.keys import describe, read_env, save_key, write_env
+from ingestion.keys import describe, key_problem, read_env, save_key, write_env
 from ingestion.riot_client import RiotAuthError
 from main import create_app
 
@@ -68,6 +68,31 @@ def test_an_unset_key_shows_nothing(tmp_path):
     assert info == {"set": False, "last4": None, "set_at": None}
 
 
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "RGAPI-1111 2222",
+        "RGAPI-1111\t2222",
+        "RGAPI-1111\nPOSTGRES_HOST=evil",
+        "RGAPI-1111\r\n2222",
+        "RGAPI-1111=2222",
+    ],
+)
+def test_a_key_with_whitespace_a_newline_or_equals_is_refused_and_not_written(tmp_path, bad):
+    path = tmp_path / ".env"
+    path.write_text(ENV, encoding="utf-8")
+    assert key_problem(bad) is not None
+    with pytest.raises(ValueError) as refused:
+        save_key(path, "riot", bad)
+    assert bad not in str(refused.value)
+    assert path.read_text(encoding="utf-8") == ENV
+
+
+def test_a_normal_key_has_no_problem():
+    assert key_problem(RIOT_KEY) is None
+    assert key_problem("sk-ant-api03-abc_DEF-123") is None
+
+
 # The endpoints
 
 
@@ -113,6 +138,26 @@ def test_a_refused_key_isnt_saved(test_settings, env, caplog):
     # The log says what Riot answered, so a refusal can be diagnosed; never the key.
     assert "refused on its test call: Riot returned 401." in caplog.text
     assert NEW_RIOT_KEY not in caplog.text
+
+
+@pytest.mark.parametrize("bad", ["RGAPI-1111 2222-3333", "RGAPI-1111\n2222-3333", "RGAPI-1111=2222"])
+def test_a_malformed_key_is_refused_before_its_test_call(test_settings, env, bad):
+    tested = []
+
+    async def tester(key):
+        tested.append(key)
+
+    app = create_app(test_settings, env_path=env, key_testers={"riot": tester, "anthropic": tester})
+    with TestClient(app, base_url="http://localhost") as client:
+        response = client.put("/settings/keys/riot", json={"key": bad}, headers=HEADERS)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "A key can't contain spaces, line breaks or \"=\". The Riot key wasn't saved."
+    )
+    assert bad not in response.text
+    assert tested == []
+    assert read_env(env)["RIOT_API_KEY"] == "old-key-0000"
 
 
 def test_the_new_key_is_used_without_a_restart(test_settings, env):
