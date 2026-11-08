@@ -151,13 +151,13 @@ cost. Questions are only sent on the Ask button.
 
 ![The Coach page: a reply on deaths, with its number check, tools and cost](docs/screens/coach.png)
 
-The older Gradio UI in `ui/` still works and is what the demo below uses.
+The older Gradio UI in `ui/` still works, but the web app above is the one to use.
 
 ## Try it in demo mode
 
 The demo has 12 of my jungle games with every player's identity replaced, so you
-can try it without a Riot key. Requires Python 3.12, [uv](https://docs.astral.sh/uv/)
-and Docker.
+can try it without a Riot key. Requires Python 3.12, [uv](https://docs.astral.sh/uv/),
+Docker and Node.js.
 
 1. Copy `.env.example` to `.env`. Set `POSTGRES_PASSWORD`, and set
    `POSTGRES_DB=lolcoach_demo`.
@@ -166,13 +166,15 @@ and Docker.
    docker compose up -d db
    uv run python -m demo.load
    ```
-3. Start the API and the UI, then open http://127.0.0.1:7860:
+3. Start the API and the web app, then open http://localhost:5173:
    ```sh
    docker compose up --build -d api
-   uv run python -m ui.app
+   cd web
+   npm install
+   npm run dev
    ```
 
-The **Stats** tab works as it is. **Asking the coach needs an Anthropic API key**
+Every page but the Coach works as it is. **Asking the coach needs an Anthropic API key**
 in `ANTHROPIC_API_KEY`, and each question is a paid call, usually a few cents to
 about $0.30. With 12 games, most stats are under the 10-game floor, so expect
 "not enough data" often: that's the coach being honest, not broken. The demo has
