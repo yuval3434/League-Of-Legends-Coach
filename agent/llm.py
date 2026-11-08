@@ -217,6 +217,9 @@ class OllamaModel:
 
     # A small local model can't be relied on to cite, so it keeps the plain check.
     cites = False
+    # qwen3 sometimes writes out its reasoning, untagged, and stops without calling a
+    # tool: then the coach shows that it didn't answer, never that text.
+    needs_a_tool = True
 
     def __init__(self, url: str, model: str, http: httpx.AsyncClient | None = None) -> None:
         self._url = url.rstrip("/")
@@ -268,6 +271,9 @@ def _from_ollama(body: dict[str, Any], model: str) -> ModelReply:
     # opening tag. Only what follows the last </think> is the answer.
     if "</think>" in raw:
         raw = raw.rsplit("</think>", 1)[1]
+    elif raw.lstrip().startswith("<think>"):
+        # Cut off before it closed: all of it is reasoning.
+        raw = ""
     text = THINK_TAGS.sub("", raw).strip()
     calls = []
     for call in message.get("tool_calls") or []:

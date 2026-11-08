@@ -278,7 +278,7 @@ export type CoachModel = {
   default: boolean;
 };
 
-export type CoachStatus = "verified" | "unverified" | "refused" | "truncated" | "gave_up";
+export type CoachStatus = "verified" | "unverified" | "refused" | "truncated" | "gave_up" | "no_answer";
 
 /** Where one cited number came from: the tool-result field, and its label for the hover. */
 export type Citation = { number: string; target: string; label: string };

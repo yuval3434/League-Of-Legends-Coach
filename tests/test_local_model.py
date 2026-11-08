@@ -81,6 +81,49 @@ async def test_ollama_errors_become_local_model_errors():
         await model.send("S", [], [{"role": "user", "content": "Hi"}])
 
 
+async def test_a_request_asks_ollama_not_to_think():
+    model, sent = ollama(text("Hi."))
+    await model.send("S", [], [{"role": "user", "content": "Hi"}])
+    assert sent[0]["think"] is False
+
+
+async def test_reasoning_cut_off_before_its_closing_tag_is_dropped():
+    model, _ = ollama(text("<think>The user wants 9.99, so", done_reason="length"))
+    reply = await model.send("S", [], [{"role": "user", "content": "Hi"}])
+    assert reply.text == ""
+
+
+async def test_a_local_reply_that_called_no_tool_isnt_shown_as_an_answer():
+    # What qwen3 really wrote on the `wins` eval case: its reasoning, and no tool call.
+    reasoning = "Okay, let's tackle this user question. Looking at the tools provided, there's wins_and_losses."
+    model, sent = ollama(text(reasoning))
+    answer = await ask_coach(model, None, "How do my wins compare with my losses?")
+    assert answer.status == "no_answer"
+    assert answer.text == "The local model didn't answer; try again or use Claude."
+    assert reasoning not in answer.text
+    # One call: it isn't asked again, which would double a long wait.
+    assert len(sent) == 1
+
+
+async def test_a_local_reply_after_a_tool_call_is_checked_as_usual():
+    model, _ = ollama(tool_call("data_coverage", {}), text("You need more games."))
+    answer = await ask_coach(model, None, "How am I doing?")
+    assert answer.status == "verified"
+    assert answer.text == "You need more games."
+
+
+async def test_with_no_tools_offered_a_local_reply_without_one_is_an_answer():
+    # The Draft page's options button preloads its tools and offers none.
+    model, _ = ollama(text("Pick from the champions shown."))
+    answer = await ask_coach(model, None, "Options?", offer_tools=False)
+    assert answer.status == "verified"
+
+
+async def test_a_claude_reply_without_a_tool_is_still_an_answer():
+    answer = await ask_coach(FakeModel(says("Ask me about your games.")), None, "Hi")
+    assert answer.status == "verified"
+
+
 async def test_think_tags_and_a_cut_off_reply_are_handled():
     model, _ = ollama(text("<think>hmm</think>Play more games.", done_reason="length"))
     reply = await model.send("S", [], [{"role": "user", "content": "Hi"}])

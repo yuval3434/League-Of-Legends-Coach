@@ -87,4 +87,5 @@ export const CHECK: Record<CoachStatus, { tone: "ok" | "warn" | "plain"; words: 
   refused: { tone: "plain", words: "The coach couldn't answer this question." },
   truncated: { tone: "plain", words: "The answer was cut off. Try a narrower question." },
   gave_up: { tone: "plain", words: "The coach couldn't finish. Try a narrower question." },
+  no_answer: { tone: "plain", words: "The local model didn't answer; try again or use Claude." },
 };

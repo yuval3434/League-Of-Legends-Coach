@@ -46,6 +46,7 @@ STATUS = {
     "refused": "The coach couldn't answer this question.",
     "truncated": "The answer was cut off. Try a narrower question.",
     "gave_up": "The coach couldn't finish. Try a narrower question.",
+    "no_answer": "The local model didn't answer; try again or use Claude.",
 }
 TOOL_COLUMNS = ["Tool", "Asked for", "Your games", "Benchmark games"]
 
