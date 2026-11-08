@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent.numbers import ALLOWED_PHRASE, GAME_TIME, LIST_MARKER, NUMBER, _value, _values
+from agent.numbers import ALLOWED_PHRASE, GAME_TIME, NUMBER, _value, _values, list_markers
 
 MARKER = re.compile(r"\[\[([^\[\]\n]{1,80})\]\]")
 
@@ -227,7 +227,7 @@ def check_citations(
     """
     found = sources(results)
     markers = [m.span() for m in MARKER.finditer(reply)]
-    skipped = markers + [m.span() for m in LIST_MARKER.finditer(reply)]
+    skipped = markers + list_markers(reply)
     skipped += [m.span() for m in ALLOWED_PHRASE.finditer(reply)]
     for text in exempt:
         skipped += [m.span() for m in re.finditer(re.escape(text), reply)] if text else []

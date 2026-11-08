@@ -73,6 +73,11 @@ def test_an_uncited_number_fails_except_list_numbering_and_1_in_20():
     assert result.problems == ["92 has no citation"]
 
 
+def test_an_inline_numbered_list_needs_no_citation():
+    result = check("Work on 1) CSing and 2) warding: you played 92 games.", ROWS)
+    assert result.problems == ["92 has no citation"]
+
+
 def test_a_citation_to_nothing_fails():
     assert check("92[[1.7.games]] games.", ROWS).problems == [
         "92 cites 1.7.games, which isn't a field of any tool result"
