@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from ingestion.keys import describe, read_env, save_key, write_env
+from ingestion.keys import describe, key_problem, read_env, save_key, write_env
 from ingestion.riot_client import RiotAuthError
 from main import create_app
 
@@ -66,6 +66,31 @@ def test_a_key_is_described_by_its_last_4_characters_only(tmp_path):
 def test_an_unset_key_shows_nothing(tmp_path):
     info = describe(tmp_path / ".env", "anthropic")
     assert info == {"set": False, "last4": None, "set_at": None}
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "RGAPI-1111 2222",
+        "RGAPI-1111\t2222",
+        "RGAPI-1111\nPOSTGRES_HOST=evil",
+        "RGAPI-1111\r\n2222",
+        "RGAPI-1111=2222",
+    ],
+)
+def test_a_key_with_whitespace_a_newline_or_equals_is_refused_and_not_written(tmp_path, bad):
+    path = tmp_path / ".env"
+    path.write_text(ENV, encoding="utf-8")
+    assert key_problem(bad) is not None
+    with pytest.raises(ValueError) as refused:
+        save_key(path, "riot", bad)
+    assert bad not in str(refused.value)
+    assert path.read_text(encoding="utf-8") == ENV
+
+
+def test_a_normal_key_has_no_problem():
+    assert key_problem(RIOT_KEY) is None
+    assert key_problem("sk-ant-api03-abc_DEF-123") is None
 
 
 # The endpoints

@@ -6,6 +6,7 @@ one place secrets live. Inside Docker it's bind-mounted, so it's rewritten in
 place: replacing a mounted file by renaming another over it fails.
 """
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -66,7 +67,23 @@ def write_env(path: Path, values: dict[str, str]) -> None:
         file.truncate()
 
 
+# A key is one token: whitespace or a newline would break or add a line in .env,
+# and "=" can't be told apart from the line's own NAME=value split.
+NOT_IN_A_KEY = re.compile(r"[\s=]")
+
+
+def key_problem(value: str) -> str | None:
+    """Why `value` can't be a key, or None if it can. Never names the key."""
+    if NOT_IN_A_KEY.search(value):
+        return "A key can't contain spaces, line breaks or \"=\"."
+    return None
+
+
 def save_key(path: Path, name: str, value: str, now: datetime | None = None) -> None:
+    """Write a key to .env. Refuses a value that isn't one token (see key_problem)."""
+    problem = key_problem(value)
+    if problem:
+        raise ValueError(problem)
     key = KEYS[name]
     when = (now or datetime.now(UTC)).isoformat(timespec="seconds")
     write_env(path, {key.env: value, key.set_at_env: when})
