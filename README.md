@@ -363,6 +363,7 @@ an earlier run's one miss was a grader that judged the same reply both ways.
 |---|---|---|---|
 | Opus 5.5, all 16 cases, 2026-11-07 | 16 / 16 | 102 / 113 | $2.72 |
 | Opus 5.5, 3 cases re-run after the fixes, 2026-11-08 | 3 / 3 | 18 / 20 | $0.48 |
+| qwen3:4b (local), all 16 cases, 2026-11-08 | 12 / 16 | 74 / 84 | $0.06, the grader |
 
 In the full run, 15 of 16 answers passed the number check: `farming` dropped its
 citations. In the re-run, the one coach failure left was a number from the right

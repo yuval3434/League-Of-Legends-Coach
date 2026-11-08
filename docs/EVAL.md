@@ -255,3 +255,44 @@ different failures, so both are needed (see DECISIONS.md).
   resemble their own family's. The checks are narrow rules rather than taste,
   which limits this, but doesn't remove it. A grader from another family, or a
   person reading the graded failures, would be the cross-check.
+
+## The full run on a local model
+
+All 16 cases on `qwen3:4b` through Ollama, on 2026-11-08, graded by Haiku 5.5 as
+usual. The coach cost $0, the grader $0.06. The run took 4 hours 12 minutes: 12
+answers averaged about 13 minutes each, and 4 cases (`viego`, `stretch_no_tool`,
+`draft_options`, `top_lane`) hit the 600-second limit on one Ollama call. Those 4
+are in `errors.jsonl`, not counted as failures. The local model isn't asked to
+cite, so it keeps the plain number check.
+
+| | Opus 5.5, 2026-11-07 | qwen3:4b |
+|---|---|---|
+| Answered | 16 / 16 | 12 / 16 |
+| Checks passed | 102 / 113 | 74 / 84 |
+| The number check passed | 15 / 16 | 12 / 12 |
+
+**Where it failed:**
+- **`draft`:** it chose Dr. Mundo as "the best option" on 17 games with a 24.5-point
+  margin and no verdict, and said it counters Lee Sin, a matchup claim no tool
+  makes. Four of five grader checks failed.
+- **`emerald_lane`:** it compared gold with Emerald junglers, which this cohort
+  marks as not comparable.
+- **`work_on`:** it listed "avoid early deaths" as a thing to work on, though
+  deaths had no verdict (`nothing_clear`). The prompt says never to. The grader
+  missed this one. It also put the whole-game 1.4 CS a minute under "the first 10
+  minutes", which the grader caught.
+- **`weakest`:** a wrong sample-size note.
+- **`wins`:** it wrote out its own reasoning and stopped without calling a tool.
+  With no numbers, it passed the number check, and the grader passed it too; only
+  the check that a tool was called failed. The app now shows "The local model
+  didn't answer" for a reply like this.
+- **`says`, twice:** on `bot_no_benchmark` the reply was right ("your gold_bottom
+  benchmark has no data"), but in words the check's pattern doesn't match. On
+  `support_vision` the case asked about a different player than on Opus: a Silver
+  support synced later was listed first. The eval now picks each case's player by
+  a fixed rule, so that row isn't a like-for-like comparison.
+
+**What held:** every code check that ran. The role arguments were right 3 of 3
+times, and the cohort, compared-with and avoided-stat checks all passed. The
+prompt rules didn't all hold: choosing a pick, comparing what isn't comparable and
+working on a gap with no verdict each failed once on this model.
