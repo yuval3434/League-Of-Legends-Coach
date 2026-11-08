@@ -318,7 +318,7 @@ export function Coach({ question: carried }: { question: string }) {
         )}
         {chosen?.id === "local" && (
           <div className="mt-4 border-l-2 border-rule pl-4 text-[13px] text-ink2">
-            <p className="text-ink">What the local model gets wrong, in its last eval run:</p>
+            <p className="text-ink">What the local model got wrong in its eval runs:</p>
             <ul className="mt-1 list-disc space-y-0.5 pl-4">
               {LOCAL_LIMITS.map((line) => (
                 <li key={line}>{line}</li>

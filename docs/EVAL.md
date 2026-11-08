@@ -296,3 +296,12 @@ cite, so it keeps the plain number check.
 times, and the cohort, compared-with and avoided-stat checks all passed. The
 prompt rules didn't all hold: choosing a pick, comparing what isn't comparable and
 working on a gap with no verdict each failed once on this model.
+
+**Re-run of `wins` and `draft`**, on 2026-11-08, after the app stopped showing a
+local reply that called no tool. The grader cost $0.003.
+- **`wins`:** an Ollama call reached its 600-second limit, so there's no answer
+  to grade, and the new "didn't answer" path wasn't reached.
+- **`draft`:** answered in 876 seconds, against 981 in the full run, and passed
+  every check this time: it named the gap without picking a champion, and said
+  there's no matchup data. One run can't tell a fix from chance here: the prompt
+  didn't change for this case.

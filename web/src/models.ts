@@ -8,12 +8,13 @@ export const LOCAL_EVAL_URL = "https://github.com/yuval3434/League-Of-Legends-Co
 
 /**
  * What the local model gets wrong, from its last full eval run (16 questions on
- * qwen3:4b, 2026-11-08). Shown next to the model picker when it's chosen.
+ * qwen3:4b, 2026-11-08), with the speed from the re-run of 2 of them after the
+ * fixes. Shown next to the model picker when it's chosen.
  */
 export const LOCAL_LIMITS = [
-  "It's slow: about 13 minutes an answer, and 4 of the 16 questions timed out.",
+  "It's slow: in its latest re-run of 2 questions, one answer took about 15 minutes and the other timed out.",
   "It picked a champion for you in the draft, and claimed it counters the enemy, which no data shows.",
-  "It compared with Emerald where the data says the two can't be compared.",
+  "It compared gold with Emerald junglers, which the data marks as not comparable for this player.",
   "It listed a gap with no verdict as something to work on.",
   "Its numbers were all in the data, but one was put under the wrong stat.",
 ];
