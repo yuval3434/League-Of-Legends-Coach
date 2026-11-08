@@ -37,6 +37,7 @@ from benchmarks.cohorts import (
     offered_roles,
     why_no_benchmark,
 )
+from benchmarks.compare import cohort_sizes as benchmark_cohort_sizes
 from benchmarks.compare import compare
 from benchmarks.own import own_numbers
 from benchmarks.estimate import PULL_MORE_MATCHES, SAFETY_MULTIPLE, pull_more, to_500
@@ -374,21 +375,7 @@ def create_app(
     async def cohort_sizes(request: Request) -> dict[str, dict[str, int]]:
         """Each cohort's all-champion games and players, and matches checked."""
         async with request.app.state.benchmark_sessions() as session:
-            rows = await session.execute(
-                text(
-                    """
-                    SELECT c.cohort,
-                           (SELECT count(*) FROM scan_queue q
-                            WHERE q.cohort = c.cohort AND q.outcome IS NOT NULL) AS checked,
-                           (SELECT count(*) FROM sample s
-                            WHERE s.cohort = c.cohort AND s.in_overall) AS games,
-                           (SELECT count(DISTINCT s.puuid) FROM sample s
-                            WHERE s.cohort = c.cohort AND s.in_overall) AS players
-                    FROM (SELECT cohort FROM scan_queue UNION SELECT cohort FROM sample) c
-                    """
-                )
-            )
-            return {row.cohort: dict(row._mapping) for row in rows}
+            return await benchmark_cohort_sizes(session)
 
     @app.get("/settings/keys", dependencies=[Depends(local_only)])
     async def keys() -> dict[str, Any]:

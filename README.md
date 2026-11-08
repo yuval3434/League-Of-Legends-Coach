@@ -178,8 +178,15 @@ Docker and Node.js.
 Every page but the Coach works as it is. **Asking the coach needs an Anthropic API key**
 in `ANTHROPIC_API_KEY`, and each question is a paid call, usually a few cents to
 about $0.30. With 12 games, most stats are under the 10-game floor, so expect
-"not enough data" often: that's the coach being honest, not broken. The demo has
-no benchmark, so comparisons say there isn't one.
+"not enough data" often: that's the coach being honest, not broken.
+
+The Overview compares the demo games with Silver junglers, as it does for my own
+games. The demo ships that benchmark as a snapshot, `demo/benchmark.json`: each
+measure's average, median, margin and sample size over 500 Silver and 500 Emerald
+games, with no other player's matches or IDs. `uv run python -m
+demo.export_benchmark` makes it from the real benchmark, and writes nothing if a
+player or match ID would be in it. A snapshot holds the all-champion benchmark
+only, so champion comparisons and the Compare page's stretch table have none.
 
 **About the anonymization:** names, PUUIDs, summoner IDs, match IDs and real dates
 are replaced, and the export refuses to write the file if any original value is

@@ -1,0 +1,667 @@
+{
+ "rank": "SILVER",
+ "snapshots": [
+  {
+   "cohort": "silver",
+   "metrics": {
+    "cs_per_minute": [
+     {
+      "avg_cs_per_min": 6.27,
+      "games": 500,
+      "low_sample": false,
+      "margin_cs_per_min": 0.1,
+      "median_cs_per_min": 6.22,
+      "role": "JUNGLE"
+     }
+    ],
+    "deaths_by_phase": [
+     {
+      "avg_deaths": 2.22,
+      "deaths": 1109,
+      "deaths_per_10_min": 1.48,
+      "games": 500,
+      "low_sample": false,
+      "margin_deaths": 0.13,
+      "median_deaths": 2.0,
+      "phase": "early"
+     },
+     {
+      "avg_deaths": 2.64,
+      "deaths": 1311,
+      "deaths_per_10_min": 2.8,
+      "games": 497,
+      "low_sample": false,
+      "margin_deaths": 0.15,
+      "median_deaths": 3.0,
+      "phase": "mid"
+     },
+     {
+      "avg_deaths": 2.6,
+      "deaths": 1075,
+      "deaths_per_10_min": 3.08,
+      "games": 413,
+      "low_sample": false,
+      "margin_deaths": 0.2,
+      "median_deaths": 2.0,
+      "phase": "late"
+     }
+    ],
+    "gold_cs_at_minute": [
+     {
+      "avg_cs": 63.7,
+      "avg_gold": 3742.0,
+      "games": 499,
+      "low_sample": false,
+      "margin_cs": 0.9,
+      "margin_gold": 46.0,
+      "median_cs": 64.0,
+      "median_gold": 3677.0,
+      "minute": 10,
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs": 96.1,
+      "avg_gold": 5835.0,
+      "games": 497,
+      "low_sample": false,
+      "margin_cs": 1.4,
+      "margin_gold": 74.0,
+      "median_cs": 96.0,
+      "median_gold": 5722.0,
+      "minute": 15,
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs": 128.9,
+      "avg_gold": 8253.0,
+      "games": 475,
+      "low_sample": false,
+      "margin_cs": 1.9,
+      "margin_gold": 109.0,
+      "median_cs": 129.0,
+      "median_gold": 8075.0,
+      "minute": 20,
+      "role": "JUNGLE"
+     }
+    ],
+    "kill_participation": [
+     {
+      "avg_kill_participation_pct": 46.2,
+      "games": 500,
+      "low_sample": false,
+      "margin_kill_participation_pct": 1.2,
+      "median_kill_participation_pct": 46.9
+     }
+    ],
+    "lane_diff": [
+     {
+      "avg_cs_diff": 0.0,
+      "avg_gold_diff": -15.0,
+      "games": 499,
+      "low_sample": false,
+      "margin_cs_diff": 1.3,
+      "margin_gold_diff": 71.0,
+      "median_cs_diff": 0.0,
+      "median_gold_diff": -47.0,
+      "minute": 10,
+      "result": "all",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": -2.3,
+      "avg_gold_diff": -137.0,
+      "games": 260,
+      "low_sample": false,
+      "margin_cs_diff": 1.8,
+      "margin_gold_diff": 99.0,
+      "median_cs_diff": -3.0,
+      "median_gold_diff": -138.0,
+      "minute": 10,
+      "result": "loss",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": 2.5,
+      "avg_gold_diff": 118.0,
+      "games": 239,
+      "low_sample": false,
+      "margin_cs_diff": 1.8,
+      "margin_gold_diff": 100.0,
+      "median_cs_diff": 2.0,
+      "median_gold_diff": 70.0,
+      "minute": 10,
+      "result": "win",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": -0.8,
+      "avg_gold_diff": -51.0,
+      "games": 497,
+      "low_sample": false,
+      "margin_cs_diff": 2.1,
+      "margin_gold_diff": 118.0,
+      "median_cs_diff": -1.0,
+      "median_gold_diff": -48.0,
+      "minute": 15,
+      "result": "all",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": -5.6,
+      "avg_gold_diff": -345.0,
+      "games": 259,
+      "low_sample": false,
+      "margin_cs_diff": 2.8,
+      "margin_gold_diff": 169.0,
+      "median_cs_diff": -6.0,
+      "median_gold_diff": -282.0,
+      "minute": 15,
+      "result": "loss",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": 4.5,
+      "avg_gold_diff": 269.0,
+      "games": 238,
+      "low_sample": false,
+      "margin_cs_diff": 2.9,
+      "margin_gold_diff": 154.0,
+      "median_cs_diff": 3.0,
+      "median_gold_diff": 202.0,
+      "minute": 15,
+      "result": "win",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": -1.5,
+      "avg_gold_diff": -13.0,
+      "games": 475,
+      "low_sample": false,
+      "margin_cs_diff": 2.9,
+      "margin_gold_diff": 174.0,
+      "median_cs_diff": -2.0,
+      "median_gold_diff": -74.0,
+      "minute": 20,
+      "result": "all",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": -11.1,
+      "avg_gold_diff": -643.0,
+      "games": 248,
+      "low_sample": false,
+      "margin_cs_diff": 3.9,
+      "margin_gold_diff": 240.0,
+      "median_cs_diff": -9.0,
+      "median_gold_diff": -500.0,
+      "minute": 20,
+      "result": "loss",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": 9.1,
+      "avg_gold_diff": 676.0,
+      "games": 227,
+      "low_sample": false,
+      "margin_cs_diff": 4.0,
+      "margin_gold_diff": 220.0,
+      "median_cs_diff": 10.0,
+      "median_gold_diff": 574.0,
+      "minute": 20,
+      "result": "win",
+      "role": "JUNGLE"
+     }
+    ],
+    "objective_share": [
+     {
+      "avg_enemy_taken": 0.53,
+      "avg_team_taken": 0.53,
+      "enemy_taken": 267,
+      "games": 500,
+      "low_sample": false,
+      "median_enemy_taken": 0.0,
+      "median_team_taken": 0.0,
+      "my_last_hits": 202,
+      "objective": "BARON_NASHOR",
+      "objectives": 531,
+      "team_share_pct": 49.7,
+      "team_taken": 264
+     },
+     {
+      "avg_enemy_taken": 2.14,
+      "avg_team_taken": 2.1,
+      "enemy_taken": 1069,
+      "games": 500,
+      "low_sample": false,
+      "median_enemy_taken": 2.0,
+      "median_team_taken": 2.0,
+      "my_last_hits": 885,
+      "objective": "DRAGON",
+      "objectives": 2119,
+      "team_share_pct": 49.6,
+      "team_taken": 1050
+     },
+     {
+      "avg_enemy_taken": 0.06,
+      "avg_team_taken": 0.06,
+      "enemy_taken": 31,
+      "games": 500,
+      "low_sample": false,
+      "median_enemy_taken": 0.0,
+      "median_team_taken": 0.0,
+      "my_last_hits": 16,
+      "objective": "ELDER_DRAGON",
+      "objectives": 62,
+      "team_share_pct": 50.0,
+      "team_taken": 31
+     },
+     {
+      "avg_enemy_taken": 1.58,
+      "avg_team_taken": 1.4,
+      "enemy_taken": 792,
+      "games": 500,
+      "low_sample": false,
+      "median_enemy_taken": 2.0,
+      "median_team_taken": 1.0,
+      "my_last_hits": 614,
+      "objective": "HORDE",
+      "objectives": 1492,
+      "team_share_pct": 46.9,
+      "team_taken": 700
+     },
+     {
+      "avg_enemy_taken": 0.42,
+      "avg_team_taken": 0.41,
+      "enemy_taken": 211,
+      "games": 500,
+      "low_sample": false,
+      "median_enemy_taken": 0.0,
+      "median_team_taken": 0.0,
+      "my_last_hits": 171,
+      "objective": "RIFTHERALD",
+      "objectives": 415,
+      "team_share_pct": 49.2,
+      "team_taken": 204
+     }
+    ],
+    "wards_per_minute": [
+     {
+      "avg_control_placed_per_min": 0.027,
+      "avg_destroyed_per_min": 0.08,
+      "avg_placed_per_min": 0.252,
+      "avg_support_item_placed_per_min": 0.0,
+      "avg_trinket_placed_per_min": 0.225,
+      "avg_vision_score_per_min": 0.85,
+      "control_placed": 411,
+      "destroyed": 1300,
+      "games": 500,
+      "low_sample": false,
+      "margin_control_placed_per_min": 0.004,
+      "margin_destroyed_per_min": 0.007,
+      "margin_placed_per_min": 0.012,
+      "margin_trinket_placed_per_min": 0.013,
+      "margin_vision_score_per_min": 0.03,
+      "median_control_placed_per_min": 0.0,
+      "median_destroyed_per_min": 0.062,
+      "median_placed_per_min": 0.259,
+      "oracle_lens_pct": 41.2,
+      "placed": 3924,
+      "trinket_games": 500,
+      "trinket_placed": 3513
+     }
+    ],
+    "win_rate": [
+     {
+      "dimension": "role",
+      "games": 500,
+      "low_sample": false,
+      "margin_win_rate_pct": 4.4,
+      "value": "JUNGLE",
+      "win_rate_pct": 48.0,
+      "wins": 240
+     }
+    ]
+   },
+   "size": {
+    "games": 500,
+    "patches": [
+     "16.19",
+     "16.20",
+     "16.21"
+    ],
+    "players": 456
+   }
+  },
+  {
+   "cohort": "emerald",
+   "metrics": {
+    "cs_per_minute": [
+     {
+      "avg_cs_per_min": 6.83,
+      "games": 500,
+      "low_sample": false,
+      "margin_cs_per_min": 0.1,
+      "median_cs_per_min": 6.69,
+      "role": "JUNGLE"
+     }
+    ],
+    "deaths_by_phase": [
+     {
+      "avg_deaths": 2.14,
+      "deaths": 1071,
+      "deaths_per_10_min": 1.43,
+      "games": 500,
+      "low_sample": false,
+      "margin_deaths": 0.13,
+      "median_deaths": 2.0,
+      "phase": "early"
+     },
+     {
+      "avg_deaths": 2.48,
+      "deaths": 1227,
+      "deaths_per_10_min": 2.71,
+      "games": 495,
+      "low_sample": false,
+      "margin_deaths": 0.14,
+      "median_deaths": 2.0,
+      "phase": "mid"
+     },
+     {
+      "avg_deaths": 2.17,
+      "deaths": 801,
+      "deaths_per_10_min": 3.03,
+      "games": 369,
+      "low_sample": false,
+      "margin_deaths": 0.18,
+      "median_deaths": 2.0,
+      "phase": "late"
+     }
+    ],
+    "gold_cs_at_minute": [
+     {
+      "avg_cs": 69.5,
+      "avg_gold": 3984.0,
+      "games": 497,
+      "low_sample": false,
+      "margin_cs": 0.8,
+      "margin_gold": 47.0,
+      "median_cs": 70.0,
+      "median_gold": 3926.0,
+      "minute": 10,
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs": 106.0,
+      "avg_gold": 6232.0,
+      "games": 495,
+      "low_sample": false,
+      "margin_cs": 1.3,
+      "margin_gold": 73.0,
+      "median_cs": 105.0,
+      "median_gold": 6188.0,
+      "minute": 15,
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs": 142.6,
+      "avg_gold": 8763.0,
+      "games": 459,
+      "low_sample": false,
+      "margin_cs": 2.0,
+      "margin_gold": 114.0,
+      "median_cs": 140.0,
+      "median_gold": 8625.0,
+      "minute": 20,
+      "role": "JUNGLE"
+     }
+    ],
+    "kill_participation": [
+     {
+      "avg_kill_participation_pct": 48.7,
+      "games": 500,
+      "low_sample": false,
+      "margin_kill_participation_pct": 1.3,
+      "median_kill_participation_pct": 48.4
+     }
+    ],
+    "lane_diff": [
+     {
+      "avg_cs_diff": 0.3,
+      "avg_gold_diff": 38.0,
+      "games": 497,
+      "low_sample": false,
+      "margin_cs_diff": 1.2,
+      "margin_gold_diff": 69.0,
+      "median_cs_diff": 1.0,
+      "median_gold_diff": 44.0,
+      "minute": 10,
+      "result": "all",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": -1.7,
+      "avg_gold_diff": -68.0,
+      "games": 274,
+      "low_sample": false,
+      "margin_cs_diff": 1.6,
+      "margin_gold_diff": 92.0,
+      "median_cs_diff": -1.0,
+      "median_gold_diff": -40.0,
+      "minute": 10,
+      "result": "loss",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": 2.8,
+      "avg_gold_diff": 168.0,
+      "games": 223,
+      "low_sample": false,
+      "margin_cs_diff": 1.7,
+      "margin_gold_diff": 101.0,
+      "median_cs_diff": 4.0,
+      "median_gold_diff": 147.0,
+      "minute": 10,
+      "result": "win",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": 0.0,
+      "avg_gold_diff": -29.0,
+      "games": 495,
+      "low_sample": false,
+      "margin_cs_diff": 2.0,
+      "margin_gold_diff": 116.0,
+      "median_cs_diff": 0.0,
+      "median_gold_diff": 1.0,
+      "minute": 15,
+      "result": "all",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": -6.0,
+      "avg_gold_diff": -387.0,
+      "games": 273,
+      "low_sample": false,
+      "margin_cs_diff": 2.7,
+      "margin_gold_diff": 151.0,
+      "median_cs_diff": -7.0,
+      "median_gold_diff": -327.0,
+      "minute": 15,
+      "result": "loss",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": 7.4,
+      "avg_gold_diff": 413.0,
+      "games": 222,
+      "low_sample": false,
+      "margin_cs_diff": 2.7,
+      "margin_gold_diff": 162.0,
+      "median_cs_diff": 6.0,
+      "median_gold_diff": 545.0,
+      "minute": 15,
+      "result": "win",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": 0.8,
+      "avg_gold_diff": 12.0,
+      "games": 459,
+      "low_sample": false,
+      "margin_cs_diff": 3.2,
+      "margin_gold_diff": 180.0,
+      "median_cs_diff": 1.0,
+      "median_gold_diff": -34.0,
+      "minute": 20,
+      "result": "all",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": -10.3,
+      "avg_gold_diff": -605.0,
+      "games": 253,
+      "low_sample": false,
+      "margin_cs_diff": 4.1,
+      "margin_gold_diff": 224.0,
+      "median_cs_diff": -10.0,
+      "median_gold_diff": -681.0,
+      "minute": 20,
+      "result": "loss",
+      "role": "JUNGLE"
+     },
+     {
+      "avg_cs_diff": 14.3,
+      "avg_gold_diff": 771.0,
+      "games": 206,
+      "low_sample": false,
+      "margin_cs_diff": 4.2,
+      "margin_gold_diff": 257.0,
+      "median_cs_diff": 15.5,
+      "median_gold_diff": 766.0,
+      "minute": 20,
+      "result": "win",
+      "role": "JUNGLE"
+     }
+    ],
+    "objective_share": [
+     {
+      "avg_enemy_taken": 0.57,
+      "avg_team_taken": 0.56,
+      "enemy_taken": 286,
+      "games": 500,
+      "low_sample": false,
+      "median_enemy_taken": 0.0,
+      "median_team_taken": 0.0,
+      "my_last_hits": 219,
+      "objective": "BARON_NASHOR",
+      "objectives": 567,
+      "team_share_pct": 49.6,
+      "team_taken": 281
+     },
+     {
+      "avg_enemy_taken": 2.02,
+      "avg_team_taken": 1.92,
+      "enemy_taken": 1012,
+      "games": 500,
+      "low_sample": false,
+      "median_enemy_taken": 2.0,
+      "median_team_taken": 2.0,
+      "my_last_hits": 841,
+      "objective": "DRAGON",
+      "objectives": 1973,
+      "team_share_pct": 48.7,
+      "team_taken": 961
+     },
+     {
+      "avg_enemy_taken": 0.05,
+      "avg_team_taken": 0.06,
+      "enemy_taken": 25,
+      "games": 500,
+      "low_sample": false,
+      "median_enemy_taken": 0.0,
+      "median_team_taken": 0.0,
+      "my_last_hits": 27,
+      "objective": "ELDER_DRAGON",
+      "objectives": 55,
+      "team_share_pct": 54.5,
+      "team_taken": 30
+     },
+     {
+      "avg_enemy_taken": 1.48,
+      "avg_team_taken": 1.5,
+      "enemy_taken": 739,
+      "games": 500,
+      "low_sample": false,
+      "median_enemy_taken": 1.0,
+      "median_team_taken": 1.0,
+      "my_last_hits": 680,
+      "objective": "HORDE",
+      "objectives": 1489,
+      "team_share_pct": 50.4,
+      "team_taken": 750
+     },
+     {
+      "avg_enemy_taken": 0.45,
+      "avg_team_taken": 0.38,
+      "enemy_taken": 227,
+      "games": 500,
+      "low_sample": false,
+      "median_enemy_taken": 0.0,
+      "median_team_taken": 0.0,
+      "my_last_hits": 168,
+      "objective": "RIFTHERALD",
+      "objectives": 418,
+      "team_share_pct": 45.7,
+      "team_taken": 191
+     }
+    ],
+    "wards_per_minute": [
+     {
+      "avg_control_placed_per_min": 0.039,
+      "avg_destroyed_per_min": 0.121,
+      "avg_placed_per_min": 0.185,
+      "avg_support_item_placed_per_min": 0.0,
+      "avg_trinket_placed_per_min": 0.146,
+      "avg_vision_score_per_min": 0.88,
+      "control_placed": 564,
+      "destroyed": 1869,
+      "games": 500,
+      "low_sample": false,
+      "margin_control_placed_per_min": 0.005,
+      "margin_destroyed_per_min": 0.008,
+      "margin_placed_per_min": 0.013,
+      "margin_trinket_placed_per_min": 0.012,
+      "margin_vision_score_per_min": 0.03,
+      "median_control_placed_per_min": 0.02,
+      "median_destroyed_per_min": 0.107,
+      "median_placed_per_min": 0.153,
+      "oracle_lens_pct": 72.2,
+      "placed": 2682,
+      "trinket_games": 500,
+      "trinket_placed": 2118
+     }
+    ],
+    "win_rate": [
+     {
+      "dimension": "role",
+      "games": 500,
+      "low_sample": false,
+      "margin_win_rate_pct": 4.4,
+      "value": "JUNGLE",
+      "win_rate_pct": 44.6,
+      "wins": 223
+     }
+    ]
+   },
+   "size": {
+    "games": 500,
+    "patches": [
+     "16.19",
+     "16.20",
+     "16.21"
+    ],
+    "players": 440
+   }
+  }
+ ]
+}
