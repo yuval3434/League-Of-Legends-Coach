@@ -59,6 +59,12 @@ def test_numbers_not_in_a_result_are_caught(reply, caught):
     assert unsupported(reply) == caught
 
 
+def test_a_game_time_off_the_minute_is_caught_even_when_the_minute_is_in_a_result():
+    # The result has minute 15, which supports 15:00 but not 15:30.
+    assert unsupported("By 15:00 you're behind.") == []
+    assert unsupported("By 15:30 you're behind.") == ["15:30"]
+
+
 def test_a_reply_that_skipped_the_tools_has_no_support():
     assert unsupported("You win 46.7% of games.", outputs=[]) == ["46.7"]
 

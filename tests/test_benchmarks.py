@@ -10,7 +10,7 @@ from test_analytics import add_event, add_frames, add_game, add_objective
 
 import benchmarks.pull as pull
 from analytics.stats import Scope, gold_cs_at_minute, overall_cs_per_minute
-from benchmarks.compare import compare
+from benchmarks.compare import _gap, compare
 from benchmarks.models import Base as BenchmarkBase
 from benchmarks.models import PlayerRank, Sample, ScanQueue, create_benchmark_engine
 from benchmarks.pull import Quotas, order_candidates, pull_cohort, target_champions
@@ -580,6 +580,28 @@ async def test_a_gap_inside_the_margin_is_not_clear(sessions, benchmark_sessions
     row = find(result["rows"], metric="gold_cs_at_minute", minute=10, value="avg_gold")
     assert row["difference"] == 0
     assert row["clear_gap"] is False
+
+
+def gap_of(difference: float) -> dict:
+    """A gap whose two margins, 3 and 4, combine to exactly 5."""
+    mine = {"avg_gold": 1000 + difference, "margin_gold": 3}
+    theirs = {"avg_gold": 1000, "margin_gold": 4}
+    return _gap("avg_gold", mine, theirs, enough=True)
+
+
+@pytest.mark.parametrize("difference", [4.9, -4.9, 5])
+def test_a_small_gap_just_inside_the_margin_is_not_clear(difference):
+    gap = gap_of(difference)
+    assert gap["difference_margin"] == 5
+    assert gap["clear_gap"] is False
+    assert gap["strong_gap"] is False
+
+
+@pytest.mark.parametrize("difference", [5.1, -5.1])
+def test_a_gap_just_outside_the_margin_is_clear(difference):
+    gap = gap_of(difference)
+    assert gap["clear_gap"] is True
+    assert gap["strong_gap"] is False
 
 
 async def test_a_stat_with_no_margin_keeps_its_gap_but_gets_no_verdict(
