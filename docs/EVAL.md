@@ -197,7 +197,7 @@ Two cases were added after those runs. Each has been run once on Opus 5.5:
   pattern.
 
 
-## Results on a local model
+## Results on a local model, 8 cases
 
 The same 8 questions on `qwen3:4b` (`uv run python -m eval.run live --model local
 --confirm`, $0 for the coach, $0.02 for the grader), against the last Opus run:
