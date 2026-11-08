@@ -2,6 +2,14 @@
 
 [![CI](https://github.com/yuval3434/League-Of-Legends-Coach/actions/workflows/ci.yml/badge.svg)](https://github.com/yuval3434/League-Of-Legends-Coach/actions/workflows/ci.yml)
 
+![The demo: the Overview against Silver junglers, one question to the coach, and a hover showing which tool field a number came from](docs/screens/demo.gif)
+
+**LoL Coach** explains your League of Legends games in plain language, compared with players of your rank and role.
+
+The model never works out a number: every number comes from a SQL tool, and the server checks each one against the tool results before you see it. Hover any number to see where it came from.
+
+Eval: 16 questions, graded by code and a calibrated model grader. In the last full run (Nov 2026), Opus 5.5 passed 102 of 113 checks. Where it fails is in [docs/EVAL.md](docs/EVAL.md).
+
 A personal League of Legends coach, for any role. It pulls my matches from the
 Riot API, computes every stat in SQL, compares them with real players of the same
 rank and role, and uses an LLM agent to explain them in plain language. The model never
