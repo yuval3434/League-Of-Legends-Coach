@@ -124,7 +124,7 @@ def test_the_25_passes_only_by_citing_viegos_win_rate_and_the_hover_says_so():
     viego = ref_of(DRAFT, champion="Viego")
     result = check(f"Margins of around ±25[[{viego}.win_rate_pct]] points.", DRAFT)
     assert result.problems == []
-    assert result.citations[0].label == "draft_board: champion Viego → win_rate_pct"
+    assert result.citations[0].label == "draft_board: pool, champion Viego → win_rate_pct"
 
 
 MUNDO = labelled(
@@ -294,3 +294,18 @@ def test_a_game_time_that_ends_a_bold_heading_is_still_a_time():
 def test_a_decimal_after_a_minute_list_is_a_number_not_a_minute():
     result = check("13.2[[1.1.games]] behind at minute 15 and 21.8 behind at minute 20.", LANE)
     assert result.problems == ["13.2 cites 1.1.games, which is 92", "21.8 has no citation"]
+
+
+def test_a_nested_side_is_labelled_with_its_row_and_side():
+    """A wins_and_losses row nests its sides: a citation to one names the row."""
+    result = labelled(
+        "wins_and_losses",
+        {"rows": [{"metric": "objective_share", "objective": "BARON_NASHOR", "value": "team_share_pct",
+                   "wins": {"value": 83.0, "sample": 47}, "losses": {"value": 16.7, "sample": 54}}]},
+        call=2,
+    )
+    losses = json.loads(result[1])["rows"][0]["losses"]["ref"]
+    cited = check(f"54[[{losses}.sample]] Barons in losses.", result).citations[0]
+    assert cited.label == (
+        "wins_and_losses: metric objective_share, value team_share_pct, objective BARON_NASHOR, losses → sample"
+    )

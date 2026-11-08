@@ -100,10 +100,21 @@ def label(content: str, call: int) -> str:
 
 @dataclass(frozen=True)
 class Source:
-    """One labelled tool result: which tool, and its objects by ref."""
+    """One labelled tool result: which tool, its objects by ref, and where each
+    object sits, for its label: its row's identifying fields and its side."""
 
     tool: str
     objects: dict[str, dict[str, Any]]
+    contexts: dict[str, str] = field(default_factory=dict)
+
+
+def _identifying(obj: dict[str, Any]) -> list[str]:
+    # A side object's "value" is a measurement, not a name, so only text counts there.
+    return [
+        f"{k} {obj[k]}"
+        for k in IDENTIFYING
+        if obj.get(k) not in (None, "") and (k != "value" or isinstance(obj[k], str))
+    ]
 
 
 def sources(results: list[tuple[str, str]]) -> dict[str, Source]:
@@ -115,20 +126,24 @@ def sources(results: list[tuple[str, str]]) -> dict[str, Source]:
         except ValueError:
             continue
         objects: dict[str, dict[str, Any]] = {}
+        contexts: dict[str, str] = {}
 
-        def walk(value: Any) -> None:
+        def walk(value: Any, inherited: list[str], key: str | None) -> None:
             if isinstance(value, dict):
+                # A nested object, such as a row's "losses" side, keeps its row's fields.
+                parts = inherited + ([key] if key and key != "rows" else []) + _identifying(value)
                 if "ref" in value:
                     objects[str(value["ref"])] = value
-                for item in value.values():
-                    walk(item)
+                    contexts[str(value["ref"])] = ", ".join(parts)
+                for child_key, item in value.items():
+                    walk(item, parts, child_key)
             elif isinstance(value, list):
                 for item in value:
-                    walk(item)
+                    walk(item, inherited, key)
 
-        walk(data)
+        walk(data, [], None)
         for ref in objects:
-            found[ref.split(".")[0]] = Source(tool, objects)
+            found[ref.split(".")[0]] = Source(tool, objects, contexts)
             break
     return found
 
@@ -164,9 +179,8 @@ class Checked:
     problems: list[str] = field(default_factory=list)
 
 
-def _describe(tool: str, obj: dict[str, Any], name: str) -> str:
-    keys = ", ".join(f"{k} {obj[k]}" for k in IDENTIFYING if obj.get(k) not in (None, ""))
-    return f"{tool}: {keys + ' → ' if keys else ''}{name}"
+def _describe(tool: str, context: str, name: str) -> str:
+    return f"{tool}: {context + ' → ' if context else ''}{name}"
 
 
 def _resolve(
@@ -188,7 +202,7 @@ def _resolve(
     obj = source.objects.get(ref)
     if obj is None or name not in obj:
         return f"{number} cites {target}, which isn't a field of any tool result", target
-    value, where = obj[name], _describe(source.tool, obj, name)
+    value, where = obj[name], _describe(source.tool, source.contexts.get(ref, ""), name)
     if isinstance(value, bool) or value is None:
         return f"{number} cites {target}, which holds no number", where
     if isinstance(value, (int, float)):

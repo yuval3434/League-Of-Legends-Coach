@@ -163,7 +163,9 @@ async def _run_case(
 
     for name in case.code_checks:
         main_role = context.player.main_role if context and context.player else None
-        check = run_code_check(name, answer, case.says, peer, case.role, main_role, case.avoids)
+        check = run_code_check(
+            name, answer, case.says, peer, case.role, main_role, case.avoids, case.compares
+        )
         row["checks"][name] = {"by": "code", "passed": check.passed, "detail": check.detail}
     outputs = format_tool_outputs(row["tool_log"])
     if answer.citations:

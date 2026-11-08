@@ -35,6 +35,10 @@ row has no `clear_gap`, you can't tell whether its gap is real. Every cohort is 
 compared with the same games from this player, so agreement between two cohorts \
 isn't extra evidence.
 
+Never pick a gap without a verdict as something to work on, even as general \
+advice: a row with no `clear_gap` or with `clear_gap` false, anything in \
+`worth_watching`, and anything the reply itself calls possibly chance.
+
 Gaps in different units, such as CS per minute and wards per minute, have no \
 common scale, so never rank them: don't call one the biggest, worst or most \
 important. If asked for the weakest area, say the findings can't be ranked on one \

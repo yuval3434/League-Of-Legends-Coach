@@ -35,6 +35,8 @@ class Case:
     role: str | None = None
     # The reply must match none of these patterns, in lower case.
     avoids: tuple[str, ...] = ()
+    # A (cohort, champion) the coach must compare with.
+    compares: tuple[str, str] | None = None
 
     @property
     def code_checks(self) -> tuple[str, ...]:
@@ -45,6 +47,7 @@ class Case:
             + (("right_cohort",) if self.right_cohort else ())
             + (("role_args",) if self.role else ())
             + (("avoids",) if self.avoids else ())
+            + (("compares",) if self.compares else ())
         )
 
     @property
@@ -92,7 +95,8 @@ CASES = (
         "mundo",
         "How do I play Dr. Mundo compared with Silver junglers?",
         ("no_overclaim",),
-        says=(r"\bno (\w+ ){0,2}benchmark", r"\bnot (\w+ )?a benchmark", r"doesn't have a benchmark"),
+        # Dr. Mundo has had a Silver benchmark since the overnight pulls.
+        compares=("silver", "DrMundo"),
     ),
     Case(
         "viego",

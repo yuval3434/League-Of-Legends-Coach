@@ -174,3 +174,27 @@ def test_the_no_benchmark_pattern_allows_a_long_cohort_name():
     case = next(c for c in CASES if c.id == "bot_no_benchmark")
     reply = CoachAnswer("No Gold bot lane benchmark exists yet.", "verified")
     assert says(reply, case.says).passed
+
+
+# Checks changed after the 16-case run
+
+
+def test_first_try_ignores_a_citation_slip_on_a_real_number():
+    from eval.checks import first_try
+
+    answer = CoachAnswer("", "verified")
+    answer.tool_log = [ToolLog("lane_diff", {}, '{"rows": [{"minute": 10, "avg_gold_diff": -219}]}', False)]
+    answer.caught_numbers = ["10 has no citation", "219 has no citation"]
+    assert first_try(answer).passed
+    # 242 is in no result: the coach worked it out, so it fails.
+    answer.caught_numbers = ["242 has no citation"]
+    assert not first_try(answer).passed
+
+
+def test_mundo_must_compare_with_silver_on_dr_mundo():
+    from eval.checks import compares
+
+    case = next(c for c in CASES if c.id == "mundo")
+    assert case.compares == ("silver", "DrMundo") and "says" not in case.code_checks
+    assert compares(answer_with(("compare_to_benchmark", {"cohort": "silver", "champion": "DrMundo"})), *case.compares).passed
+    assert not compares(answer_with(("compare_to_benchmark", {"cohort": "silver", "champion": None})), *case.compares).passed

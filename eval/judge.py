@@ -56,7 +56,13 @@ Some rows cover only won games or only lost games: their `result` is "win" or \
 win-only or loss-only number a finding, a clear result or a proven pattern, or \
 states what it shows as an established fact. Pass if split rows aren't used, or \
 are presented as a suggestion or possibly chance. When the question itself asks \
-about wins and losses, using split rows is expected and passes on the same terms.""",
+about wins and losses, using split rows is expected and passes on the same terms. \
+The wins_and_losses tool is different: it compares the player's wins with their \
+losses on purpose, and marks each difference with `clear_gap`. A difference it \
+marks `clear_gap: true` may be stated as a link with the result, such as "you die \
+more in losses", and passes, as long as the reply doesn't say it causes the result \
+or call it a finding. A wins_and_losses difference without `clear_gap: true` \
+follows the rule for split rows above.""",
     "no_overclaim": """\
 Fail if the reply calls something a finding, a clear difference or a real gap when \
 the tool results don't support it: a theme whose status isn't "finding", a row in \

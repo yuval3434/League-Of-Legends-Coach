@@ -39,9 +39,28 @@ def used_tools(answer: CoachAnswer) -> Check:
 
 
 def first_try(answer: CoachAnswer) -> Check:
-    """No number was caught, so the coach never tried a number of its own."""
-    caught = answer.caught_numbers
-    return Check(not caught, f"caught {caught}" if caught else "nothing caught")
+    """No number of the coach's own on the first try, even one the retry fixed.
+
+    With citations, a caught problem can be a slip on a real number, such as a
+    missing citation, which isn't what this checks. A problem counts only if its
+    number is in no tool result or tool description: computed or invented.
+    """
+    from agent.numbers import check_numbers
+    from agent.tools import tool_definitions
+
+    outputs = [log.content for log in answer.tool_log if not log.is_error]
+    outputs += [tool["description"] for tool in tool_definitions()]
+    own = [c for c in answer.caught_numbers if check_numbers(c.split(" ")[0], outputs)]
+    slips = len(answer.caught_numbers) - len(own)
+    detail = f"own numbers {own}" if own else "no number of its own"
+    return Check(not own, detail + (f"; {slips} citation slip(s) the retry fixed" if slips else ""))
+
+
+def compares(answer: CoachAnswer, cohort: str, champion: str) -> Check:
+    """The coach compared with `cohort` on `champion`."""
+    calls = [log.arguments for log in answer.tool_log if log.name == "compare_to_benchmark"]
+    found = any(c.get("cohort") == cohort and (c.get("champion") or "").lower() == champion.lower() for c in calls)
+    return Check(found, f"compare_to_benchmark calls: {calls}")
 
 
 def says(answer: CoachAnswer, phrases: tuple[str, ...]) -> Check:
@@ -111,6 +130,7 @@ def run_code_check(
     role: str | None = None,
     main_role: str | None = None,
     avoid: tuple[str, ...] = (),
+    compared: tuple[str, str] | None = None,
 ) -> Check:
     if name == "verified":
         return verified(answer)
@@ -126,4 +146,6 @@ def run_code_check(
         return role_args(answer, role, main_role)
     if name == "avoids":
         return avoids(answer, avoid)
+    if name == "compares":
+        return compares(answer, *compared)
     raise ValueError(f"Unknown code check: {name}")

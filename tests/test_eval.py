@@ -85,14 +85,15 @@ def test_a_phrase_matches_whatever_the_case_and_quotes():
         "Mundo doesn't have a benchmark.",
     ],
 )
-def test_the_mundo_check_accepts_honest_wordings(text):
-    mundo = next(case for case in CASES if case.id == "mundo")
-    assert says_check(answer(text), mundo.says).passed
+def test_the_no_benchmark_check_accepts_honest_wordings(text):
+    # mundo has a benchmark now; the bot lane case still has none.
+    bot = next(case for case in CASES if case.id == "bot_no_benchmark")
+    assert says_check(answer(text), bot.says).passed
 
 
-def test_the_mundo_check_rejects_a_benchmark_number():
-    mundo = next(case for case in CASES if case.id == "mundo")
-    assert not says_check(answer("Silver Mundo players average 6.1 CS."), mundo.says).passed
+def test_the_no_benchmark_check_rejects_a_benchmark_number():
+    bot = next(case for case in CASES if case.id == "bot_no_benchmark")
+    assert not says_check(answer("Gold bot laners average 7.1 CS a minute."), bot.says).passed
 
 
 STRETCH = next(case for case in CASES if case.id == "stretch_no_tool")
@@ -202,7 +203,7 @@ def test_every_case_uses_known_checks():
 def test_the_cases_cover_what_was_asked_for():
     judged = {check for case in CASES for check in case.judge_checks}
     assert {"wrong_stat", "number_words", "unit_comparison", "split_as_finding"} <= judged
-    for case_id, text in (("mundo", "no benchmark"), ("viego", "not enough data")):
+    for case_id, text in (("bot_no_benchmark", "no benchmark"), ("viego", "not enough data")):
         case = next(c for c in CASES if c.id == case_id)
         assert says_check(answer(text), case.says).passed
 
